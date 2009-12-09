@@ -1,27 +1,21 @@
 {application, riak_bench,
  [{description, "Riak Benchmarking Suite"},
-  {vsn, "1"},
-  {modules, [ riak_bench_app,
-              riak_bench_sup ]},
+  {vsn, "0.1"},
+  {modules, [
+             riak_bench_app,
+             riak_bench_keygen,              
+             riak_bench_stats,
+             riak_bench_sup,
+             riak_bench_worker,
+             riak_bench_valgen,
+             riak_bench_utils
+             ]},
   {registered, [ riak_bench_sup ]},
   {applications, [kernel, 
                   stdlib, 
                   sasl]},
   {mod, {riak_bench_app, []}},
   {env, [
-         %%
-         %% Load generation modes:
-         %%
-         %% peak - Generates requests as quickly as possible.
-         %%        ex: peak
-         %%
-         %% sustained - Generates a sustained load w/ a specified total # of requests/sec OR
-         %%             random inter-arrival time (in milliseconds) between requests
-         %%             ex: {sustained, {rate, 100}} == sustained load of 100 req/sec
-         %%                 {sustained, {delay, 10}} == sustained load w/ 10 ms between requests
-         %%
-         {load_gen_mode, peak},
-
          %%
          %% Test duration (minutes)
          %%
@@ -35,7 +29,7 @@
          %%
          %% Driver module for the current test
          %%
-         {driver, simple},
+         {driver, riak_bench_driver_simple},
 
          %% Operations (and associated mix). Note that
          %% the driver may not implement every operation.
@@ -55,6 +49,11 @@
          %%
          %% {fixed_bin, N} - Fixed size binary blob of N bytes
          %%
-         {value_generator, {fixed_bin, 100}}
+         {value_generator, {fixed_bin, 100}},
+
+         %%
+         %% RNG Seed -- ensures consistent generation of key/value sizes (but not content!)
+         %%
+         {rng_seed, {42, 23, 12}}
         ]}
 ]}.
