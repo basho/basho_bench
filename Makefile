@@ -1,0 +1,3 @@
+
+all:
+	./rebar compile test
