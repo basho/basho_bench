@@ -19,48 +19,47 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_sup).
+-module(riak_bench_config).
 
--behaviour(supervisor).
-
-%% API
--export([start_link/0]).
-
-%% Supervisor callbacks
--export([init/1]).
+-export([load/1,
+         set/2,
+         get/1]).
 
 -include("riak_bench.hrl").
 
-%% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
-
 %% ===================================================================
-%% API functions
+%% Public API
 %% ===================================================================
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+load(File) ->
+    case file:consult(File) of
+        {ok, Terms} ->
+            load_config(Terms);
+        {error, Reason} ->
+            ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason])
+    end.
 
-
-%% ===================================================================
-%% Supervisor callbacks
-%% ===================================================================
-
-init([]) ->
-    %% Get the number concurrent workers we're expecting and generate child
-    %% specs for each
-    Workers = worker_specs(riak_bench_config:get(concurrent), []),
-    {ok, {{one_for_one, 5, 10}, [?CHILD(riak_bench_stats, worker)] ++ Workers}}.
+set(Key, Value) ->
+    ok = application:set_env(riak_bench, Key, Value).
+    
+get(Key) ->
+    case application:get_env(riak_bench, Key) of
+        {ok, Value} ->
+            Value;
+        undefined ->
+            erlang:error("Missing configuration key", [Key])
+    end.
 
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
 
-worker_specs(0, Acc) ->
-    Acc;
-worker_specs(Count, Acc) ->
-    Id = list_to_atom(lists:concat(['riak_bench_worker_', Count])),
-    Spec = {Id, {riak_bench_worker, start_link, [Count]},
-            permanent, 5000, worker, [riak_bench_worker]},
-    worker_specs(Count-1, [Spec | Acc]).
+load_config([]) ->
+    ok;
+load_config([{Key, Value} | Rest]) ->
+    ?MODULE:set(Key, Value),
+    load_config(Rest);
+load_config([ Other | Rest]) ->
+    ?WARN("Ignoring non-tuple config value: ~p\n", [Other]),
+    load_config(Rest).

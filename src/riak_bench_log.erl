@@ -19,48 +19,45 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_sup).
+-module(riak_bench_log).
 
--behaviour(supervisor).
-
-%% API
--export([start_link/0]).
-
-%% Supervisor callbacks
--export([init/1]).
-
--include("riak_bench.hrl").
-
-%% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-export([init/0,
+         log/3]).
 
 %% ===================================================================
-%% API functions
+%% Public API
 %% ===================================================================
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+init() ->
+    application:set_env(riak_bench, log_level, debug).
 
-
-%% ===================================================================
-%% Supervisor callbacks
-%% ===================================================================
-
-init([]) ->
-    %% Get the number concurrent workers we're expecting and generate child
-    %% specs for each
-    Workers = worker_specs(riak_bench_config:get(concurrent), []),
-    {ok, {{one_for_one, 5, 10}, [?CHILD(riak_bench_stats, worker)] ++ Workers}}.
-
+log(Level, Str, Args) ->
+    {ok, LogLevel} = application:get_env(riak_bench, log_level),
+    case should_log(LogLevel, Level) of
+        true ->
+            io:format(log_prefix(Level) ++ Str, Args);
+        false ->
+            ok
+    end.
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
 
-worker_specs(0, Acc) ->
-    Acc;
-worker_specs(Count, Acc) ->
-    Id = list_to_atom(lists:concat(['riak_bench_worker_', Count])),
-    Spec = {Id, {riak_bench_worker, start_link, [Count]},
-            permanent, 5000, worker, [riak_bench_worker]},
-    worker_specs(Count-1, [Spec | Acc]).
+should_log(debug, _)     -> true;
+should_log(info, debug)  -> false;
+should_log(info, _)      -> true;
+should_log(warn, debug)  -> false;
+should_log(warn, info)   -> false;
+should_log(warn, _)      -> true;
+should_log(error, error) -> true;
+should_log(error, _)     -> false;
+should_log(_, _)         -> false.
+    
+log_prefix(debug) -> "DEBUG:" ;
+log_prefix(info)  -> "INFO: ";
+log_prefix(warn)  -> "WARN: ";
+log_prefix(error) -> "ERROR: ".
+
+     
+    

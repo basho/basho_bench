@@ -39,6 +39,8 @@
                  rng_seed,
                  worker_pid }).
 
+-include("riak_bench.hrl").
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -62,11 +64,11 @@ init([Id]) ->
     %%
     %% NOTE: If the worker process dies, this obviously introduces some entroy
     %% into the equation since you'd be restarting the RNG all over.
-    {A1, A2, A3} = riak_bench_utils:get_env(rng_seed),
+    {A1, A2, A3} = riak_bench_config:get(rng_seed),
     RngSeed = {A1+Id, A2+Id, A3+Id},
     
     %% Pull all config settings from environment
-    Driver  = riak_bench_utils:get_env(driver),
+    Driver  = riak_bench_config:get(driver),
     Ops     = ops_tuple(),
 
     %% Spin up the driver implementation
@@ -75,18 +77,16 @@ init([Id]) ->
             ok;
         Error ->
             DriverState = undefined, % Make erlc happy
-            error_logger:error_msg("Failed to initialize driver ~p: ~p\n", [Driver, Error]),
-            throw({stop, driver_init_failed})
+            ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
     end,
 
     %% Finally, initialize key and value generation. We pass in our ID to the initialization to
     %% enable (optional) key/value space partitioning
-    KeyGen = riak_bench_keygen:new(riak_bench_utils:get_env(key_generator), Id),
-    ValGen = riak_bench_valgen:new(riak_bench_utils:get_env(value_generator), Id),
-    
+    KeyGen = riak_bench_keygen:new(riak_bench_config:get(key_generator), Id),
+    ValGen = riak_bench_valgen:new(riak_bench_config:get(value_generator), Id),
     {ok, #state{ keygen = KeyGen, valgen = ValGen,
                  driver = Driver, driver_state = DriverState,
-                 ops = Ops, ops_len = length(Ops),
+                 ops = Ops, ops_len = size(Ops),
                  rng_seed = RngSeed }}.
 
 handle_call(run, _From, State) ->
@@ -99,7 +99,7 @@ handle_call(run, _From, State) ->
     case State#state.worker_pid of
         undefined ->
             %% Setup stop event
-            case riak_bench_utils:get_env(timer:minutes(duration)) of
+            case riak_bench_config:get(timer:minutes(duration)) of
                 infinite ->
                     ok;
                 Duration ->
@@ -137,7 +137,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Expand operations list into tuple suitable for weighted, random draw
 %%
 ops_tuple() ->
-    Ops = [lists:duplicate(Count, Op) || {Op, Count} <- riak_bench_utils:get_env(operations)],
+    Ops = [lists:duplicate(Count, Op) || {Op, Count} <- riak_bench_config:get(operations)],
     list_to_tuple(lists:flatten(Ops)).
                                              
 
@@ -168,7 +168,7 @@ worker_loop(State) ->
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
-            error_logger:error_msg("Driver ~p crashed: ~p\n", [Reason]),
+            ?ERROR("Driver ~p crashed: ~p\n", [Reason]),
             riak_bench_stats:op_complete(Next, {error, crash}, ElapsedUs)
     end.
 

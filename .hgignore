@@ -1,1 +1,4 @@
 .beam
+tests/.*$
+riak_bench$
+erl_crash.dump$

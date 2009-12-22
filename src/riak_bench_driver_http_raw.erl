@@ -19,15 +19,29 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_utils).
+-module(riak_bench_driver_http_raw).
 
--export([get_env/1]).
+-export([new/0,
+         run/4]).
 
-get_env(Key) ->
-    case application:get_env(riak_bench, Key) of
-        undefined ->
-            erlang:error({app_env_key_not_found, Key});
-        {ok, Value} ->
-            Value
-    end.
-         
+-include("riak_bench.hrl").
+
+%% ====================================================================
+%% API
+%% ====================================================================
+
+new() ->
+    %% Make sure ibrowse is available
+    case code:which(ibrowse) of
+        non_existing ->
+            ?FAIL_MSG("~s requires ibrowse to be installed.\n", [?MODULE]);
+        _ ->
+            ok
+    end,
+    {ok, undefined}.
+
+
+run(get, KeyGen, ValueGen, State) ->
+    {ok, State};
+run(put, KeyGen, ValueGen, State) ->
+    {ok, State}.

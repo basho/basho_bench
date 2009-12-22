@@ -2,13 +2,16 @@
  [{description, "Riak Benchmarking Suite"},
   {vsn, "0.1"},
   {modules, [
+             riak_bench,
              riak_bench_app,
+             riak_bench_config,
+             riak_bench_driver_http_raw,
+             riak_bench_log,
              riak_bench_keygen,              
              riak_bench_stats,
              riak_bench_sup,
              riak_bench_worker,
-             riak_bench_valgen,
-             riak_bench_utils
+             riak_bench_valgen
              ]},
   {registered, [ riak_bench_sup ]},
   {applications, [kernel, 
@@ -16,6 +19,11 @@
                   sasl]},
   {mod, {riak_bench_app, []}},
   {env, [
+         %%
+         %% Base test output directory
+         %%
+         {test_dir, "tests"},
+         
          %%
          %% Test duration (minutes)
          %%
@@ -29,7 +37,7 @@
          %%
          %% Driver module for the current test
          %%
-         {driver, riak_bench_driver_simple},
+         {driver, riak_bench_driver_http_raw},
 
          %% Operations (and associated mix). Note that
          %% the driver may not implement every operation.

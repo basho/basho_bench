@@ -1,3 +1,3 @@
 
 all:
-	./rebar compile test
+	./rebar compile test escriptize
