@@ -6,6 +6,7 @@
              riak_bench_app,
              riak_bench_config,
              riak_bench_driver_http_raw,
+             riak_bench_driver_innodb,
              riak_bench_log,
              riak_bench_keygen,              
              riak_bench_stats,
