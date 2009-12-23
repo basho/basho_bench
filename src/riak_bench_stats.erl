@@ -112,12 +112,22 @@ handle_info(report, State) ->
     Window  = trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000),
     
     %% Time to report latency data to our CSV files
-    Counts = lists:foldl(fun(Op, Acc) ->
-                                 report_latency(Elapsed, Window, Op)
-                         end, [], State#state.ops),
+    {Oks, Errors} = lists:foldl(fun(Op, {TotalOks, TotalErrors}) ->
+                                        {Oks, Errors} = report_latency(Elapsed, Window, Op),
+                                        {TotalOks + Oks, TotalErrors + Errors}
+                                end, {0,0}, State#state.ops),
 
     %% Reset latency histograms
-    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],    
+    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],
+
+    %% Write summary
+    file:write(State#state.summary_file,
+               io_lib:format("~w, ~w, ~w, ~w, ~w\n",
+                             [Elapsed,
+                              Window,
+                              Oks + Errors,
+                              Oks,
+                              Errors])),
 
     %% Schedule next report
     erlang:send_after(State#state.report_interval, self(), report),    
@@ -127,7 +137,7 @@ terminate(_Reason, State) ->
     %% Do one last report and then flush all the files
     handle_info(report, State),    
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
-
+    ok = file:close(State#state.summary_file),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
