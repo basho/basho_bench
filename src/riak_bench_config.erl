@@ -23,7 +23,7 @@
 
 -export([load/1,
          set/2,
-         get/1]).
+         get/1, get/2]).
 
 -include("riak_bench.hrl").
 
@@ -48,6 +48,14 @@ get(Key) ->
             Value;
         undefined ->
             erlang:error("Missing configuration key", [Key])
+    end.
+
+get(Key, Default) ->
+    case application:get_env(riak_bench, Key) of
+        {ok, Value} ->
+            Value;
+        _ ->
+            Default
     end.
 
 

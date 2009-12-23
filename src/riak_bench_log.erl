@@ -21,17 +21,74 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_log).
 
--export([init/0,
+-behaviour(gen_server).
+
+%% API
+-export([start_link/0,
          log/3]).
 
-%% ===================================================================
-%% Public API
-%% ===================================================================
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
 
-init() ->
-    application:set_env(riak_bench, log_level, debug).
+-record(state, { log_level,
+                 log_file }).
+
+%% ====================================================================
+%% API
+%% ====================================================================
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 log(Level, Str, Args) ->
+    case whereis(?MODULE) of
+        undefined ->
+            basic_log(Level, Str, Args);
+        Pid ->
+            gen_server:call(Pid, {log, Level, Str, Args})
+    end.
+
+
+%% ====================================================================
+%% gen_server callbacks
+%% ====================================================================
+
+init([]) ->
+    LogLevel = riak_bench_config:get(log_level),
+    {ok, LogFile} = file:open("log.txt", [raw, binary, write]),
+    {ok, #state{ log_level = LogLevel,
+                 log_file = LogFile }}.
+
+handle_call({log, Level, Str, Args}, _From, State) ->
+    case should_log(State#state.log_level, Level) of
+        true ->
+            Message = io_lib:format(log_prefix(Level) ++ Str, Args),
+            ok = file:write(State#state.log_file, Message),
+            ok = io:format(Message);
+        false ->
+            ok
+    end,
+    {reply, ok, State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+
+%% ===================================================================
+%% Internal functions
+%% ===================================================================
+
+basic_log(Level, Str, Args) ->
     {ok, LogLevel} = application:get_env(riak_bench, log_level),
     case should_log(LogLevel, Level) of
         true ->
@@ -40,10 +97,7 @@ log(Level, Str, Args) ->
             ok
     end.
 
-%% ===================================================================
-%% Internal functions
-%% ===================================================================
-
+should_log(_, console)   -> true; 
 should_log(debug, _)     -> true;
 should_log(info, debug)  -> false;
 should_log(info, _)      -> true;
@@ -53,11 +107,12 @@ should_log(warn, _)      -> true;
 should_log(error, error) -> true;
 should_log(error, _)     -> false;
 should_log(_, _)         -> false.
-    
-log_prefix(debug) -> "DEBUG:" ;
-log_prefix(info)  -> "INFO: ";
-log_prefix(warn)  -> "WARN: ";
-log_prefix(error) -> "ERROR: ".
+
+log_prefix(console) -> "";
+log_prefix(debug)   -> "DEBUG:" ;
+log_prefix(info)    -> "INFO: ";
+log_prefix(warn)    -> "WARN: ";
+log_prefix(error)   -> "ERROR: ".
 
      
     

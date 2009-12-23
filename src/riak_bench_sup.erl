@@ -24,7 +24,8 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/0]).
+-export([start_link/0,
+         workers/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -41,6 +42,9 @@
 start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+workers() ->
+    [Pid || {_Id, Pid, worker, [riak_bench_worker]} <- supervisor:which_children(?MODULE)].
+
 
 %% ===================================================================
 %% Supervisor callbacks
@@ -50,7 +54,8 @@ init([]) ->
     %% Get the number concurrent workers we're expecting and generate child
     %% specs for each
     Workers = worker_specs(riak_bench_config:get(concurrent), []),
-    {ok, {{one_for_one, 5, 10}, [?CHILD(riak_bench_stats, worker)] ++ Workers}}.
+    {ok, {{one_for_one, 5, 10}, [?CHILD(riak_bench_log, worker),
+                                 ?CHILD(riak_bench_stats, worker)] ++ Workers}}.
 
 
 %% ===================================================================

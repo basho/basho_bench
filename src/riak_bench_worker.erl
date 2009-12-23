@@ -24,7 +24,9 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1]).
+-export([start_link/1,
+         run/1,
+         stop/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -49,10 +51,12 @@ start_link(Id) ->
     gen_server:start_link(?MODULE, [Id], []).
 
 run(Pids) ->
-    gen_server:multi_call(Pids, run).
+    [ok = gen_server:call(Pid, run) || Pid <- Pids],
+    ok.
 
 stop(Pids) ->
-    gen_server:multi_call(Pids, stop).
+    [ok = gen_server:call(Pid, stop) || Pid <- Pids],
+    ok.
 
 %% ====================================================================
 %% gen_server callbacks
@@ -64,6 +68,7 @@ init([Id]) ->
     %%
     %% NOTE: If the worker process dies, this obviously introduces some entroy
     %% into the equation since you'd be restarting the RNG all over.
+    process_flag(trap_exit, true),
     {A1, A2, A3} = riak_bench_config:get(rng_seed),
     RngSeed = {A1+Id, A2+Id, A3+Id},
     
@@ -80,46 +85,55 @@ init([Id]) ->
             ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
     end,
 
-    %% Finally, initialize key and value generation. We pass in our ID to the initialization to
-    %% enable (optional) key/value space partitioning
+    %% Finally, initialize key and value generation. We pass in our ID to the
+    %% initialization to enable (optional) key/value space partitioning
     KeyGen = riak_bench_keygen:new(riak_bench_config:get(key_generator), Id),
     ValGen = riak_bench_valgen:new(riak_bench_config:get(value_generator), Id),
-    {ok, #state{ keygen = KeyGen, valgen = ValGen,
-                 driver = Driver, driver_state = DriverState,
-                 ops = Ops, ops_len = size(Ops),
-                 rng_seed = RngSeed }}.
+
+    State = #state { keygen = KeyGen, valgen = ValGen,
+                     driver = Driver, driver_state = DriverState,
+                     ops = Ops, ops_len = size(Ops),
+                     rng_seed = RngSeed },
+
+    %% Use a dedicated sub-process to do the actual work. The work loop may need
+    %% to sleep or otherwise delay in a way that would be inappropriate and/or
+    %% inefficient for a gen_server. Furthermore, we want the loop to be as
+    %% tight as possible for peak load generation and avoid unnecessary polling
+    %% of the message queue.
+    %%
+    %% Link the worker and the sub-process to ensure that if either exits, the
+    %% other goes with it.
+    WorkerPid = spawn_link(fun() -> worker_init(State) end),
+    WorkerPid ! {init_driver, self()},
+    receive
+        driver_ready ->
+            ok
+    end,
+    
+    %% If the system is marked as running this is a restart; queue up the run
+    %% message for this worker
+    case riak_bench_app:is_running() of
+        true ->
+            ?WARN("Restarting crashed worker.\n", []),
+            gen_server:cast(self(), run);
+        false ->
+            ok
+    end,
+
+    {ok, State#state { worker_pid = WorkerPid }}.
 
 handle_call(run, _From, State) ->
-    %% We use a dedicated sub-process to do the actual work. The work loop may need to sleep or
-    %% otherwise delay in a way that would be inappropriate and/or inefficient for a
-    %% gen_server. Furthermore, we want the loop to be as tight as possible for peak load
-    %% generation and avoid unnecessary polling of the message queue.
-    %%
-    %% Link the worker and the sub-process to ensure that if either exits, the other goes with it.
-    case State#state.worker_pid of
-        undefined ->
-            %% Setup stop event
-            case riak_bench_config:get(timer:minutes(duration)) of
-                infinite ->
-                    ok;
-                Duration ->
-                    erlang:send_after(Duration, self(), stop)
-            end,
-
-            %% Kick off the worker
-            Pid = spawn_link(fun() -> worker_init(State) end),
-            {reply, ok, State#state { worker_pid = Pid }};
-        _ ->
-            {reply, {error, already_started}, State}
-    end;
+    State#state.worker_pid ! run,
+    {reply, ok, State};
 handle_call(stop, _From, State) ->
     {stop, normal, ok, State}.
 
-handle_cast(_Msg, State) ->
+handle_cast(run, State) ->
+    State#state.worker_pid ! run,
     {noreply, State}.
 
-handle_info(_Info, State) ->
-    {noreply, State}.
+handle_info({'EXIT', _Pid, _Reason}, State) ->
+    {stop, normal, State}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -146,9 +160,28 @@ ops_tuple() ->
 %%
 worker_init(State) ->
     random:seed(State#state.rng_seed),
-    worker_loop(State).
+    worker_idle_loop(State).
 
-worker_loop(State) ->
+worker_idle_loop(State) ->
+    Driver = State#state.driver,
+    receive
+        {init_driver, Caller} ->
+            %% Spin up the driver implementation
+            case catch(Driver:new()) of
+                {ok, DriverState} ->
+                    Caller ! driver_ready,
+                    ok;
+                Error ->
+                    DriverState = undefined, % Make erlc happy
+                    ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
+            end,
+            worker_idle_loop(State#state { driver_state = DriverState });
+        run ->
+            io:format("Worker runloop starting!\n"),
+            worker_run_loop(State)
+    end.
+
+worker_run_loop(State) ->
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
     Start = now(),
     Result = (catch (State#state.driver):run(Next, State#state.keygen, State#state.valgen,
@@ -158,18 +191,18 @@ worker_loop(State) ->
         {ok, DriverState} ->
             %% Success
             riak_bench_stats:op_complete(Next, ok, ElapsedUs),
-            worker_loop(State#state { driver_state = DriverState });
+            worker_run_loop(State#state { driver_state = DriverState });
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             riak_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
-            worker_loop(State#state { driver_state = DriverState });
+            worker_run_loop(State#state { driver_state = DriverState });
         
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
-            ?ERROR("Driver ~p crashed: ~p\n", [Reason]),
-            riak_bench_stats:op_complete(Next, {error, crash}, ElapsedUs)
+            riak_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
+            ?ERROR("Driver ~p crashed: ~p\n", [State#state.driver, Reason])
     end.
 
     

@@ -33,11 +33,11 @@ main([Config]) ->
     %% Load baseline config
     ok = application:load(riak_bench),
 
-    %% Initialize basic logging system
-    riak_bench_log:init(),
-
     %% Load the config file
     riak_bench_config:load(Config),
+
+    %% Init code path
+    add_code_paths(riak_bench_config:get(code_paths, [])),
 
     %% Setup working directory for this test. All logs, stats, and config
     %% info will be placed here
@@ -54,13 +54,20 @@ main([Config]) ->
     %% Copy the config into the test dir for posterity
     {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))),
 
-    %% Spin up the application
-    application:start(sasl),
-    {ok, Pid} = riak_bench_sup:start_link(),
+    %% Set our CWD to the test dir
+    ok = file:set_cwd(TestDir),
 
-    ?CONSOLE("Started!\n", []),
-    
-    ?CONSOLE("Procs: ~p\n", [supervisor:which_children(Pid)]).    
+    %% Spin up the application
+    ok = riak_bench_app:start(),
+
+    %% Pull the runtime duration from the config and sleep until that's passed
+    Duration = timer:minutes(riak_bench_config:get(duration)),
+    timer:sleep(Duration),
+
+    ?CONSOLE("Test complete.\n", []),
+
+    riak_bench_app:stop().
+
 
 
 
@@ -75,3 +82,16 @@ main([Config]) ->
 id() ->
     {{Y, M, D}, {H, Min, S}} = calendar:local_time(), 
     ?FMT("~w~2..0w~2..0w_~2..0w~2..0w~2..0w", [Y, M, D, H, Min, S]).
+
+
+add_code_paths([]) ->
+    ok;
+add_code_paths([Path | Rest]) ->
+    Absname = filename:absname(Path),
+    case filename:basename(Absname) of
+        "ebin" ->
+            true = code:add_path(Absname);
+        _ ->
+            true = code:add_path(filename:join(Absname, "ebin"))
+    end,
+    add_code_paths(Rest).

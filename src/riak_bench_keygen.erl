@@ -23,11 +23,14 @@
 
 -export([new/2]).
 
+-include("riak_bench.hrl").
 
 %% ====================================================================
 %% API
 %% ====================================================================
 
-new(Type, Id) ->
-    ok.
+new({uniform_int, MaxKey}, _Id) ->
+    fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
+new(Other, _Id) ->
+    ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 

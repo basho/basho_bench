@@ -2,7 +2,7 @@
 
 -define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), halt(1)).
 
--define(CONSOLE(Str, Args), io:format(Str, Args)).
+-define(CONSOLE(Str, Args), riak_bench_log:log(console, Str, Args)).
 
 -define(DEBUG(Str, Args), riak_bench_log:log(debug, Str, Args)).
 -define(INFO(Str, Args), riak_bench_log:log(info, Str, Args)).

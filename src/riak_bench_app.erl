@@ -23,15 +23,49 @@
 
 -behaviour(application).
 
+%% API
+-export([start/0,
+         stop/0,
+         is_running/0]).
+
 %% Application callbacks
 -export([start/2, stop/1]).
+
+
+%% ===================================================================
+%% API
+%%===================================================================
+
+start() ->
+    %% Redirect all SASL logging into a text file
+    application:load(sasl),
+    application:set_env(sasl, sasl_error_logger, {file, "log.sasl.txt"}),
+    ok = application:start(sasl),
+
+    %% Make sure crypto is available
+    ok = application:start(crypto),
+    
+    %% Start up our application -- mark it as permanent so that the node
+    %% will be killed if we go down
+    application:start(riak_bench, permanent).
+
+stop() ->
+    application:stop(riak_bench).
+
+is_running() ->
+    application:get_env(riak_bench_app, is_running) == {ok, true}.
+    
 
 %% ===================================================================
 %% Application callbacks
 %%===================================================================
 
 start(_StartType, _StartArgs) ->
-    riak_bench_sup:start_link().
+    {ok, Pid} = riak_bench_sup:start_link(),
+    application:set_env(riak_bench_app, is_running, true),
+    ok = riak_bench_worker:run(riak_bench_sup:workers()),
+    {ok, Pid}.
+    
 
 stop(_State) ->
     ok.

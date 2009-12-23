@@ -23,10 +23,14 @@
 
 -export([new/2]).
 
+-include("riak_bench.hrl").
 
 %% ====================================================================
 %% API
 %% ====================================================================
 
-new(Type, Id) ->
-    ok.
+new({fixed_bin, Size}, Id) ->
+    fun() -> crypto:rand_bytes(Size) end;    
+new(Other, Id) ->
+    ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
+

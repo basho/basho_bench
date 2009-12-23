@@ -47,10 +47,10 @@ run(get, KeyGen, ValueGen, State) ->
     case riak_innodb_backend:get(State, {?BUCKET, KeyGen()}) of
         {ok, _Value} ->
             {ok, State};
-        {error, not_found} ->
+        {error, notfound} ->
             {ok, State};
         {error, Reason} ->
-            {error, State, Reason}
+            {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
     case riak_innodb_backend:put(State, {?BUCKET, KeyGen()}, ValueGen()) of
@@ -58,4 +58,11 @@ run(put, KeyGen, ValueGen, State) ->
             {ok, State};
         {error, Reason} ->
             {error, State, Reason}
+    end;
+run(delete, KeyGen, ValueGen, State) ->
+    case riak_innodb_backend:delete(State, {?BUCKET, KeyGen()}) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason}
     end.

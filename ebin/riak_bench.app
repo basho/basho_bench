@@ -21,6 +21,11 @@
   {mod, {riak_bench_app, []}},
   {env, [
          %%
+         %% Default log level
+         %%
+         {log_level, debug},
+         
+         %%
          %% Base test output directory
          %%
          {test_dir, "tests"},
@@ -40,11 +45,18 @@
          %%
          {driver, riak_bench_driver_http_raw},
 
+         %%
          %% Operations (and associated mix). Note that
          %% the driver may not implement every operation.
-         {operations, [{get, 45},
-                       {put, 45},
-                       {delete, 10}]},
+         %%
+         {operations, [{get, 4},
+                       {put, 4},
+                       {delete, 1}]},
+
+         %%
+         %% Interval on which to report latencies and status (seconds)
+         %%
+         {report_interval, 10},
 
          %%
          %% Key generators
