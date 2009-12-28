@@ -25,6 +25,7 @@
 
 %% API
 -export([start_link/0,
+         run/0,
          op_complete/3]).
 
 %% gen_server callbacks
@@ -48,6 +49,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+run() ->
+    gen_server:call(?MODULE, run).
 
 op_complete(Op, Result, ElapsedUs) ->
     gen_server:call(?MODULE, {op, Op, Result, ElapsedUs}).
@@ -82,17 +86,16 @@ init([]) ->
 
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(riak_bench_config:get(report_interval)),
-    erlang:send_after(ReportInterval, self(), report),
 
-    Now = now(),
     {ok, #state{ ops = Ops,
-                 start_time = Now,
-                 last_write_time = Now,
                  report_interval = ReportInterval,
                  summary_file = SummaryFile }}.
 
-%handle_call(_Message, _From, State) ->
-%    {reply, ok, State}.
+handle_call(run, _From, State) ->
+    %% Schedule next report
+    Now = now(),
+    erlang:send_after(State#state.report_interval, self(), report),    
+    {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 
 handle_call({op, Op, ok, ElapsedUs}, _From, State) ->
     %% Update the histogram for the op in question

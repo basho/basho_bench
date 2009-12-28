@@ -63,6 +63,7 @@ is_running() ->
 start(_StartType, _StartArgs) ->
     {ok, Pid} = riak_bench_sup:start_link(),
     application:set_env(riak_bench_app, is_running, true),
+    ok = riak_bench_stats:run(),
     ok = riak_bench_worker:run(riak_bench_sup:workers()),
     {ok, Pid}.
     
