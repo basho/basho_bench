@@ -30,12 +30,16 @@
 %% API
 %% ====================================================================
 
-new({uniform_int, MaxKey}, _Id) ->
+new({uniform_int_bin, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
+new({uniform_int, MaxKey}, _Id) ->
+    fun() -> random:uniform(MaxKey) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
 
+dimension({uniform_int_bin, MaxKey}) ->
+    MaxKey;
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
 dimension(Other) ->
