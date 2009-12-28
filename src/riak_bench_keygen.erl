@@ -21,7 +21,8 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_keygen).
 
--export([new/2]).
+-export([new/2,
+         dimension/1]).
 
 -include("riak_bench.hrl").
 
@@ -34,3 +35,8 @@ new({uniform_int, MaxKey}, _Id) ->
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
+
+dimension({uniform_int, MaxKey}) ->
+    MaxKey;
+dimension(Other) ->
+    ?FAIL_MSG("Unsupported key generator dimension requested: ~p\n", [Other]).

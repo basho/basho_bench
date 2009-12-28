@@ -57,6 +57,8 @@ main([Config]) ->
     %% Set our CWD to the test dir
     ok = file:set_cwd(TestDir),
 
+    log_dimensions(),
+
     %% Spin up the application
     ok = riak_bench_app:start(),
 
@@ -95,3 +97,24 @@ add_code_paths([Path | Rest]) ->
             true = code:add_path(filename:join(Absname, "ebin"))
     end,
     add_code_paths(Rest).
+
+
+%%
+%% Convert a number of bytes into a more user-friendly representation
+%%
+user_friendly_bytes(Size) ->
+    lists:foldl(fun(Desc, {Sz, SzDesc}) ->
+                        case Sz > 1000 of
+                            true ->
+                                {Sz / 1024, Desc};
+                            false ->
+                                {Sz, SzDesc}
+                        end
+                end,
+                {Size, bytes}, ['KB', 'MB', 'GB']).
+
+log_dimensions() ->
+    Keyspace = riak_bench_keygen:dimension(riak_bench_config:get(key_generator)),
+    Valspace = riak_bench_valgen:dimension(riak_bench_config:get(value_generator), Keyspace),
+    {Size, Desc} = user_friendly_bytes(Valspace),
+    ?INFO("Est. data size: ~.2f ~s\n", [Size, Desc]).

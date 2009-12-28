@@ -21,7 +21,8 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_valgen).
 
--export([new/2]).
+-export([new/2,
+         dimension/2]).
 
 -include("riak_bench.hrl").
 
@@ -30,7 +31,27 @@
 %% ====================================================================
 
 new({fixed_bin, Size}, Id) ->
-    fun() -> crypto:rand_bytes(Size) end;    
+    Source = crypto:rand_bytes(Size),
+    MaxOffset = Size - 16,
+    fun() -> fixed_bin(Source, MaxOffset, Size, <<>>) end;
 new(Other, Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 
+dimension({fixed_bin, Size}, KeyDimension) ->
+    Size * KeyDimension;
+dimension(Other, _) ->
+    ?FAIL_MSG("Unsupported value generator dimension requested: ~p\n", [Other]).
+
+
+
+%% ====================================================================
+%% Internal Functions
+%% ====================================================================
+fixed_bin(_Source, _MaxOffset, 0, Acc) ->
+    Acc;
+fixed_bin(Source, MaxOffset, Size, Acc) ->
+    Offset = random:uniform(MaxOffset),
+    Step = erlang:max(Size, erlang:min(16, Size - 16)),
+    io:format("Size: ~p Step: ~p\n", [Size, Step]),
+    <<_:Offset/bytes, Slice:Step/bytes, _Rest/binary>> = Source,
+    fixed_bin(Source, MaxOffset, Size - Step, <<Acc/binary, Slice/binary>>).

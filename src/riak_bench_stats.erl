@@ -50,7 +50,7 @@ start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 op_complete(Op, Result, ElapsedUs) ->
-    gen_server:cast(?MODULE, {op, Op, Result, ElapsedUs}).
+    gen_server:call(?MODULE, {op, Op, Result, ElapsedUs}).
 
 %% ====================================================================
 %% gen_server callbacks
@@ -91,18 +91,21 @@ init([]) ->
                  report_interval = ReportInterval,
                  summary_file = SummaryFile }}.
 
-handle_call(_Message, _From, State) ->
-    {reply, ok, State}.
+%handle_call(_Message, _From, State) ->
+%    {reply, ok, State}.
 
-handle_cast({op, Op, ok, ElapsedUs}, State) ->
+handle_call({op, Op, ok, ElapsedUs}, _From, State) ->
     %% Update the histogram for the op in question
     Hist = stats_histogram:update(ElapsedUs, erlang:get({latencies, Op})),
     erlang:put({latencies, Op}, Hist),
-    {noreply, State};
-handle_cast({op, Op, {error, Reason}, _ElapsedUs}, State) ->
+    {reply, ok, State};
+handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     ?ERROR("~p: ~p\n", [Op, Reason]),
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
+    {reply, ok, State}.
+
+handle_cast(_, State) ->
     {noreply, State}.
 
 handle_info(report, State) ->
@@ -138,6 +141,8 @@ terminate(_Reason, State) ->
     handle_info(report, State),    
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
+
+    ?CONSOLE("~p\n", [ets:tab2list(riak_bench_errors)]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -180,20 +185,29 @@ error_counter(Key) ->
 %%
 report_latency(Elapsed, Window, Op) ->
     Hist = erlang:get({latencies, Op}),
-    {Min, Mean, Max, _, _} = stats_histogram:summary_stats(Hist),
     Errors = error_counter(Op),
-    Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~.1f, ~.1f, ~.1f, ~.1f, ~w, ~w\n",
-                         [Elapsed,
-                          Window,
-                          stats_histogram:observations(Hist),
-                          Min,
-                          Mean,
-                          stats_histogram:quantile(0.500, Hist),
-                          stats_histogram:quantile(0.950, Hist),
-                          stats_histogram:quantile(0.990, Hist),
-                          stats_histogram:quantile(0.999, Hist),
-                          Max,
-                          Errors]),
+    case stats_histogram:observations(Hist) > 0 of
+        true ->
+            {Min, Mean, Max, _, _} = stats_histogram:summary_stats(Hist),
+            Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~.1f, ~.1f, ~.1f, ~.1f, ~w, ~w\n",
+                                 [Elapsed,
+                                  Window,
+                                  stats_histogram:observations(Hist),
+                                  Min,
+                                  Mean,
+                                  stats_histogram:quantile(0.500, Hist),
+                                  stats_histogram:quantile(0.950, Hist),
+                                  stats_histogram:quantile(0.990, Hist),
+                                  stats_histogram:quantile(0.999, Hist),
+                                  Max,
+                                  Errors]);
+        false ->
+            ?WARN("No data for op: ~p\n", [Op]),
+            Line = io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n",
+                                 [Elapsed,
+                                  Window,
+                                  Errors])
+    end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
     {stats_histogram:observations(Hist), Errors}.
                           
