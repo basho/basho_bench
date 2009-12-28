@@ -31,7 +31,9 @@
 %% ====================================================================
 
 new() ->
-    {ok, _} = dets:open_file(?MODULE, [{min_no_slots, 8192},
+    File = riak_bench_config:get(dets_file, ?MODULE),
+    {ok, _} = dets:open_file(?MODULE, [{file, File},
+                                       {min_no_slots, 8192},
                                        {max_no_slots, 16777216}]),
     {ok, undefined}.
 
@@ -48,7 +50,7 @@ run(get, KeyGen, _ValueGen, State) ->
 run(put, KeyGen, ValueGen, State) ->
     ok = dets:insert(?MODULE, {KeyGen(), ValueGen()}),
     {ok, State};
-run(delete, KeyGen, ValueGen, State) ->
+run(delete, KeyGen, _ValueGen, State) ->
     ok = dets:delete(?MODULE, KeyGen()),
     {ok, State}.
     
