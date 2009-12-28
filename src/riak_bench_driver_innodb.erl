@@ -40,6 +40,13 @@ new() ->
         _ ->
             ok
     end,
+
+    %% Pull the innodb_config key which has all the key/value pairs for the inno
+    %% db engine -- stuff everything into the riak_innodb_backend application namespace
+    %% so that starting the engine will pull them in
+    InnoConfig = riak_bench_config:get(innodb_config, []),
+    [ok = application:set_env(riak_innodb_backend, K, V) || {K, V} <- InnoConfig],
+    
     riak_innodb_backend:start(0).
 
 
