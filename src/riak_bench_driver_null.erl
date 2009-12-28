@@ -38,7 +38,7 @@ run(get, KeyGen, ValueGen, State) ->
     {ok, Key};
 run(put, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
-%    Value = ValueGen(),
+    Value = ValueGen(),
     {ok, Key};
 run(delete, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
