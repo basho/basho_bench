@@ -26,13 +26,16 @@
 
 -include("riak_bench.hrl").
 
+-define(SOURCE_SIZE, 4096).
+-define(BLOCK_SIZE, 512).
+
 %% ====================================================================
 %% API
 %% ====================================================================
 
 new({fixed_bin, Size}, Id) ->
-    Source = crypto:rand_bytes(Size),
-    MaxOffset = Size - 16,
+    Source = crypto:rand_bytes(?SOURCE_SIZE),
+    MaxOffset = ?SOURCE_SIZE - ?BLOCK_SIZE,
     fun() -> fixed_bin(Source, MaxOffset, Size, <<>>) end;
 new(Other, Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
@@ -51,7 +54,11 @@ fixed_bin(_Source, _MaxOffset, 0, Acc) ->
     Acc;
 fixed_bin(Source, MaxOffset, Size, Acc) ->
     Offset = random:uniform(MaxOffset),
-    Step = erlang:max(Size, erlang:min(16, Size - 16)),
-    io:format("Size: ~p Step: ~p\n", [Size, Step]),
+    if
+        Size > ?BLOCK_SIZE ->
+            Step = ?BLOCK_SIZE;
+        true ->
+            Step = Size
+    end,
     <<_:Offset/bytes, Slice:Step/bytes, _Rest/binary>> = Source,
     fixed_bin(Source, MaxOffset, Size - Step, <<Acc/binary, Slice/binary>>).
