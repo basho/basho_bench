@@ -26,7 +26,10 @@
 
 -include("riak_bench.hrl").
 
--record(state, { url }).
+-record(url, {abspath, host, port, username, password, path, protocol}).
+
+-record(state, { pid,
+                 base_url }).
 
 %% ====================================================================
 %% API
@@ -42,14 +45,20 @@ new() ->
     end,
 
     application:start(ibrowse),
-    ibrowse:start(),
-                     
-    {ok, #state { url = riak_bench_config:get(http_raw_url, "http://127.0.0.1:8098/raw/test")}}.
+
+    %% Get hostname/port we'll be testing
+    {Hostname, Port} = riak_bench_config:get(http_raw_host, {"127.0.0.1", 8098}),
+
+    %% Get the base URL
+    BaseUrl = #url { host = Hostname,
+                     port = Port,
+                     path = riak_bench_config:get(http_raw_base, "/raw/test")},
+    
+    {ok, #state { base_url = BaseUrl}}.
 
 
 run(get, KeyGen, _ValueGen, State) ->
-%    timer:sleep(100),
-    case do_get(State, KeyGen) of
+    case do_get(State#state.base_url, KeyGen) of
         {not_found, _Url} ->
             {ok, State};
         {ok, _Url, _Headers} ->
@@ -58,67 +67,99 @@ run(get, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    timer:sleep(100),
-    Url = lists:concat([State#state.url, '/', KeyGen()]),
+    BaseUrl = State#state.base_url,
+    Url = BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen()]) },
     case do_put(Url, [], ValueGen) of
         ok ->
+            disconnect(),
             {ok, State};
         {error, Reason} ->
-            {error, Reason}
+            disconnect(),
+            {error, Reason, State}
+    end;
+run(update, KeyGen, ValueGen, State) ->
+    case do_get(State#state.base_url, KeyGen) of
+        {error, Reason} ->
+            {error, Reason, State};
+
+        {not_found, Url} ->
+            case do_put(Url, [], ValueGen) of
+                ok ->
+                    disconnect(),
+                    {ok, State};
+                {error, Reason} ->
+                    disconnect(),
+                    {error, Reason}
+            end;
+
+        {ok, Url, Headers} ->
+            Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
+            case do_put(Url, [Vclock], ValueGen) of
+                ok ->
+                    disconnect(),
+                    {ok, State};
+                {error, Reason} ->
+                    disconnect(),
+                    {error, Reason}
+            end
     end.
-
-% run(update, KeyGen, ValueGen, State) ->
-%     case do_get(State, KeyGen) of
-%         {error, Reason} ->
-%             {error, Reason, State};
-
-%         {not_found, Url} ->
-%             case do_put(Url, [], ValueGen) of
-%                 ok ->
-%                     {ok, State};
-%                 {error, Reason} ->
-%                     {error, Reason}
-%             end;
-
-%         {ok, Url, Headers} ->
-%             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
-%             case do_put(Url, [Vclock], ValueGen) of
-%                 ok ->
-%                     {ok, State};
-%                 {error, Reason} ->
-%                     {error, Reason}
-%             end
-%     end.
 
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
-do_get(State, KeyGen) ->
-    Url = lists:concat([State#state.url, '/', KeyGen()]),
-    case ibrowse:send_req(Url, [], get, [], [{response_format, binary}]) of
+do_get(BaseUrl, KeyGen) ->
+    Url = BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen()]) },
+    case send_request(Url, [], get, [], [{response_format, binary}]) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
         {ok, "200", Headers, _Body} ->
             {ok, Url, Headers};
-        {ok, Any, _Header, _Body} ->
-            io:format("GET ~p\n", [Any]),
-            {ok, Url, []};
         {error, Reason} ->
             {error, Reason}
     end.
 
 do_put(Url, Headers, ValueGen) ->
-    case ibrowse:send_req(Url,
-                          Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                          put, ValueGen(), [{response_format, binary}]) of
+    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+                      put, ValueGen(), [{response_format, binary}]) of
         {ok, "204", _Header, _Body} ->
-            ok;
-        {ok, Any, _Header, _Body} ->
-            io:format("PUT ~p\n", [Any]),
             ok;
         {error, Reason} ->
             {error, Reason}
     end.
             
+connect() ->
+    case erlang:get(ibrowse_pid) of
+        undefined ->
+            {Hostname, Port} = riak_bench_config:get(http_raw_host, {"127.0.0.1", 8098}),
+            {ok, Pid} = ibrowse_http_client:start({Hostname, Port}),
+            erlang:put(ibrowse_pid, Pid),
+            Pid;
+        Pid ->
+            Pid
+    end.
+
+
+disconnect() ->
+    case erlang:get(ibrowse_pid) of
+        undefined ->
+            ok;
+        OldPid ->
+            catch(ibrowse_http_client:stop(OldPid))
+    end,
+    erlang:erase(ibrowse_pid),
+    ok.
+
+
+send_request(Url, Headers, Method, Body, Options) ->
+    Pid = connect(),
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 15000)) of    
+        {'EXIT', {timeout, _}} ->
+            {error, req_timedout};
+        {'EXIT', Reason} ->
+            {error, {'EXIT', Reason}};
+        Other ->
+            Other
+    end.
+              
