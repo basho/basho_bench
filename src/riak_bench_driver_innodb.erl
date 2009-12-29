@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_driver_innodb).
 
--export([new/0,
+-export([new/1,
          run/4]).
 
 -include("riak_bench.hrl").
@@ -32,7 +32,7 @@
 %% API
 %% ====================================================================
 
-new() ->
+new(_Id) ->
     %% Make sure innodb app is available
     case code:which(riak_innodb_backend) of
         non_existing ->

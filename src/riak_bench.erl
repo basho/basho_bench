@@ -63,7 +63,7 @@ main([Config]) ->
     ok = riak_bench_app:start(),
 
     %% Pull the runtime duration from the config and sleep until that's passed
-    Duration = timer:minutes(riak_bench_config:get(duration)),
+    Duration = timer:minutes(riak_bench_config:get(duration)) + timer:seconds(1),
     timer:sleep(Duration),
 
     ?CONSOLE("Test complete.\n", []),

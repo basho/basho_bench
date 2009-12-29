@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_driver_dets).
 
--export([new/0,
+-export([new/1,
          run/4]).
 
 -include("riak_bench.hrl").
@@ -30,7 +30,7 @@
 %% API
 %% ====================================================================
 
-new() ->
+new(_Id) ->
     File = riak_bench_config:get(dets_file, ?MODULE),
     {ok, _} = dets:open_file(?MODULE, [{file, File},
                                        {min_no_slots, 8192},

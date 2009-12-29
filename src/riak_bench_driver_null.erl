@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_driver_null).
 
--export([new/0,
+-export([new/1,
          run/4]).
 
 -include("riak_bench.hrl").
@@ -30,7 +30,7 @@
 %% API
 %% ====================================================================
 
-new() ->
+new(_Id) ->
     {ok, undefined}.
 
 run(get, KeyGen, ValueGen, State) ->

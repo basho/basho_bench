@@ -32,7 +32,8 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--record(state, { keygen,
+-record(state, { id,
+                 keygen,
                  valgen,
                  driver,
                  driver_state,
@@ -76,22 +77,13 @@ init([Id]) ->
     Driver  = riak_bench_config:get(driver),
     Ops     = ops_tuple(),
 
-    %% Spin up the driver implementation
-    case catch(Driver:new()) of
-        {ok, DriverState} ->
-            ok;
-        Error ->
-            DriverState = undefined, % Make erlc happy
-            ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
-    end,
-
     %% Finally, initialize key and value generation. We pass in our ID to the
     %% initialization to enable (optional) key/value space partitioning
     KeyGen = riak_bench_keygen:new(riak_bench_config:get(key_generator), Id),
     ValGen = riak_bench_valgen:new(riak_bench_config:get(value_generator), Id),
 
-    State = #state { keygen = KeyGen, valgen = ValGen,
-                     driver = Driver, driver_state = DriverState,
+    State = #state { id = Id, keygen = KeyGen, valgen = ValGen,
+                     driver = Driver, 
                      ops = Ops, ops_len = size(Ops),
                      rng_seed = RngSeed },
 
@@ -167,7 +159,7 @@ worker_idle_loop(State) ->
     receive
         {init_driver, Caller} ->
             %% Spin up the driver implementation
-            case catch(Driver:new()) of
+            case catch(Driver:new(State#state.id)) of
                 {ok, DriverState} ->
                     Caller ! driver_ready,
                     ok;

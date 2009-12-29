@@ -140,8 +140,6 @@ handle_info(report, State) ->
     {noreply, State#state { last_write_time = Now}}.
 
 terminate(_Reason, State) ->
-    %% Do one last report and then flush all the files
-    handle_info(report, State),    
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
 

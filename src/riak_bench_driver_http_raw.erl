@@ -21,21 +21,21 @@
 %% -------------------------------------------------------------------
 -module(riak_bench_driver_http_raw).
 
--export([new/0,
+-export([new/1,
          run/4]).
 
 -include("riak_bench.hrl").
 
 -record(url, {abspath, host, port, username, password, path, protocol}).
 
--record(state, { pid,
-                 base_url }).
+-record(state, { base_urls,             % Tuple of #url -- one for each IP
+                 base_urls_index }).    % #url to use for next request
 
 %% ====================================================================
 %% API
 %% ====================================================================
 
-new() ->
+new(Id) ->
     %% Make sure ibrowse is available
     case code:which(ibrowse) of
         non_existing ->
@@ -46,61 +46,54 @@ new() ->
 
     application:start(ibrowse),
 
-    %% Get hostname/port we'll be testing
-    {Hostname, Port} = riak_bench_config:get(http_raw_host, {"127.0.0.1", 8098}),
+    %% The IPs, port and path we'll be testing
+    Ips  = riak_bench_config:get(http_raw_ips, ["127.0.0.1"]),
+    Port = riak_bench_config:get(http_raw_port, 8098),
+    Path = riak_bench_config:get(http_raw_path, "/raw/test"),
 
-    %% Get the base URL
-    BaseUrl = #url { host = Hostname,
-                     port = Port,
-                     path = riak_bench_config:get(http_raw_base, "/raw/test")},
+    %% Construct list of urls and then convert to tuple
+    BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path} || Ip <- Ips]),
+    BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
     
-    {ok, #state { base_url = BaseUrl}}.
+    {ok, #state { base_urls = BaseUrls,
+                  base_urls_index = BaseUrlsIndex }}.
 
 
 run(get, KeyGen, _ValueGen, State) ->
-    case do_get(State#state.base_url, KeyGen) of
+    {NextUrl, S2} = next_url(State),
+    case do_get(NextUrl, KeyGen) of
         {not_found, _Url} ->
-            {ok, State};
+            {ok, S2};
         {ok, _Url, _Headers} ->
-            {ok, State};
+            {ok, S2};
         {error, Reason} ->
-            {error, Reason, State}
-    end;
-run(put, KeyGen, ValueGen, State) ->
-    BaseUrl = State#state.base_url,
-    Url = BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen()]) },
-    case do_put(Url, [], ValueGen) of
-        ok ->
-            disconnect(),
-            {ok, State};
-        {error, Reason} ->
-            disconnect(),
-            {error, Reason, State}
+            {error, Reason, S2}
     end;
 run(update, KeyGen, ValueGen, State) ->
-    case do_get(State#state.base_url, KeyGen) of
+    {NextUrl, S2} = next_url(State),
+    case do_get(NextUrl, KeyGen) of
         {error, Reason} ->
-            {error, Reason, State};
+            {error, Reason, S2};
 
         {not_found, Url} ->
             case do_put(Url, [], ValueGen) of
                 ok ->
-                    disconnect(),
-                    {ok, State};
+                    disconnect(Url),
+                    {ok, S2};
                 {error, Reason} ->
-                    disconnect(),
-                    {error, Reason}
+                    disconnect(Url),
+                    {error, Reason, S2}
             end;
 
         {ok, Url, Headers} ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
             case do_put(Url, [Vclock], ValueGen) of
                 ok ->
-                    disconnect(),
-                    {ok, State};
+                    disconnect(Url),
+                    {ok, S2};
                 {error, Reason} ->
-                    disconnect(),
-                    {error, Reason}
+                    disconnect(Url),
+                    {error, Reason, S2}
             end
     end.
 
@@ -108,6 +101,13 @@ run(update, KeyGen, ValueGen, State) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+next_url(State) when State#state.base_urls_index > tuple_size(State#state.base_urls) ->
+    { element(1, State#state.base_urls),
+      State#state { base_urls_index = 1 } };
+next_url(State) ->
+    { element(State#state.base_urls_index, State#state.base_urls),
+      State#state { base_urls_index = State#state.base_urls_index + 1 }}.
 
 do_get(BaseUrl, KeyGen) ->
     Url = BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen()]) },
@@ -129,31 +129,30 @@ do_put(Url, Headers, ValueGen) ->
             {error, Reason}
     end.
             
-connect() ->
-    case erlang:get(ibrowse_pid) of
+connect(Url) ->
+    case erlang:get({ibrowse_pid, Url#url.host}) of
         undefined ->
-            {Hostname, Port} = riak_bench_config:get(http_raw_host, {"127.0.0.1", 8098}),
-            {ok, Pid} = ibrowse_http_client:start({Hostname, Port}),
-            erlang:put(ibrowse_pid, Pid),
+            {ok, Pid} = ibrowse_http_client:start({Url#url.host, Url#url.port}),
+            erlang:put({ibrowse_pid, Url#url.host}, Pid),
             Pid;
         Pid ->
             Pid
     end.
 
 
-disconnect() ->
-    case erlang:get(ibrowse_pid) of
+disconnect(Url) ->
+    case erlang:get({ibrowse_pid, Url#url.host}) of
         undefined ->
             ok;
         OldPid ->
             catch(ibrowse_http_client:stop(OldPid))
     end,
-    erlang:erase(ibrowse_pid),
+    erlang:erase({ibrowse_pid, Url#url.host}),
     ok.
 
 
 send_request(Url, Headers, Method, Body, Options) ->
-    Pid = connect(),
+    Pid = connect(Url),
     case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 15000)) of    
         {'EXIT', {timeout, _}} ->
             {error, req_timedout};
