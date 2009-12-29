@@ -120,6 +120,8 @@ do_get(BaseUrl, KeyGen) ->
     case send_request(Url, [], get, [], [{response_format, binary}]) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
+        {ok, "300", Headers, _Body} ->
+            {ok, Url, Headers};
         {ok, "200", Headers, _Body} ->
             {ok, Url, Headers};
         {error, Reason} ->
