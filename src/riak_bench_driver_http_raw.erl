@@ -28,8 +28,9 @@
 
 -record(url, {abspath, host, port, username, password, path, protocol}).
 
--record(state, { base_urls,             % Tuple of #url -- one for each IP
-                 base_urls_index }).    % #url to use for next request
+-record(state, { client_id,          % Tuple client ID for HTTP requests
+                 base_urls,          % Tuple of #url -- one for each IP
+                 base_urls_index }). % #url to use for next request
 
 %% ====================================================================
 %% API
@@ -44,6 +45,10 @@ new(Id) ->
             ok
     end,
 
+    %% Setup client ID by base-64 encoding the ID
+    ClientId = {'X-Riak-ClientId', base64:encode(<<Id:32/unsigned>>)},
+    ?CONSOLE("Client ID: ~p\n", [ClientId]),
+
     application:start(ibrowse),
 
     %% The IPs, port and path we'll be testing
@@ -55,7 +60,8 @@ new(Id) ->
     BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path} || Ip <- Ips]),
     BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
     
-    {ok, #state { base_urls = BaseUrls,
+    {ok, #state { client_id = ClientId,
+                  base_urls = BaseUrls,
                   base_urls_index = BaseUrlsIndex }}.
 
 
@@ -87,7 +93,7 @@ run(update, KeyGen, ValueGen, State) ->
 
         {ok, Url, Headers} ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
-            case do_put(Url, [Vclock], ValueGen) of
+            case do_put(Url, [State#state.client_id, Vclock], ValueGen) of
                 ok ->
                     disconnect(Url),
                     {ok, S2};
