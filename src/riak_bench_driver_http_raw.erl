@@ -144,7 +144,13 @@ connect(Url) ->
             erlang:put({ibrowse_pid, Url#url.host}, Pid),
             Pid;
         Pid ->
-            Pid
+            case is_process_alive(Pid) of
+                true ->
+                    Pid;
+                false ->
+                    erlang:erase({ibrowse_pid, Url#url.host}),
+                    connect(Url)
+            end
     end.
 
 
