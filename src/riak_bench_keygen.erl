@@ -46,5 +46,7 @@ dimension({uniform_int_bin, MaxKey}) ->
     MaxKey;
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
+dimension({pareto_int, _, _}) ->
+    0.0;
 dimension(Other) ->
     ?FAIL_MSG("Unsupported key generator dimension requested: ~p\n", [Other]).
