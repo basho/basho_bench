@@ -38,6 +38,7 @@
                  start_time,
                  last_write_time,
                  report_interval,
+                 errors_since_last_report = false,
                  summary_file}).
 
 %% Tracks latencies up to 5 secs w/ 250 us resolution
@@ -94,7 +95,7 @@ init([]) ->
 handle_call(run, _From, State) ->
     %% Schedule next report
     Now = now(),
-    erlang:send_after(State#state.report_interval, self(), report),    
+    erlang:send_after(State#state.report_interval, self(), report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 
 handle_call({op, Op, ok, ElapsedUs}, _From, State) ->
@@ -103,10 +104,9 @@ handle_call({op, Op, ok, ElapsedUs}, _From, State) ->
     erlang:put({latencies, Op}, Hist),
     {reply, ok, State};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
-    ?ERROR("~p: ~p\n", [Op, Reason]),
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
-    {reply, ok, State}.
+    {reply, ok, State#state { errors_since_last_report = true }}.
 
 handle_cast(_, State) ->
     {noreply, State}.
@@ -116,7 +116,7 @@ handle_info(report, State) ->
     Now = now(),
     Elapsed = trunc(timer:now_diff(Now, State#state.start_time) / 1000000),
     Window  = trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000),
-    
+
     %% Time to report latency data to our CSV files
     {Oks, Errors} = lists:foldl(fun(Op, {TotalOks, TotalErrors}) ->
                                         {Oks, Errors} = report_latency(Elapsed, Window, Op),
@@ -135,9 +135,17 @@ handle_info(report, State) ->
                               Oks,
                               Errors])),
 
+    %% Dump current error counts to console
+    case (State#state.errors_since_last_report) of
+        true ->
+            ?INFO("Errors:~p\n", [ets:tab2list(riak_bench_errors)]);
+        false ->
+            ok
+    end,
+
     %% Schedule next report
-    erlang:send_after(State#state.report_interval, self(), report),    
-    {noreply, State#state { last_write_time = Now}}.
+    erlang:send_after(State#state.report_interval, self(), report),
+    {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
