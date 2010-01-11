@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(riak_bench_driver_http_raw).
@@ -56,10 +56,19 @@ new(Id) ->
     Port = riak_bench_config:get(http_raw_port, 8098),
     Path = riak_bench_config:get(http_raw_path, "/raw/test"),
 
-    %% Construct list of urls and then convert to tuple
-    BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path} || Ip <- Ips]),
-    BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
-    
+    %% If there are multiple URLs, convert the list to a tuple so we can efficiently
+    %% round-robin through them.
+    case length(Ips) of
+        1 ->
+            [Ip] = Ips,
+            BaseUrls = #url { host = Ip, port = Port, path = Path },
+            BaseUrlsIndex = 1;
+        _ ->
+            BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path}
+                                       || Ip <- Ips]),
+            BaseUrlsIndex = random:uniform(tuple_size(BaseUrls))
+    end,
+
     {ok, #state { client_id = ClientId,
                   base_urls = BaseUrls,
                   base_urls_index = BaseUrlsIndex }}.
@@ -84,10 +93,8 @@ run(update, KeyGen, ValueGen, State) ->
         {not_found, Url} ->
             case do_put(Url, [], ValueGen) of
                 ok ->
-                    disconnect(Url),
                     {ok, S2};
                 {error, Reason} ->
-                    disconnect(Url),
                     {error, Reason, S2}
             end;
 
@@ -95,10 +102,8 @@ run(update, KeyGen, ValueGen, State) ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
             case do_put(Url, [State#state.client_id, Vclock], ValueGen) of
                 ok ->
-                    disconnect(Url),
                     {ok, S2};
                 {error, Reason} ->
-                    disconnect(Url),
                     {error, Reason, S2}
             end
     end.
@@ -108,6 +113,8 @@ run(update, KeyGen, ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
+next_url(State) when is_record(State#state.base_urls, url) ->
+    {State#state.base_urls, State};
 next_url(State) when State#state.base_urls_index > tuple_size(State#state.base_urls) ->
     { element(1, State#state.base_urls),
       State#state { base_urls_index = 1 } };
@@ -124,7 +131,10 @@ do_get(BaseUrl, KeyGen) ->
             {ok, Url, Headers};
         {ok, "200", Headers, _Body} ->
             {ok, Url, Headers};
+        {ok, Code, _Headers, _Body} ->
+            {error, {http_error, Code}};
         {error, Reason} ->
+            disconnect(Url),
             {error, Reason}
     end.
 
@@ -132,11 +142,15 @@ do_put(Url, Headers, ValueGen) ->
     case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
                       put, ValueGen(), [{response_format, binary}]) of
         {ok, "204", _Header, _Body} ->
-            ok;
+            Res = ok;
+        {ok, Code, _Header, _Body} ->
+            Res = {error, {http_error, Code}};
         {error, Reason} ->
-            {error, Reason}
-    end.
-            
+            Res = {error, Reason}
+    end,
+    disconnect(Url),
+    Res.
+
 connect(Url) ->
     case erlang:get({ibrowse_pid, Url#url.host}) of
         undefined ->
@@ -166,13 +180,20 @@ disconnect(Url) ->
 
 
 send_request(Url, Headers, Method, Body, Options) ->
+    send_request(Url, Headers, Method, Body, Options, 3).
+
+send_request(Url, Headers, Method, Body, Options, 0) ->
+    {error, max_retries};
+send_request(Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Url),
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 15000)) of    
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 15000)) of
         {'EXIT', {timeout, _}} ->
             {error, req_timedout};
         {'EXIT', Reason} ->
             {error, {'EXIT', Reason}};
+        {error, connection_closed} ->
+            disconnect(Url),
+            send_request(Url, Headers, Method, Body, Options);
         Other ->
             Other
     end.
-              
