@@ -10,28 +10,35 @@
              riak_bench_driver_innodb,
              riak_bench_driver_null,
              riak_bench_log,
-             riak_bench_keygen,              
+             riak_bench_keygen,
              riak_bench_stats,
              riak_bench_sup,
              riak_bench_worker,
              riak_bench_valgen
              ]},
   {registered, [ riak_bench_sup ]},
-  {applications, [kernel, 
-                  stdlib, 
+  {applications, [kernel,
+                  stdlib,
                   sasl]},
   {mod, {riak_bench_app, []}},
   {env, [
          %%
+         %% Mode of load generation:
+         %% max - Generate as many requests as possible per worker
+         %% {rate, Rate} - Exp. distributed Mean reqs/sec
+         %%
+         {mode, {rate, 5}},
+
+         %%
          %% Default log level
          %%
          {log_level, debug},
-         
+
          %%
          %% Base test output directory
          %%
          {test_dir, "tests"},
-         
+
          %%
          %% Test duration (minutes)
          %%

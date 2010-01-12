@@ -72,7 +72,7 @@ init([Id]) ->
     process_flag(trap_exit, true),
     {A1, A2, A3} = riak_bench_config:get(rng_seed),
     RngSeed = {A1+Id, A2+Id, A3+Id},
-    
+
     %% Pull all config settings from environment
     Driver  = riak_bench_config:get(driver),
     Ops     = ops_tuple(),
@@ -83,7 +83,7 @@ init([Id]) ->
     ValGen = riak_bench_valgen:new(riak_bench_config:get(value_generator), Id),
 
     State = #state { id = Id, keygen = KeyGen, valgen = ValGen,
-                     driver = Driver, 
+                     driver = Driver,
                      ops = Ops, ops_len = size(Ops),
                      rng_seed = RngSeed },
 
@@ -101,7 +101,7 @@ init([Id]) ->
         driver_ready ->
             ok
     end,
-    
+
     %% If the system is marked as running this is a restart; queue up the run
     %% message for this worker
     case riak_bench_app:is_running() of
@@ -145,11 +145,8 @@ code_change(_OldVsn, State, _Extra) ->
 ops_tuple() ->
     Ops = [lists:duplicate(Count, Op) || {Op, Count} <- riak_bench_config:get(operations)],
     list_to_tuple(lists:flatten(Ops)).
-                                             
 
-%%
-%% Sub-process entry point that does the actual load gen
-%%
+
 worker_init(State) ->
     random:seed(State#state.rng_seed),
     worker_idle_loop(State).
@@ -169,11 +166,20 @@ worker_idle_loop(State) ->
             end,
             worker_idle_loop(State#state { driver_state = DriverState });
         run ->
-            io:format("Worker runloop starting!\n"),
-            worker_run_loop(State)
+            case riak_bench_config:get(mode) of
+                max ->
+                    io:format("Max Worker runloop starting!\n"),
+                    max_worker_run_loop(State);
+                {rate, Rate} ->
+                    %% Calculate mean interarrival time in in milliseconds. A
+                    %% fixed rate worker can generate (at max) only 1k req/sec.
+                    MeanArrival = 1000 / Rate,
+                    io:format("Fixed Rate Worker runloop starting: ~w ms/req\n", [MeanArrival]),
+                    rate_worker_run_loop(State, 1 / MeanArrival)
+            end
     end.
 
-worker_run_loop(State) ->
+worker_next_op(State) ->
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
     Start = now(),
     Result = (catch (State#state.driver):run(Next, State#state.keygen, State#state.valgen,
@@ -183,19 +189,36 @@ worker_run_loop(State) ->
         {ok, DriverState} ->
             %% Success
             riak_bench_stats:op_complete(Next, ok, ElapsedUs),
-            worker_run_loop(State#state { driver_state = DriverState });
+            {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             riak_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
-            worker_run_loop(State#state { driver_state = DriverState });
-        
+            {ok, State#state { driver_state = DriverState}};
+
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
             riak_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
-            ?ERROR("Driver ~p crashed: ~p\n", [State#state.driver, Reason])
+            ?ERROR("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
+            error
     end.
 
-    
-    
+max_worker_run_loop(State) ->
+    case worker_next_op(State) of
+        {ok, State2} ->
+            max_worker_run_loop(State2);
+        error ->
+            error
+    end.
+
+rate_worker_run_loop(State, Lambda) ->
+    %% Delay between runs using exponentially distributed delays to mimic
+    %% queue.
+    timer:sleep(trunc(stats_rv:exponential(Lambda))),
+    case worker_next_op(State) of
+        {ok, State2} ->
+            rate_worker_run_loop(State2, Lambda);
+        error ->
+            error
+    end.
