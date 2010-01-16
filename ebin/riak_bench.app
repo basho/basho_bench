@@ -8,6 +8,7 @@
              riak_bench_driver_dets,
              riak_bench_driver_http_raw,
              riak_bench_driver_innodb,
+             riak_bench_driver_coucher,
              riak_bench_driver_null,
              riak_bench_log,
              riak_bench_keygen,
