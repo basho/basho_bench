@@ -1,0 +1,7 @@
+To get stats:
+
+(cd tests/current && R --vanilla < ../../priv/riak_bench.r)
+
+That will generate:
+
+tests/current/results.png
