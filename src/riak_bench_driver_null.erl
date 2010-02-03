@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(riak_bench_driver_null).
@@ -33,14 +33,14 @@
 new(_Id) ->
     {ok, undefined}.
 
-run(get, KeyGen, ValueGen, State) ->
+run(get, KeyGen, _ValueGen, _State) ->
     Key = KeyGen(),
     {ok, Key};
-run(put, KeyGen, ValueGen, State) ->
+run(put, KeyGen, ValueGen, _State) ->
     Key = KeyGen(),
-    Value = ValueGen(),
+    ValueGen(),
     {ok, Key};
-run(delete, KeyGen, ValueGen, State) ->
+run(delete, KeyGen, _ValueGen, _State) ->
     Key = KeyGen(),
     {ok, Key}.
-    
+

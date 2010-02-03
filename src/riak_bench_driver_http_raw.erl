@@ -182,7 +182,7 @@ disconnect(Url) ->
 send_request(Url, Headers, Method, Body, Options) ->
     send_request(Url, Headers, Method, Body, Options, 3).
 
-send_request(Url, Headers, Method, Body, Options, 0) ->
+send_request(_Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Url),
@@ -193,7 +193,7 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
             {error, {'EXIT', Reason}};
         {error, connection_closed} ->
             disconnect(Url),
-            send_request(Url, Headers, Method, Body, Options);
+            send_request(Url, Headers, Method, Body, Options, Count-1);
         Other ->
             Other
     end.

@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(riak_bench_valgen).
@@ -33,11 +33,11 @@
 %% API
 %% ====================================================================
 
-new({fixed_bin, Size}, Id) ->
+new({fixed_bin, Size}, _Id) ->
     Source = crypto:rand_bytes(?SOURCE_SIZE),
     MaxOffset = ?SOURCE_SIZE - ?BLOCK_SIZE,
     fun() -> fixed_bin(Source, MaxOffset, Size, <<>>) end;
-new(Other, Id) ->
+new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 
 dimension({fixed_bin, Size}, KeyDimension) ->
