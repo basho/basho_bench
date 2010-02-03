@@ -26,6 +26,10 @@
 
 -include("riak_bench.hrl").
 
+-record(state, { client,
+                 bucket,
+                 replies }).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -34,14 +38,17 @@ new(Id) ->
     %% Make sure the path is setup such that we can get at riak_client
     case code:which(riak_client) of
         non_existing ->
-            ?FAIL_MSG("~s requires riak_client module to be available on code path.\n", [?MODULE]);
+            ?FAIL_MSG("~s requires riak_client module to be available on code path.\n",
+                      [?MODULE]);
         _ ->
             ok
     end,
 
-    Nodes = riak_bench_config:get(riakclient_nodes),
-    Cookie = riak_bench_config:get(riakclient_cookie, 'riak'),
-    MyNode = riak_bench_config:get(riakclient_mynode, [riak_bench, longnames]),
+    Nodes   = riak_bench_config:get(riakclient_nodes),
+    Cookie  = riak_bench_config:get(riakclient_cookie, 'riak'),
+    MyNode  = riak_bench_config:get(riakclient_mynode, [riak_bench, longnames]),
+    Replies = riak_bench_config:get(riakclient_replies, 2),
+    Bucket  = riak_bench_config:get(riakclient_bucket, <<"test">>),
 
     %% Try to spin up net_kernel
     case net_kernel:start(MyNode) of
@@ -61,33 +68,64 @@ new(Id) ->
 
     %% Choose the node using our ID as a modulus
     TargetNode = lists:nth(Nodes, (Id+1) rem length(Nodes)),
-    ?INFO_MSG("Using target node ~p for worker ~p\n", [TargetNode, Id]),
+    ?INFO("Using target node ~p for worker ~p\n", [TargetNode, Id]),
 
     case riak:client_connect(TargetNode) of
         {ok, Client} ->
-            {ok, Client};
-        {error, Reason} ->
-            ?FAIL_MSG("Failed get a riak:client_connect to ~p: ~p\n", [TargetNode, Reason])
+            {ok, #state { client = Client,
+                          bucket = Bucket,
+                          replies = Replies }};
+        {error, Reason2} ->
+            ?FAIL_MSG("Failed get a riak:client_connect to ~p: ~p\n", [TargetNode, Reason2])
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    case dets:lookup(?MODULE, Key) of
-        [] ->
+    case (State#state.client):get(State#state.bucket, Key, State#state.replies) of
+        {ok, _} ->
             {ok, State};
-        [{Key, _}] ->
+        {error, notfound} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    ok = dets:insert(?MODULE, {KeyGen(), ValueGen()}),
-    {ok, State};
+    Robj = riak_object:new(State#state.bucket, KeyGen(), ValueGen()),
+    case (State#state.client):put(Robj, State#state.replies) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(update, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    case (State#state.client):get(State#state.bucket, Key, State#state.replies) of
+        {ok, Robj} ->
+            Robj2 = riak_object:update_value(Robj, ValueGen()),
+            case (State#state.client):put(Robj2, State#state.replies) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, notfound} ->
+            Robj = riak_object:new(State#state.bucket, Key, ValueGen()),
+            case (State#state.client):put(Robj, State#state.replies) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
+    end;
 run(delete, KeyGen, _ValueGen, State) ->
-    ok = dets:delete(?MODULE, KeyGen()),
-    {ok, State}.
-
-
+    case (State#state.client):delete(State#state.bucket, KeyGen(), State#state.replies) of
+        ok ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
 
 
 %% ====================================================================
