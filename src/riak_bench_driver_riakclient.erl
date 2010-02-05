@@ -67,7 +67,7 @@ new(Id) ->
     ping_each(Nodes),
 
     %% Choose the node using our ID as a modulus
-    TargetNode = lists:nth(Nodes, (Id+1) rem length(Nodes)),
+    TargetNode = lists:nth((Id rem length(Nodes)+1), Nodes),
     ?INFO("Using target node ~p for worker ~p\n", [TargetNode, Id]),
 
     case riak:client_connect(TargetNode) of
