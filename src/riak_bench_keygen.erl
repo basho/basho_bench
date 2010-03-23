@@ -32,6 +32,8 @@
 
 new({uniform_int_bin, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
+new({uniform_int_str, MaxKey}, _Id) ->
+    fun() -> Key = random:uniform(MaxKey), integer_to_list(Key) end;
 new({uniform_int, MaxKey}, _Id) ->
     fun() -> random:uniform(MaxKey) end;
 new({pareto_int, Mean, Shape}, _Id) ->
@@ -43,6 +45,8 @@ new(Other, _Id) ->
 
 
 dimension({uniform_int_bin, MaxKey}) ->
+    MaxKey;
+dimension({uniform_int_str, MaxKey}) ->
     MaxKey;
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
