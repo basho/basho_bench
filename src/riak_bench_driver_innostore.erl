@@ -46,8 +46,8 @@ new(_Id) ->
     InnoConfig = riak_bench_config:get(innostore_config, []),
     [ok = application:set_env(innostore, K, V) || {K, V} <- InnoConfig],
 
-    Bucket = riak_config:get(innostore_bucket, <<"test">>),
-    Port = innostore:connect(),
+    Bucket = riak_bench_config:get(innostore_bucket, <<"test">>),
+    {ok, Port} = innostore:connect(),
     case innostore:open_keystore(Bucket, Port) of
         {ok, Store} ->
             {ok, Store};
