@@ -10,6 +10,7 @@
              riak_bench_driver_innostore,
              riak_bench_driver_riakclient,
              riak_bench_driver_cassandra,
+             riak_bench_driver_bitcask,
              riak_bench_driver_null,
              riak_bench_log,
              riak_bench_keygen,
