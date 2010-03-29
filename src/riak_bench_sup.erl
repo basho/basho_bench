@@ -67,5 +67,5 @@ worker_specs(0, Acc) ->
 worker_specs(Count, Acc) ->
     Id = list_to_atom(lists:concat(['riak_bench_worker_', Count])),
     Spec = {Id, {riak_bench_worker, start_link, [Count]},
-            permanent, 5000, worker, [riak_bench_worker]},
+            transient, 5000, worker, [riak_bench_worker]},
     worker_specs(Count-1, [Spec | Acc]).
