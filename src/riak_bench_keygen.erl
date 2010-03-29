@@ -30,6 +30,12 @@
 %% API
 %% ====================================================================
 
+new({sequential_int, MaxKey}, _Id) ->
+    Ref = make_ref(),
+    fun() -> sequential_int_generator(Ref, MaxKey) end;
+new({sequential_int_bin, MaxKey}, _Id) ->
+    Ref = make_ref(),
+    fun() -> Key = sequential_int_generator(Ref, MaxKey), <<Key:32/native>> end;
 new({uniform_int_bin, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
 new({uniform_int_str, MaxKey}, _Id) ->
@@ -44,6 +50,10 @@ new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
 
+dimension({sequential_int, MaxKey}) ->
+    MaxKey;
+dimension({sequential_int_bin, MaxKey}) ->
+    MaxKey;
 dimension({uniform_int_bin, MaxKey}) ->
     MaxKey;
 dimension({uniform_int_str, MaxKey}) ->
@@ -54,3 +64,25 @@ dimension({pareto_int, _, _}) ->
     0.0;
 dimension(Other) ->
     ?FAIL_MSG("Unsupported key generator dimension requested: ~p\n", [Other]).
+
+
+
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+sequential_int_generator(Ref, MaxValue) ->
+   %% A bit of evil here. We want to generate numbers in sequence and stop
+   %% at MaxKey. This means we need state in our anonymous function. Use the process
+   %% dictionary to keep track of where we are.
+   case erlang:get({sigen, Ref}) of
+       undefined ->
+           erlang:put({sigen, Ref}, 1),
+           0;
+       MaxValue ->
+           throw({stop, empty_keygen});
+       Value ->
+           erlang:put({sigen, Ref}, Value+1),
+           Value
+   end.
