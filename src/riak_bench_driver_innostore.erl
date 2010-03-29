@@ -43,6 +43,7 @@ new(_Id) ->
     %% Pull the innodb_config key which has all the key/value pairs for the innostore
     %% engine -- stuff everything into the innostore application namespace
     %% so that starting innostore will pull it in.
+    application:load(innostore),
     InnoConfig = riak_bench_config:get(innostore_config, []),
     [ok = application:set_env(innostore, K, V) || {K, V} <- InnoConfig],
 
