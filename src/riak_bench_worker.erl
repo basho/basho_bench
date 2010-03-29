@@ -40,6 +40,7 @@
                  ops,
                  ops_len,
                  rng_seed,
+                 parent_pid,
                  worker_pid }).
 
 -include("riak_bench.hrl").
@@ -85,7 +86,8 @@ init([Id]) ->
     State = #state { id = Id, keygen = KeyGen, valgen = ValGen,
                      driver = Driver,
                      ops = Ops, ops_len = size(Ops),
-                     rng_seed = RngSeed },
+                     rng_seed = RngSeed,
+                     parent_pid = self() },
 
     %% Use a dedicated sub-process to do the actual work. The work loop may need
     %% to sleep or otherwise delay in a way that would be inappropriate and/or
@@ -118,7 +120,7 @@ handle_call(run, _From, State) ->
     State#state.worker_pid ! run,
     {reply, ok, State};
 handle_call(stop, _From, State) ->
-    {stop, normal, ok, State}.
+    {stop, shutdown, ok, State}.
 
 handle_cast(run, State) ->
     State#state.worker_pid ! run,
@@ -201,6 +203,13 @@ worker_next_op(State) ->
             %% the corresponding worker which will get restarted by the appropriate supervisor.
             riak_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
             ?ERROR("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
+            error;
+
+        {stop, Reason} ->
+            %% Driver (or something within it) has requested that this worker
+            %% terminate cleanly.
+            ?INFO("Driver ~p (~p) has requested stop: ~p\n", [State#state.driver, self(), Reason]),
+            gen_server:call(State#state.parent_pid, stop),
             error
     end.
 
