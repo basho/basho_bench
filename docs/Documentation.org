@@ -1,7 +1,7 @@
 #+SETUPFILE: html-style.org
 #+SETUPFILE: pdf-style.org
-#+TITLE:     Riak Bench 0.1
-#+AUTHOR:    Dave Smith / Rusty Klophaus
+#+TITLE:     Riak Bench 0.1 Documentation
+#+AUTHOR:    Dave Smith (code) / Rusty Klophaus (docs)
 #+EMAIL:     dizzyd@basho.com, rusty@basho.com
 
 * Overview
