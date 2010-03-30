@@ -1,0 +1,38 @@
+#+STYLE: <style>
+#+STYLE: h1.title {
+#+STYLE:     font-family:'HelveticaNeue-Light','Helvetica Neue Light','Helvetica Neue',Arial,Helvetica,sans-serif;
+#+STYLE:     padding: 20px;
+#+STYLE:     font-size: 3em;
+#+STYLE:     line-height: 3em;
+#+STYLE:     font-weight: 300;
+#+STYLE:     border-bottom: solid 1px black;
+#+STYLE: }
+#+STYLE:  
+#+STYLE: h2 {
+#+STYLE:     font-family:'HelveticaNeue-Light','Helvetica Neue Light','Helvetica Neue',Arial,Helvetica,sans-serif;
+#+STYLE:     font-size: 1.8em;
+#+STYLE:     line-height: 1.8em;
+#+STYLE:     font-weight:300;
+#+STYLE:     padding: 20px 0px 0px 0px;
+#+STYLE: }
+#+STYLE:  
+#+STYLE: h3 {
+#+STYLE:     font-family:'HelveticaNeue-Light','Helvetica Neue Light','Helvetica Neue',Arial,Helvetica,sans-serif;
+#+STYLE:     font-size:1.4em;
+#+STYLE:     line-height: 1.4em;
+#+STYLE:     font-weight:300;
+#+STYLE:     color: #306990
+#+STYLE: }
+#+STYLE:  
+#+STYLE: body {
+#+STYLE:     font-family: "Helvetica", San-Serif;
+#+STYLE:     font-size: 90%;
+#+STYLE:     line-height: 160%;
+#+STYLE:     margin: 50px;
+#+STYLE: }
+#+STYLE:  
+#+STYLE: li { padding: 3px 0px 3px 0px; }
+#+STYLE:  
+#+STYLE: a { text-decoration: none; }
+#+STYLE: a:hover { text-decoration: underline; }
+#+STYLE: </style>
