@@ -5,6 +5,7 @@
 #+EMAIL:     dizzyd@basho.com, rusty@basho.com
 
 * Overview
+** Purpose
 
   Riak Bench is a benchmarking tool created to conduct accurate and
   repeatable performance tests and stress tests, and produce performance graphs.
@@ -14,6 +15,53 @@
   been extended to serve as a benchmarking tool against a variety of
   projects. New drivers can be written in Erlang and are generally
   less than 200 lines of code.
+
+** How does it work?
+
+   When Riak Bench starts (riak\_bench.erl), it reads the
+   configuration (riak\_bench\_config.erl), creates a new results
+   directory, then sets up the
+   test. (riak\_bench\_app.erl/riak\_bench\_sup.erl)
+
+   During test setup, Riak Bench creates:
+ 
+   + One *log process* (riak\_bench\_log.erl). During startup, this
+     creates a new /log.txt/ file in the currently results directory, to
+     which output is logged at the specified logging level.
+     
+   + One *stats process* (riak\_bench\_stats.erl). This receieves
+     notifications when an operation completes, plus the elapsed time
+     of the operation, and stores it in a histogram. At regular
+     intervals, the histograms are dumped to /summary.csv/.
+  
+   + N *child workers*, where N is specified by the /concurrent/
+     configuration setting. (riak\_bench\_worker.erl). The worker process
+     wraps a driver module, specified by the /driver/ configuration
+     setting, calling the appropriate operations at the configured intervals.
+  
+   Once these processes have been created and initialized, Riak Bench
+   sends a run command to all worker processes, causing them to begin
+   the test. Each process acts independently in a semi-random
+   fashion. Each benchmark tests is started with a predifined random
+   seed, so the operations occur in a random order, but the sequence of
+   operations will be exactly the same if the same benchmark is run
+   again with the same settings.
+  
+   During the test, the worker processes repeatedly call Driver:run/4,
+   passing in the next operation to run, a keygen function, a valuegen
+   function, and the last state of the driver.
+  
+   The driver runs the operation, and returns ={ok, NewState}=,
+   ={error, Reason, NewState}=, ={'EXIT', Reason}=, or ={stop,
+   Reason}=. The worker process times the operation, and reports this
+   to the stats process when the operation has completed.
+  
+   Finally, once the test has been run for the specified duration, in
+   minutes, specified in the config file, all workers and stats
+   processes are told to stop, and the benchmark ends.
+  
+   At this point, results can be found in /./tests/current/. Previous
+   results are in timestamped directories of the form /./tests/YYYYMMDD-HHMMSS/.
 
 * Installation
 
@@ -304,48 +352,3 @@
 
   See the existing drivers for more details.
 
-* Architecture
-
-  When Riak Bench starts (riak\_bench.erl), it reads the configuration
-  (riak\_bench\_config.erl), creates a new results directory, then
-  sets up the test. (riak\_bench\_app.erl/riak\_bench\_sup.erl)
-
-  During test setup, Riak Bench creates:
- 
-  + One *log process* (riak\_bench\_log.erl). During startup, this
-    creates a new /log.txt/ file in the currently results directory, to
-    which output is logged at the specified logging level.
-    
-  + One *stats process* (riak\_bench\_stats.erl). This receieves
-    notifications when an operation completes, plus the elapsed time
-    of the operation, and stores it in a histogram. At regular
-    intervals, the histograms are dumped to /summary.csv/.
-
-  + N *child workers*, where N is specified by the /concurrent/
-    configuration setting. (riak\_bench\_worker.erl). The worker process
-    wraps a driver module, specified by the /driver/ configuration
-    setting, calling the appropriate operations at the configured intervals.
-
-  Once these processes have been created and initialized, Riak Bench
-  sends a run command to all worker processes, causing them to begin
-  the test. Each process acts independently in a semi-random
-  fashion. Each benchmark tests is started with a predifined random
-  seed, so the operations occur in a random order, but the sequence of
-  operations will be exactly the same if the same benchmark is run
-  again with the same settings.
-
-  During the test, the worker processes repeatedly call Driver:run/4,
-  passing in the next operation to run, a keygen function, a valuegen
-  function, and the last state of the driver.
-
-  The driver runs the operation, and returns ={ok, NewState}=,
-  ={error, Reason, NewState}=, ={'EXIT', Reason}=, or ={stop,
-  Reason}=. The worker process times the operation, and reports this
-  to the stats process when the operation has completed.
-
-  Finally, once the test has been run for the specified duration, in
-  minutes, specified in the config file, all workers and stats
-  processes are told to stop, and the benchmark ends.
-
-  At this point, results can be found in /./tests/current/. Previous
-  results are in timestamped directories of the form /./tests/YYYYMMDD-HHMMSS/.
