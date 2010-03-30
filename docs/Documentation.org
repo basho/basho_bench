@@ -39,7 +39,10 @@
   
   : ./riak_bench myconfig.config
 
-  This will generate results in /tests/current/.
+  This will generate results in /tests/current/. You will need to
+  create a configuration file. The recommended approach is to start
+  from a file in the /examples/ directory and modify settings using the
+  /Configuration/ section below for reference.
 
 * Generating Benchmark Graphs
 
