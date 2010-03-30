@@ -56,9 +56,9 @@
    Reason}=. The worker process times the operation, and reports this
    to the stats process when the operation has completed.
   
-   Finally, once the test has been run for the specified duration, in
-   minutes, specified in the config file, all workers and stats
-   processes are told to stop, and the benchmark ends.
+   Finally, once the test has been run for the duration specified in
+   the config file, all workers and stats processes are told to stop,
+   and the benchmark ends.
   
    At this point, results can be found in /./tests/current/. Previous
    results are in timestamped directories of the form /./tests/YYYYMMDD-HHMMSS/.
