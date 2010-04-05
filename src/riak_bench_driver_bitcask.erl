@@ -26,6 +26,10 @@
 
 -include("riak_bench.hrl").
 
+-record(state, { file,
+                 sync_interval,
+                 last_sync }).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -40,24 +44,59 @@ new(_Id) ->
             ok
     end,
 
-    case bitcask:open("test.bitcask", [read_write]) of
+    %% Get the target directory
+    Dir = riak_bench_config:get(bitcask_dir, "."),
+    Filename = filename:join(Dir, "test.bitcask"),
+
+    %% Look for sync interval config
+    case riak_bench_config:get(bitcask_sync_interval, infinity) of
+        Value when is_integer(Value) ->
+            SyncInterval = Value;
+        infinity ->
+            SyncInterval = infinity
+    end,
+
+    %% Get any bitcask flags
+    Flags = riak_bench_config:get(bitcask_flags, []),
+    case bitcask:open(Filename, [read_write] ++ Flags) of
         {ok, B} ->
-            {ok, B};
+            {ok, #state { file = B, sync_interval = SyncInterval,
+                          last_sync = os:timestamp() }};
         {error, Reason} ->
-            ?FAIL_MSG("Failed to open bitcask: ~p\n", [Reason])
+            ?FAIL_MSG("Failed to open bitcask in ~s: ~p\n", [Filename, Reason])
     end.
 
 
 
 run(get, KeyGen, _ValueGen, State) ->
-    case bitcask:get(State, KeyGen()) of
-        {ok, _Value, State1} ->
-            {ok, State1};
-        {not_found, State1} ->
-            {ok, State1};
+    State1 = maybe_sync(State),
+    case bitcask:get(State1#state.file, KeyGen()) of
+        {ok, _Value, File} ->
+            {ok, State1#state { file = File }};
+        {not_found, File} ->
+            {ok, State1#state { file = File }};
         {error, Reason} ->
             {error, Reason}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    {ok, State1} = bitcask:put(State, KeyGen(), ValueGen()).
+    State1 = maybe_sync(State),
+    case bitcask:put(State1#state.file, KeyGen(), ValueGen()) of
+        {ok, File} ->
+            {ok, State1#state { file = File }};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
+
+
+maybe_sync(#state { sync_interval = infinity } = State) ->
+    State;
+maybe_sync(#state { sync_interval = SyncInterval } = State) ->
+    Now = os:timestamp(),
+    case timer:now_diff(Now, State#state.last_sync) / 1000000 of
+        Value when Value >= SyncInterval ->
+            bitcask:sync(State#state.file),
+            State#state { last_sync = Now };
+        _ ->
+            State
+    end.
