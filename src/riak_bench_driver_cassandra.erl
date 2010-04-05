@@ -79,6 +79,8 @@ run(get, KeyGen, _ValueGen, State) ->
             {ok, State};
         {notFoundException} ->
             {ok, State};
+        {'EXIT', {timeout, _}} ->
+            {error, timeout, State};
         Error ->
             {error, Error, State}
     end;
@@ -87,6 +89,8 @@ run(put, KeyGen, ValueGen, State) ->
                               ValueGen(), tstamp(), 1]) of
         {ok, ok} ->
             {ok, State};
+        {'EXIT', {timeout, _}} ->
+            {error, timeout, State};
         Error ->
             {error, Error, State}
     end.
