@@ -36,6 +36,9 @@ new({sequential_int, MaxKey}, _Id) ->
 new({sequential_int_bin, MaxKey}, _Id) ->
     Ref = make_ref(),
     fun() -> Key = sequential_int_generator(Ref, MaxKey), <<Key:32/native>> end;
+new({sequential_int_str, MaxKey}, _Id) ->
+    Ref = make_ref(),
+    fun() -> Key = sequential_int_generator(Ref, MaxKey), integer_to_list(Key) end;
 new({uniform_int_bin, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
 new({uniform_int_str, MaxKey}, _Id) ->
@@ -46,6 +49,10 @@ new({pareto_int, Mean, Shape}, _Id) ->
     S1 = (-1 / Shape) - 1,
     S2 = Mean * (Shape - 1),
     fun() -> trunc(math:pow(1 - random:uniform(), S1) * S2) end;
+new({pareto_int_bin, Mean, Shape}, _Id) ->
+    S1 = (-1 / Shape) - 1,
+    S2 = Mean * (Shape - 1),
+    fun() -> Key = trunc(math:pow(1 - random:uniform(), S1) * S2), <<Key:32/native>> end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
@@ -54,6 +61,8 @@ dimension({sequential_int, MaxKey}) ->
     MaxKey;
 dimension({sequential_int_bin, MaxKey}) ->
     MaxKey;
+dimension({sequential_int_str, MaxKey}) ->
+    MaxKey;
 dimension({uniform_int_bin, MaxKey}) ->
     MaxKey;
 dimension({uniform_int_str, MaxKey}) ->
@@ -61,6 +70,8 @@ dimension({uniform_int_str, MaxKey}) ->
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
 dimension({pareto_int, _, _}) ->
+    0.0;
+dimension({pareto_int_bin, _, _}) ->
     0.0;
 dimension(Other) ->
     ?FAIL_MSG("Unsupported key generator dimension requested: ~p\n", [Other]).
