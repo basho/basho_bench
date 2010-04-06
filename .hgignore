@@ -1,5 +1,5 @@
 .beam
 tests/.*$
-riak_bench$
+basho_bench$
 erl_crash.dump$
 deps/.*$
