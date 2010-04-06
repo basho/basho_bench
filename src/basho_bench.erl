@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,11 +19,11 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench).
+-module(basho_bench).
 
 -export([main/1]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 %% ====================================================================
 %% API
@@ -31,24 +31,24 @@
 
 main([Config]) ->
     %% Load baseline config
-    ok = application:load(riak_bench),
+    ok = application:load(basho_bench),
 
     %% Load the config file
-    riak_bench_config:load(Config),
+    basho_bench_config:load(Config),
 
     %% Init code path
-    add_code_paths(riak_bench_config:get(code_paths, [])),
+    add_code_paths(basho_bench_config:get(code_paths, [])),
 
     %% Setup working directory for this test. All logs, stats, and config
     %% info will be placed here
     {ok, Cwd} = file:get_cwd(),
     TestId = id(),
-    TestDir = filename:join([Cwd, riak_bench_config:get(test_dir), TestId]),
+    TestDir = filename:join([Cwd, basho_bench_config:get(test_dir), TestId]),
     ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
-    riak_bench_config:set(test_id, TestId),
+    basho_bench_config:set(test_id, TestId),
 
     %% Create a link to the test dir for convenience
-    TestLink = filename:join([Cwd, riak_bench_config:get(test_dir), "current"]),
+    TestLink = filename:join([Cwd, basho_bench_config:get(test_dir), "current"]),
     [] = os:cmd(?FMT("rm -f ~s; ln -sf ~s ~s", [TestLink, TestDir, TestLink])),
 
     %% Copy the config into the test dir for posterity
@@ -60,15 +60,15 @@ main([Config]) ->
     log_dimensions(),
 
     %% Spin up the application
-    ok = riak_bench_app:start(),
+    ok = basho_bench_app:start(),
 
     %% Pull the runtime duration from the config and sleep until that's passed
-    Duration = timer:minutes(riak_bench_config:get(duration)) + timer:seconds(1),
+    Duration = timer:minutes(basho_bench_config:get(duration)) + timer:seconds(1),
     timer:sleep(Duration),
 
     ?CONSOLE("Test complete.\n", []),
 
-    riak_bench_app:stop().
+    basho_bench_app:stop().
 
 
 
@@ -114,7 +114,7 @@ user_friendly_bytes(Size) ->
                 {Size, bytes}, ['KB', 'MB', 'GB']).
 
 log_dimensions() ->
-    Keyspace = riak_bench_keygen:dimension(riak_bench_config:get(key_generator)),
-    Valspace = riak_bench_valgen:dimension(riak_bench_config:get(value_generator), Keyspace),
+    Keyspace = basho_bench_keygen:dimension(basho_bench_config:get(key_generator)),
+    Valspace = basho_bench_valgen:dimension(basho_bench_config:get(value_generator), Keyspace),
     {Size, Desc} = user_friendly_bytes(Valspace),
     ?INFO("Est. data size: ~.2f ~s\n", [Size, Desc]).

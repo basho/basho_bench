@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_stats).
+-module(basho_bench_stats).
 
 -behaviour(gen_server).
 
@@ -32,7 +32,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 -record(state, { ops,
                  start_time,
@@ -66,10 +66,10 @@ init([]) ->
     process_flag(trap_exit, true),
     
     %% Initialize an ETS table to track error and crash counters
-    ets:new(riak_bench_errors, [protected, named_table]),
+    ets:new(basho_bench_errors, [protected, named_table]),
 
     %% Get the list of operations we'll be using for this test
-    Ops = [Op || {Op, _} <- riak_bench_config:get(operations)],
+    Ops = [Op || {Op, _} <- basho_bench_config:get(operations)],
 
     %% Setup stats instance for each operation -- we only track latencies on
     %% successful operations
@@ -86,7 +86,7 @@ init([]) ->
     file:write(SummaryFile, <<"elapsed, window, total, successful, failed\n">>),
 
     %% Schedule next write/reset of data
-    ReportInterval = timer:seconds(riak_bench_config:get(report_interval)),
+    ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
     {ok, #state{ ops = Ops,
                  report_interval = ReportInterval,
@@ -138,7 +138,7 @@ handle_info(report, State) ->
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
         true ->
-            ?INFO("Errors:~p\n", [ets:tab2list(riak_bench_errors)]);
+            ?INFO("Errors:~p\n", [ets:tab2list(basho_bench_errors)]);
         false ->
             ok
     end,
@@ -151,7 +151,7 @@ terminate(_Reason, State) ->
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
 
-    ?CONSOLE("~p\n", [ets:tab2list(riak_bench_errors)]),
+    ?CONSOLE("~p\n", [ets:tab2list(basho_bench_errors)]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -172,16 +172,16 @@ op_csv_file(Op) ->
 increment_error_counter(Key) ->
     %% Increment the counter for this specific key. We have to deal with
     %% missing keys, so catch the update if it fails and init as necessary
-    case catch(ets:update_counter(riak_bench_errors, Key, 1)) of
+    case catch(ets:update_counter(basho_bench_errors, Key, 1)) of
         Value when is_integer(Value) ->
             ok;
         {'EXIT', _} ->
-            true = ets:insert_new(riak_bench_errors, {Key, 1}),
+            true = ets:insert_new(basho_bench_errors, {Key, 1}),
             ok
     end.
 
 error_counter(Key) ->
-    case catch(ets:lookup_element(riak_bench_errors, Key, 2)) of
+    case catch(ets:lookup_element(basho_bench_errors, Key, 2)) of
         {'EXIT', _} ->
             0;
         Value ->

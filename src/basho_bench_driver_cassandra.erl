@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_driver_cassandra).
+-module(basho_bench_driver_cassandra).
 
 -export([new/1,
          run/4]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 -include_lib("casbench/include/cassandra_thrift.hrl").
 
 -record(state, { client,
@@ -46,9 +46,9 @@ new(Id) ->
             ok
     end,
 
-    Hosts    = riak_bench_config:get(cassandra_hosts, ["localhost"]),
-    Port     = riak_bench_config:get(cassandra_port, 9160),
-    Keyspace = riak_bench_config:get(cassandra_keyspace, "Keyspace1"),
+    Hosts    = basho_bench_config:get(cassandra_hosts, ["localhost"]),
+    Port     = basho_bench_config:get(cassandra_port, 9160),
+    Keyspace = basho_bench_config:get(cassandra_keyspace, "Keyspace1"),
     ColPath  = #columnPath { column_family = "Standard1", column = "col1" },
 
     %% Choose the node using our ID as a modulus

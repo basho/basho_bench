@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_app).
+-module(basho_bench_app).
 
 -behaviour(application).
 
@@ -47,13 +47,13 @@ start() ->
     
     %% Start up our application -- mark it as permanent so that the node
     %% will be killed if we go down
-    application:start(riak_bench, permanent).
+    application:start(basho_bench, permanent).
 
 stop() ->
-    application:stop(riak_bench).
+    application:stop(basho_bench).
 
 is_running() ->
-    application:get_env(riak_bench_app, is_running) == {ok, true}.
+    application:get_env(basho_bench_app, is_running) == {ok, true}.
     
 
 %% ===================================================================
@@ -61,10 +61,10 @@ is_running() ->
 %%===================================================================
 
 start(_StartType, _StartArgs) ->
-    {ok, Pid} = riak_bench_sup:start_link(),
-    application:set_env(riak_bench_app, is_running, true),
-    ok = riak_bench_stats:run(),
-    ok = riak_bench_worker:run(riak_bench_sup:workers()),
+    {ok, Pid} = basho_bench_sup:start_link(),
+    application:set_env(basho_bench_app, is_running, true),
+    ok = basho_bench_stats:run(),
+    ok = basho_bench_worker:run(basho_bench_sup:workers()),
     {ok, Pid}.
     
 

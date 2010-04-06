@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_valgen).
+-module(basho_bench_valgen).
 
 -export([new/2,
          dimension/2]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 -define(SOURCE_SIZE, 4096).
 -define(BLOCK_SIZE, 512).

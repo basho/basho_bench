@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_log).
+-module(basho_bench_log).
 
 -behaviour(gen_server).
 
@@ -55,7 +55,7 @@ log(Level, Str, Args) ->
 %% ====================================================================
 
 init([]) ->
-    LogLevel = riak_bench_config:get(log_level),
+    LogLevel = basho_bench_config:get(log_level),
     {ok, LogFile} = file:open("log.txt", [raw, binary, write]),
     {ok, #state{ log_level = LogLevel,
                  log_file = LogFile }}.
@@ -89,7 +89,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% ===================================================================
 
 basic_log(Level, Str, Args) ->
-    {ok, LogLevel} = application:get_env(riak_bench, log_level),
+    {ok, LogLevel} = application:get_env(basho_bench, log_level),
     case should_log(LogLevel, Level) of
         true ->
             io:format(log_prefix(Level) ++ Str, Args);

@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_driver_riakclient).
+-module(basho_bench_driver_riakclient).
 
 -export([new/1,
          run/4]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 -record(state, { client,
                  bucket,
@@ -44,11 +44,11 @@ new(Id) ->
             ok
     end,
 
-    Nodes   = riak_bench_config:get(riakclient_nodes),
-    Cookie  = riak_bench_config:get(riakclient_cookie, 'riak'),
-    MyNode  = riak_bench_config:get(riakclient_mynode, [riak_bench, longnames]),
-    Replies = riak_bench_config:get(riakclient_replies, 2),
-    Bucket  = riak_bench_config:get(riakclient_bucket, <<"test">>),
+    Nodes   = basho_bench_config:get(riakclient_nodes),
+    Cookie  = basho_bench_config:get(riakclient_cookie, 'riak'),
+    MyNode  = basho_bench_config:get(riakclient_mynode, [basho_bench, longnames]),
+    Replies = basho_bench_config:get(riakclient_replies, 2),
+    Bucket  = basho_bench_config:get(riakclient_bucket, <<"test">>),
 
     %% Try to spin up net_kernel
     case net_kernel:start(MyNode) of

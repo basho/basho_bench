@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_driver_bitcask).
+-module(basho_bench_driver_bitcask).
 
 -export([new/1,
          run/4]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 -record(state, { file,
                  sync_interval,
@@ -45,11 +45,11 @@ new(_Id) ->
     end,
 
     %% Get the target directory
-    Dir = riak_bench_config:get(bitcask_dir, "."),
+    Dir = basho_bench_config:get(bitcask_dir, "."),
     Filename = filename:join(Dir, "test.bitcask"),
 
     %% Look for sync interval config
-    case riak_bench_config:get(bitcask_sync_interval, infinity) of
+    case basho_bench_config:get(bitcask_sync_interval, infinity) of
         Value when is_integer(Value) ->
             SyncInterval = Value;
         infinity ->
@@ -57,7 +57,7 @@ new(_Id) ->
     end,
 
     %% Get any bitcask flags
-    Flags = riak_bench_config:get(bitcask_flags, []),
+    Flags = basho_bench_config:get(bitcask_flags, []),
     case bitcask:open(Filename, [read_write] ++ Flags) of
         {ok, B} ->
             {ok, #state { file = B, sync_interval = SyncInterval,

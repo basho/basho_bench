@@ -1,29 +1,29 @@
-{application, riak_bench,
+{application, basho_bench,
  [{description, "Riak Benchmarking Suite"},
   {vsn, "0.1"},
   {modules, [
-             riak_bench,
-             riak_bench_app,
-             riak_bench_config,
-             riak_bench_driver_dets,
-             riak_bench_driver_http_raw,
-             riak_bench_driver_innostore,
-             riak_bench_driver_riakclient,
-             riak_bench_driver_cassandra,
-             riak_bench_driver_bitcask,
-             riak_bench_driver_null,
-             riak_bench_log,
-             riak_bench_keygen,
-             riak_bench_stats,
-             riak_bench_sup,
-             riak_bench_worker,
-             riak_bench_valgen
+             basho_bench,
+             basho_bench_app,
+             basho_bench_config,
+             basho_bench_driver_dets,
+             basho_bench_driver_http_raw,
+             basho_bench_driver_innostore,
+             basho_bench_driver_riakclient,
+             basho_bench_driver_cassandra,
+             basho_bench_driver_bitcask,
+             basho_bench_driver_null,
+             basho_bench_log,
+             basho_bench_keygen,
+             basho_bench_stats,
+             basho_bench_sup,
+             basho_bench_worker,
+             basho_bench_valgen
              ]},
-  {registered, [ riak_bench_sup ]},
+  {registered, [ basho_bench_sup ]},
   {applications, [kernel,
                   stdlib,
                   sasl]},
-  {mod, {riak_bench_app, []}},
+  {mod, {basho_bench_app, []}},
   {env, [
          %%
          %% Mode of load generation:
@@ -55,7 +55,7 @@
          %%
          %% Driver module for the current test
          %%
-         {driver, riak_bench_driver_http_raw},
+         {driver, basho_bench_driver_http_raw},
 
          %%
          %% Operations (and associated mix). Note that

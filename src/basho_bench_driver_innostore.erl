@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_driver_innostore).
+-module(basho_bench_driver_innostore).
 
 -export([new/1,
          run/4]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 %% ====================================================================
 %% API
@@ -44,10 +44,10 @@ new(_Id) ->
     %% engine -- stuff everything into the innostore application namespace
     %% so that starting innostore will pull it in.
     application:load(innostore),
-    InnoConfig = riak_bench_config:get(innostore_config, []),
+    InnoConfig = basho_bench_config:get(innostore_config, []),
     [ok = application:set_env(innostore, K, V) || {K, V} <- InnoConfig],
 
-    Bucket = riak_bench_config:get(innostore_bucket, <<"test">>),
+    Bucket = basho_bench_config:get(innostore_bucket, <<"test">>),
     {ok, Port} = innostore:connect(),
     case innostore:open_keystore(Bucket, Port) of
         {ok, Store} ->

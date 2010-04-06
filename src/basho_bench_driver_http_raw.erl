@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,12 +19,12 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_driver_http_raw).
+-module(basho_bench_driver_http_raw).
 
 -export([new/1,
          run/4]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 -record(url, {abspath, host, port, username, password, path, protocol}).
 
@@ -52,9 +52,9 @@ new(Id) ->
     application:start(ibrowse),
 
     %% The IPs, port and path we'll be testing
-    Ips  = riak_bench_config:get(http_raw_ips, ["127.0.0.1"]),
-    Port = riak_bench_config:get(http_raw_port, 8098),
-    Path = riak_bench_config:get(http_raw_path, "/raw/test"),
+    Ips  = basho_bench_config:get(http_raw_ips, ["127.0.0.1"]),
+    Port = basho_bench_config:get(http_raw_port, 8098),
+    Path = basho_bench_config:get(http_raw_path, "/raw/test"),
 
     %% If there are multiple URLs, convert the list to a tuple so we can efficiently
     %% round-robin through them.

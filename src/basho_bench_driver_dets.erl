@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -16,31 +16,41 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.
+%% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_driver_null).
+-module(basho_bench_driver_dets).
 
 -export([new/1,
          run/4]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 %% ====================================================================
 %% API
 %% ====================================================================
 
 new(_Id) ->
+    File = basho_bench_config:get(dets_file, ?MODULE),
+    {ok, _} = dets:open_file(?MODULE, [{file, File},
+                                       {min_no_slots, 8192},
+                                       {max_no_slots, 16777216}]),
     {ok, undefined}.
 
-run(get, KeyGen, _ValueGen, _State) ->
+run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    {ok, Key};
-run(put, KeyGen, ValueGen, _State) ->
-    Key = KeyGen(),
-    ValueGen(),
-    {ok, Key};
-run(delete, KeyGen, _ValueGen, _State) ->
-    Key = KeyGen(),
-    {ok, Key}.
-
+    case dets:lookup(?MODULE, Key) of
+        [] ->
+            {ok, State};
+        [{Key, _}] ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(put, KeyGen, ValueGen, State) ->
+    ok = dets:insert(?MODULE, {KeyGen(), ValueGen()}),
+    {ok, State};
+run(delete, KeyGen, _ValueGen, State) ->
+    ok = dets:delete(?MODULE, KeyGen()),
+    {ok, State}.
+    

@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_worker).
+-module(basho_bench_worker).
 
 -behaviour(gen_server).
 
@@ -43,7 +43,7 @@
                  parent_pid,
                  worker_pid }).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 %% ====================================================================
 %% API
@@ -71,17 +71,17 @@ init([Id]) ->
     %% NOTE: If the worker process dies, this obviously introduces some entroy
     %% into the equation since you'd be restarting the RNG all over.
     process_flag(trap_exit, true),
-    {A1, A2, A3} = riak_bench_config:get(rng_seed),
+    {A1, A2, A3} = basho_bench_config:get(rng_seed),
     RngSeed = {A1+Id, A2+Id, A3+Id},
 
     %% Pull all config settings from environment
-    Driver  = riak_bench_config:get(driver),
+    Driver  = basho_bench_config:get(driver),
     Ops     = ops_tuple(),
 
     %% Finally, initialize key and value generation. We pass in our ID to the
     %% initialization to enable (optional) key/value space partitioning
-    KeyGen = riak_bench_keygen:new(riak_bench_config:get(key_generator), Id),
-    ValGen = riak_bench_valgen:new(riak_bench_config:get(value_generator), Id),
+    KeyGen = basho_bench_keygen:new(basho_bench_config:get(key_generator), Id),
+    ValGen = basho_bench_valgen:new(basho_bench_config:get(value_generator), Id),
 
     State = #state { id = Id, keygen = KeyGen, valgen = ValGen,
                      driver = Driver,
@@ -106,7 +106,7 @@ init([Id]) ->
 
     %% If the system is marked as running this is a restart; queue up the run
     %% message for this worker
-    case riak_bench_app:is_running() of
+    case basho_bench_app:is_running() of
         true ->
             ?WARN("Restarting crashed worker.\n", []),
             gen_server:cast(self(), run);
@@ -145,7 +145,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Expand operations list into tuple suitable for weighted, random draw
 %%
 ops_tuple() ->
-    Ops = [lists:duplicate(Count, Op) || {Op, Count} <- riak_bench_config:get(operations)],
+    Ops = [lists:duplicate(Count, Op) || {Op, Count} <- basho_bench_config:get(operations)],
     list_to_tuple(lists:flatten(Ops)).
 
 
@@ -168,7 +168,7 @@ worker_idle_loop(State) ->
             end,
             worker_idle_loop(State#state { driver_state = DriverState });
         run ->
-            case riak_bench_config:get(mode) of
+            case basho_bench_config:get(mode) of
                 max ->
                     io:format("Max Worker runloop starting!\n"),
                     max_worker_run_loop(State);
@@ -190,18 +190,18 @@ worker_next_op(State) ->
     case Result of
         {ok, DriverState} ->
             %% Success
-            riak_bench_stats:op_complete(Next, ok, ElapsedUs),
+            basho_bench_stats:op_complete(Next, ok, ElapsedUs),
             {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
-            riak_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+            basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
             {ok, State#state { driver_state = DriverState}};
 
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
-            riak_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
+            basho_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
             ?ERROR("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
             error;
 

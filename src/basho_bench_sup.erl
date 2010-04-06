@@ -1,8 +1,8 @@
 %% -------------------------------------------------------------------
 %%
-%% riak_bench: Benchmarking Suite for Riak
+%% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2010 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -19,7 +19,7 @@
 %% under the License.    
 %%
 %% -------------------------------------------------------------------
--module(riak_bench_sup).
+-module(basho_bench_sup).
 
 -behaviour(supervisor).
 
@@ -30,7 +30,7 @@
 %% Supervisor callbacks
 -export([init/1]).
 
--include("riak_bench.hrl").
+-include("basho_bench.hrl").
 
 %% Helper macro for declaring children of supervisor
 -define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
@@ -43,7 +43,7 @@ start_link() ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
 workers() ->
-    [Pid || {_Id, Pid, worker, [riak_bench_worker]} <- supervisor:which_children(?MODULE)].
+    [Pid || {_Id, Pid, worker, [basho_bench_worker]} <- supervisor:which_children(?MODULE)].
 
 
 %% ===================================================================
@@ -53,9 +53,9 @@ workers() ->
 init([]) ->
     %% Get the number concurrent workers we're expecting and generate child
     %% specs for each
-    Workers = worker_specs(riak_bench_config:get(concurrent), []),
-    {ok, {{one_for_one, 5, 10}, [?CHILD(riak_bench_log, worker),
-                                 ?CHILD(riak_bench_stats, worker)] ++ Workers}}.
+    Workers = worker_specs(basho_bench_config:get(concurrent), []),
+    {ok, {{one_for_one, 5, 10}, [?CHILD(basho_bench_log, worker),
+                                 ?CHILD(basho_bench_stats, worker)] ++ Workers}}.
 
 
 %% ===================================================================
@@ -65,7 +65,7 @@ init([]) ->
 worker_specs(0, Acc) ->
     Acc;
 worker_specs(Count, Acc) ->
-    Id = list_to_atom(lists:concat(['riak_bench_worker_', Count])),
-    Spec = {Id, {riak_bench_worker, start_link, [Count]},
-            transient, 5000, worker, [riak_bench_worker]},
+    Id = list_to_atom(lists:concat(['basho_bench_worker_', Count])),
+    Spec = {Id, {basho_bench_worker, start_link, [Count]},
+            transient, 5000, worker, [basho_bench_worker]},
     worker_specs(Count-1, [Spec | Acc]).

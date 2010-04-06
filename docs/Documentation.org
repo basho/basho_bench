@@ -1,13 +1,13 @@
 #+SETUPFILE: html-style.org
 #+SETUPFILE: pdf-style.org
-#+TITLE:     Riak Bench 0.1 Documentation
+#+TITLE:     Basho Bench 0.1 Documentation
 #+AUTHOR:    Dave Smith (code) / Rusty Klophaus (docs)
 #+EMAIL:     dizzyd@basho.com, rusty@basho.com
 
 * Overview
 ** Purpose
 
-  Riak Bench is a benchmarking tool created to conduct accurate and
+  Basho Bench is a benchmarking tool created to conduct accurate and
   repeatable performance tests and stress tests, and produce performance graphs.
 
   Originally developed by Dave Smith (Dizzy) to benchmark Riak, Basho's
@@ -18,28 +18,28 @@
 
 ** How does it work?
 
-   When Riak Bench starts (riak\_bench.erl), it reads the
-   configuration (riak\_bench\_config.erl), creates a new results
+   When Basho Bench starts (basho\_bench.erl), it reads the
+   configuration (basho\_bench\_config.erl), creates a new results
    directory, then sets up the
-   test. (riak\_bench\_app.erl/riak\_bench\_sup.erl)
+   test. (basho\_bench\_app.erl/basho\_bench\_sup.erl)
 
-   During test setup, Riak Bench creates:
+   During test setup, Basho Bench creates:
  
-   + One *log process* (riak\_bench\_log.erl). During startup, this
+   + One *log process* (basho\_bench\_log.erl). During startup, this
      creates a new /log.txt/ file in the currently results directory, to
      which output is logged at the specified logging level.
      
-   + One *stats process* (riak\_bench\_stats.erl). This receieves
+   + One *stats process* (basho\_bench\_stats.erl). This receieves
      notifications when an operation completes, plus the elapsed time
      of the operation, and stores it in a histogram. At regular
      intervals, the histograms are dumped to /summary.csv/.
   
    + N *child workers*, where N is specified by the /concurrent/
-     configuration setting. (riak\_bench\_worker.erl). The worker process
+     configuration setting. (basho\_bench\_worker.erl). The worker process
      wraps a driver module, specified by the /driver/ configuration
      setting, calling the appropriate operations at the configured intervals.
   
-   Once these processes have been created and initialized, Riak Bench
+   Once these processes have been created and initialized, Basho Bench
    sends a run command to all worker processes, causing them to begin
    the test. Each process acts independently in a semi-random
    fashion. Each benchmark tests is started with a predifined random
@@ -72,20 +72,20 @@
 
 ** Building from Source
 
-  Riak Bench is currently available as source code only. To get the
-  latest code, clone the riak\_bench repository:
+  Basho Bench is currently available as source code only. To get the
+  latest code, clone the basho\_bench repository:
 
-  : hg clone ssh://hg@beachhead.bashotechnologies.net/riak_bench-0.1 riak_bench
-  : cd riak_bench
+  : hg clone ssh://hg@beachhead.bashotechnologies.net/basho_bench-0.1 basho_bench
+  : cd basho_bench
   : make
 
   *TODO: Put the code somewhere publicly accessible?*
 
 * Usage
 
-  Run riak\_bench:
+  Run basho\_bench:
   
-  : ./riak_bench myconfig.config
+  : ./basho_bench myconfig.config
 
   This will generate results in /tests/current/. You will need to
   create a configuration file. The recommended approach is to start
@@ -94,7 +94,7 @@
 
 * Generating Benchmark Graphs
 
-  The output of riak\_bench can be used to create graphs showing:
+  The output of basho\_bench can be used to create graphs showing:
   
   + Throughput - Requests per second over time.
 
@@ -126,17 +126,17 @@
    results and invoking the R command.
 
    : cd tests/current
-   : R --vanilla < ../../priv/riak_bench.r
+   : R --vanilla < ../../priv/basho_bench.r
 
 * Configuration
 
-  Riak Bench ships with a number of sample configuration files,
+  Basho Bench ships with a number of sample configuration files,
   available in the /examples/ directory.
 
 ** Global Config Settings
 *** mode
     
-    The *mode* setting determines whether riak\_bench pounds the
+    The *mode* setting determines whether basho\_bench pounds the
     application under test as quickly as possible, or instead spaces
     the requests out at some interval.
 
@@ -164,7 +164,7 @@
 
 *** log\_level
    
-    The *log\_level* setting determines which messages Riak Bench will
+    The *log\_level* setting determines which messages Basho Bench will
     log to the console and to disk.
 
     Default level is *debug*.
@@ -196,16 +196,16 @@
     The module name of the driver to use. Provided drivers are:
 
     : % Benchmark a Riak server using the Erlang client.
-    : {driver, riak_bench_driver_riakclient}.
+    : {driver, basho_bench_driver_riakclient}.
 
     : % Benchmark a Riak server via the HTTP interface.
-    : {driver, riak_bench_driver_http}.
+    : {driver, basho_bench_driver_http}.
 
     : % Benchmark the Innostore library.
-    : {driver, riak_bench_driver_innostore}.
+    : {driver, basho_bench_driver_innostore}.
 
     : % Benchmark a dets file.
-    : {driver, riak_bench_driver_dets}.
+    : {driver, basho_bench_driver_dets}.
 
 *** code\_paths 
 
@@ -238,7 +238,7 @@
 *** key\_generator
 
     The generator to use for creating keys. Generators are defined in
-    /riak\_bench\_keygen.erl/. 
+    /basho\_bench\_keygen.erl/. 
 
     Default is ={key_generator, {uniform_int, 100000}}=.
 
@@ -267,7 +267,7 @@
 *** value\_generator
 
     The generator to use for creating values. Generators are define in
-    /riak\_bench\_valgen.erl/. Default is ={value\_generator, {fixed\_bin,
+    /basho\_bench\_valgen.erl/. Default is ={value\_generator, {fixed\_bin,
     100}}=.
 
     : % Use a randomly generated sequence of 512 bytes.
@@ -292,10 +292,10 @@
     : % Seed to {12, 34, 56}
     : {rng_seed, {12, 34, 56}}.
 
-** riak\_bench\_driver\_riakclient Settings
+** basho\_bench\_driver\_riakclient Settings
 
    These configuration settings apply to the
-   /riak\_bench\_driver\_riakclient/ driver.
+   /basho\_bench\_driver\_riakclient/ driver.
 
 *** riakclient\_nodes
 
@@ -314,7 +314,7 @@
     The name of the local node. This is passed into
     =net_kernel:start/1= (http://erlang.org/doc/man/net_kernel.html).
 
-    : {riakclient_mynode, ['riak_bench@127.0.0.1', longnames]}.
+    : {riakclient_mynode, ['basho_bench@127.0.0.1', longnames]}.
 
 *** riakclient\_replies
     
@@ -331,11 +331,11 @@
     : % Use the "bench" bucket.
     : {riakclient_bucket, <<"bench">>}.
 
-** riak\_bench\_driver\_dets Settings
+** basho\_bench\_driver\_dets Settings
    
    Not yet documented.
 
-** riak\_bench\_driver\_http\_raw Settings
+** basho\_bench\_driver\_http\_raw Settings
 
    Not yet documented.
 
