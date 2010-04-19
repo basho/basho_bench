@@ -6,4 +6,4 @@ clean:
 	./rebar clean
 
 results:
-	(cd tests/current && R --vanilla < ../../priv/riak_bench.r)
+	(cd tests/current && R --vanilla < ../../priv/basho_bench.r)
