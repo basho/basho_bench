@@ -1,6 +1,6 @@
 
 all:
-	./rebar compile test escriptize
+	./rebar get-deps compile test escriptize
 
 clean:
 	./rebar clean
