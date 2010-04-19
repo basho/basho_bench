@@ -1,10 +1,15 @@
+#!/usr/bin/env Rscript --vanilla
 library(lattice)
+
+# Lower limit for graph results -- pull it from the system environment
+# variables so that we can adjust this from the outside
+lower_limit = as.numeric(Sys.getenv('BB_LOWER_LIMIT', unset="0"))
 
 png(file = "results.png", width = 1024, height = 768)
 
-# First plot req/sec from summary.csv; drop first 5 mins (300 secs)
+# First plot req/sec from summary.csv; drop lower_limit
 summary <- read.csv("summary.csv")
-#summary <- summary[summary$elapsed >= 300,]
+summary <- summary[summary$elapsed >= lower_limit,]
 plot1 <- xyplot((total / window) ~ elapsed, data = summary, type="l",
                 xlab = "Elapsed Secs", ylab = "Requests/sec",
                 main = "Throughput")
@@ -23,7 +28,7 @@ load_latency_frame <- function(File)
   names(Frame)[length(Frame)] = "op"
   Latency <<- rbind(Latency, Frame)
 }
-  
+
 # Get list of latency files and identify the individual operations
 LatencyFiles <- list.files(pattern = "_latencies.csv")
 LatencyOps <- unlist(strsplit(LatencyFiles, "_"))[seq(1,length(LatencyFiles)*2,2)]
@@ -34,8 +39,8 @@ lapply(LatencyFiles, load_latency_frame)
 # Scale all timing information to msecs (from usecs)
 Latency[4:10] <- Latency[4:10] / 1000
 
-# Drop first 5 mins (300 secs) of test data
-#Latency <- Latency[Latency$elapsed >= 300,]
+# Drop data points prior to our lower_limit
+Latency <- Latency[Latency$elapsed >= lower_limit,]
 
 plot2 <- xyplot(X95th + X99th + X99_9th + max~ elapsed | op, data = Latency,
                 layout = c(length(LatencyOps), 1),
