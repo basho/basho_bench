@@ -59,11 +59,11 @@ new(_Id) ->
     %% Get any bitcask flags
     Flags = basho_bench_config:get(bitcask_flags, []),
     case bitcask:open(Filename, [read_write] ++ Flags) of
-        {ok, B} ->
-            {ok, #state { file = B, sync_interval = SyncInterval,
-                          last_sync = os:timestamp() }};
         {error, Reason} ->
-            ?FAIL_MSG("Failed to open bitcask in ~s: ~p\n", [Filename, Reason])
+            ?FAIL_MSG("Failed to open bitcask in ~s: ~p\n", [Filename, Reason]);
+        File ->
+            {ok, #state { file = File, sync_interval = SyncInterval,
+                          last_sync = os:timestamp() }}
     end.
 
 
@@ -71,18 +71,18 @@ new(_Id) ->
 run(get, KeyGen, _ValueGen, State) ->
     State1 = maybe_sync(State),
     case bitcask:get(State1#state.file, KeyGen()) of
-        {ok, _Value, File} ->
-            {ok, State1#state { file = File }};
-        {not_found, File} ->
-            {ok, State1#state { file = File }};
+        {ok, _Value} ->
+            {ok, State1};
+        not_found ->
+            {ok, State1};
         {error, Reason} ->
             {error, Reason}
     end;
 run(put, KeyGen, ValueGen, State) ->
     State1 = maybe_sync(State),
     case bitcask:put(State1#state.file, KeyGen(), ValueGen()) of
-        {ok, File} ->
-            {ok, State1#state { file = File }};
+        ok ->
+            {ok, State1};
         {error, Reason} ->
             {error, Reason}
     end.
