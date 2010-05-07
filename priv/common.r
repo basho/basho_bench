@@ -28,10 +28,3 @@ load_benchmark <- function(Dir)
 
   return (list(summary = summary, latencies = latencies))
 }
-
-# Given a benchmark frame, melt the provided list of latencies into a
-# form suitable for use with ggplot
-melted_latency <- function(benchmark, vars)
-  {
-    return (melt(benchmark$latencies, c("elapsed", "op"),  vars))
-  }

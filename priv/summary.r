@@ -30,25 +30,6 @@ if (nrow(b$latencies) == 0)
 
 png(file = opt$outfile, width = opt$width, height = opt$height)
 
-# Construct a plot of latencies, faceted by operation. The ...
-# signifies a list variables which provide a printable name
-# for the given variable.
-latency_plot <- function(benchmark, ...)
-  {
-    vars <- list(...)
-    return (qplot(elapsed, value,
-                  data = melted_latency(benchmark, names(vars)),
-                  geom = "smooth",
-                  facets = . ~ op,
-                  color = variable,
-                  xlab = "Elapsed Secs",
-                  ylab = "",
-                  main = "Latency (ms)") +
-            scale_color_hue("",
-                            breaks = names(vars),
-                            labels = unlist(vars, use.names = FALSE)))
-  }
-
 
 # First plot req/sec from summary
 plot1 <- qplot(elapsed, total / window, data = b$summary,
@@ -56,9 +37,28 @@ plot1 <- qplot(elapsed, total / window, data = b$summary,
                xlab = "Elapsed Secs", ylab = "Req/sec",
                main = "Throughput")
 
-# Break out latency plots
-plot2 <- latency_plot(b, X99th = "99th", X99_9th = "99.9th")
-plot3 <- latency_plot(b, median = "Median", mean = "Mean", X95th = "95th")
+# Setup common elements of the latency plots
+latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
+                   facet_grid(. ~ op) +
+                   labs(x = "Elapsed Secs", y = "Latency (ms)")
+
+# Plot 99 and 99.9th percentiles
+plot2 <- latency_plot +
+            geom_smooth(aes(y = X99th, color = "X99th")) +
+            geom_smooth(aes(y = X99_9th, color = "X99_9th")) +
+            scale_color_hue("Percentile",
+                            breaks = c("X99th", "X99_9th"),
+                            labels = c("99th", "99.9th"))
+
+
+# Plot median, mean and 95th percentiles
+plot3 <- latency_plot +
+            geom_smooth(aes(y = median, color = "median")) +
+            geom_smooth(aes(y = mean, color = "mean")) +
+            geom_smooth(aes(y = X95th, color = "X95th")) +
+            scale_color_hue("Percentile",
+                            breaks = c("median", "mean", "X95th"),
+                            labels = c("Median", "Mean", "95th"))
 
 grid.newpage()
 
