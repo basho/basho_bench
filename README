@@ -1,6 +1,6 @@
 To get stats:
 
-(cd tests/current && R --vanilla < ../../priv/riak_bench.r)
+(cd tests/current && R --vanilla < ../../priv/basho_bench.r)
 
 That will generate:
 
