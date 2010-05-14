@@ -8,6 +8,7 @@
              basho_bench_driver_dets,
              basho_bench_driver_http_raw,
              basho_bench_driver_innostore,
+             basho_bench_driver_riakc_pb,
              basho_bench_driver_riakclient,
              basho_bench_driver_cassandra,
              basho_bench_driver_bitcask,
