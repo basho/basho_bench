@@ -1,6 +1,11 @@
 #!/usr/bin/env Rscript --vanilla
 
-source("priv/common.r")
+# Parse the --file= argument out of command line args and
+# determine where base directory is so that we can source
+# our common sub-routines
+arg0 <- sub("--file=(.*)", "\\1", grep("--file=", commandArgs(), value = TRUE))
+dir0 <- dirname(arg0)
+source(file.path(dir0, "common.r"))
 
 # Setup parameters for the script
 params = matrix(c(
@@ -16,8 +21,8 @@ opt = getopt(params)
 # Initialize defaults for opt
 if (is.null(opt$width))   { opt$width   = 1024 }
 if (is.null(opt$height))  { opt$height  = 768 }
-if (is.null(opt$outfile)) { opt$outfile = "summary.png" }
 if (is.null(opt$indir))   { opt$indir  = "current"}
+if (is.null(opt$outfile)) { opt$outfile = file.path(opt$indir, "summary.png") }
 
 # Load the benchmark data
 b = load_benchmark(opt$indir)
@@ -29,7 +34,6 @@ if (nrow(b$latencies) == 0)
 }
 
 png(file = opt$outfile, width = opt$width, height = opt$height)
-
 
 # First plot req/sec from summary
 plot1 <- qplot(elapsed, total / window, data = b$summary,
