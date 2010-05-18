@@ -2,11 +2,10 @@
 # Load a library, or attempt to install it if it's not available
 load_library <- function(Name)
   {
-    if (!library(Name, character.only = TRUE, logical.return=TRUE))
+    if (!library(Name, character.only = TRUE, logical.return = TRUE))
       {
         install.packages(Name, repos = "http://lib.stat.cmu.edu/R/CRAN")
       }
-    print(Name)
   }
 
 # Load a latency file and ensure that it is appropriately tagged

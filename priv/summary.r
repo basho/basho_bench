@@ -9,14 +9,21 @@ source(file.path(dir0, "common.r"))
 
 # Setup parameters for the script
 params = matrix(c(
-  'width',   'w', 2, "integer",
-  'height',  'h', 2, "integer",
+  'help',    'h', 0, "logical",
+  'width',   'x', 2, "integer",
+  'height',  'y', 2, "integer",
   'outfile', 'o', 2, "character",
   'indir',   'i', 2, "character"
   ), ncol=4, byrow=TRUE)
 
 # Parse the parameters
 opt = getopt(params)
+
+if (!is.null(opt$help))
+  {
+    cat(paste(getopt(params, command = basename(arg0), usage = TRUE)))
+    q(status=1)
+  }
 
 # Initialize defaults for opt
 if (is.null(opt$width))   { opt$width   = 1024 }
@@ -75,4 +82,3 @@ print(plot2, vp = vplayout(2,1))
 print(plot3, vp = vplayout(3,1))
 
 dev.off()
-
