@@ -6,4 +6,4 @@ clean:
 	./rebar clean
 
 results:
-	(cd tests/current && ../../priv/basho_bench.r)
+	priv/summary.r -i tests/current
