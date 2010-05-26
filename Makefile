@@ -1,3 +1,4 @@
+.PHONY: deps
 
 all: deps
 	./rebar compile test escriptize
