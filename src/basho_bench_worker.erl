@@ -118,15 +118,21 @@ init([Id]) ->
 
 handle_call(run, _From, State) ->
     State#state.worker_pid ! run,
-    {reply, ok, State};
-handle_call(stop, _From, State) ->
-    {stop, shutdown, ok, State}.
+    {reply, ok, State}.
 
 handle_cast(run, State) ->
     State#state.worker_pid ! run,
     {noreply, State}.
 
-handle_info({'EXIT', _Pid, _Reason}, State) ->
+handle_info({'EXIT', _Pid, Reason}, State) ->
+    case Reason of
+        normal ->
+            %% Clean shutdown of the worker; take down rest of the app as well
+            basho_bench_app:stop();
+
+        _ ->
+            ok
+    end,
     {stop, normal, State}.
 
 terminate(_Reason, _State) ->
@@ -170,13 +176,13 @@ worker_idle_loop(State) ->
         run ->
             case basho_bench_config:get(mode) of
                 max ->
-                    io:format("Max Worker runloop starting!\n"),
+                    ?INFO("Starting max worker: ~p\n", [self()]),
                     max_worker_run_loop(State);
                 {rate, Rate} ->
                     %% Calculate mean interarrival time in in milliseconds. A
                     %% fixed rate worker can generate (at max) only 1k req/sec.
                     MeanArrival = 1000 / Rate,
-                    io:format("Fixed Rate Worker runloop starting: ~w ms/req\n", [MeanArrival]),
+                    ?INFO("Starting ~w ms/req fixed rate worker: ~p\n", [MeanArrival, self()]),
                     rate_worker_run_loop(State, 1 / MeanArrival)
             end
     end.
@@ -202,23 +208,22 @@ worker_next_op(State) ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
             basho_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
-            ?ERROR("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
-            error;
+            ?DEBUG("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
+            crash;
 
         {stop, Reason} ->
             %% Driver (or something within it) has requested that this worker
             %% terminate cleanly.
             ?INFO("Driver ~p (~p) has requested stop: ~p\n", [State#state.driver, self(), Reason]),
-            gen_server:call(State#state.parent_pid, stop),
-            error
+            normal
     end.
 
 max_worker_run_loop(State) ->
     case worker_next_op(State) of
         {ok, State2} ->
             max_worker_run_loop(State2);
-        error ->
-            error
+        ExitReason ->
+            exit(ExitReason)
     end.
 
 rate_worker_run_loop(State, Lambda) ->
@@ -228,6 +233,6 @@ rate_worker_run_loop(State, Lambda) ->
     case worker_next_op(State) of
         {ok, State2} ->
             rate_worker_run_loop(State2, Lambda);
-        error ->
-            error
+        ExitReason ->
+            exit(ExitReason)
     end.
