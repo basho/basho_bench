@@ -62,13 +62,22 @@ main([Config]) ->
     %% Spin up the application
     ok = basho_bench_app:start(),
 
-    %% Pull the runtime duration from the config and sleep until that's passed
-    Duration = timer:minutes(basho_bench_config:get(duration)) + timer:seconds(1),
-    timer:sleep(Duration),
+    %% Pull the runtime duration from the config and sleep until that's passed OR
+    %% the supervisor process exits
+    Mref = erlang:monitor(process, whereis(basho_bench_sup)),
+    DurationMins = basho_bench_config:get(duration),
+    Duration = timer:minutes(DurationMins) + timer:seconds(1),
 
-    ?CONSOLE("Test complete.\n", []),
+    receive
+        {'DOWN', Mref, _, _, Info} ->
+            ?CONSOLE("Test stopped: ~p\n", [Info])
 
-    basho_bench_app:stop().
+    after Duration ->
+            basho_bench_app:stop(),
+            ?CONSOLE("Test completed after ~p mins.\n", [DurationMins])
+    end.
+
+
 
 
 
