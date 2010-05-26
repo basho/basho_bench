@@ -47,7 +47,7 @@ new(Id) ->
 
     %% Setup client ID by base-64 encoding the ID
     ClientId = {'X-Riak-ClientId', base64:encode(<<Id:32/unsigned>>)},
-    ?CONSOLE("Client ID: ~p\n", [ClientId]),
+    ?DEBUG("Client ID: ~p\n", [ClientId]),
 
     application:start(ibrowse),
 
