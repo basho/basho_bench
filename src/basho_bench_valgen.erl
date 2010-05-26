@@ -28,6 +28,7 @@
 
 -define(SOURCE_SIZE, 4096).
 -define(BLOCK_SIZE, 512).
+-define(MAX_OFFSET, ?SOURCE_SIZE - ?BLOCK_SIZE).
 
 %% ====================================================================
 %% API
@@ -35,25 +36,31 @@
 
 new({fixed_bin, Size}, _Id) ->
     Source = crypto:rand_bytes(?SOURCE_SIZE),
-    MaxOffset = ?SOURCE_SIZE - ?BLOCK_SIZE,
-    fun() -> fixed_bin(Source, MaxOffset, Size, <<>>) end;
+    fun() -> data_block(Source, Size, <<>>) end;
+new({poisson_bin, Lambda}, _Id) ->
+    Source = crypto:rand_bytes(?SOURCE_SIZE),
+    fun() -> data_block(Source, stats_rv:poisson(Lambda), <<>>) end;
+new({exponential_bin, MinSize, Lambda}, _Id) ->
+    Source = crypto:rand_bytes(?SOURCE_SIZE),
+    fun() -> data_block(Source, MinSize + trunc(1 / stats_rv:exponential(Lambda)), <<>>) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 
 dimension({fixed_bin, Size}, KeyDimension) ->
     Size * KeyDimension;
 dimension(Other, _) ->
-    ?FAIL_MSG("Unsupported value generator dimension requested: ~p\n", [Other]).
+    0.0.
 
 
 
 %% ====================================================================
 %% Internal Functions
 %% ====================================================================
-fixed_bin(_Source, _MaxOffset, 0, Acc) ->
+
+data_block(_Source, 0, Acc) ->
     Acc;
-fixed_bin(Source, MaxOffset, Size, Acc) ->
-    Offset = random:uniform(MaxOffset),
+data_block(Source, Size, Acc) ->
+    Offset = random:uniform(?MAX_OFFSET),
     if
         Size > ?BLOCK_SIZE ->
             Step = ?BLOCK_SIZE;
@@ -61,4 +68,4 @@ fixed_bin(Source, MaxOffset, Size, Acc) ->
             Step = Size
     end,
     <<_:Offset/bytes, Slice:Step/bytes, _Rest/binary>> = Source,
-    fixed_bin(Source, MaxOffset, Size - Step, <<Acc/binary, Slice/binary>>).
+    data_block(Source, Size - Step, <<Acc/binary, Slice/binary>>).
