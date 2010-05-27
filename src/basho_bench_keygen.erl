@@ -94,6 +94,12 @@ sequential_int_generator(Ref, MaxValue) ->
        MaxValue ->
            throw({stop, empty_keygen});
        Value ->
+           case Value rem 5000 of
+               0 ->
+                   ?DEBUG("sequential_int_gen: ~p (~w%)\n", [Value, trunc(100 * (Value / MaxValue))]);
+               _ ->
+                   ok
+           end,
            erlang:put({sigen, Ref}, Value+1),
            Value
    end.
