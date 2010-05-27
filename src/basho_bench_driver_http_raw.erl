@@ -30,7 +30,8 @@
 
 -record(state, { client_id,          % Tuple client ID for HTTP requests
                  base_urls,          % Tuple of #url -- one for each IP
-                 base_urls_index }). % #url to use for next request
+                 base_urls_index,    % #url to use for next request
+                 path_params }).     % Params to append on the path
 
 %% ====================================================================
 %% API
@@ -54,7 +55,8 @@ new(Id) ->
     %% The IPs, port and path we'll be testing
     Ips  = basho_bench_config:get(http_raw_ips, ["127.0.0.1"]),
     Port = basho_bench_config:get(http_raw_port, 8098),
-    Path = basho_bench_config:get(http_raw_path, "/raw/test"),
+    Path = basho_bench_config:get(http_raw_path, "/riak/test"),
+    Params = basho_bench_config:get(http_raw_params, ""),
 
     %% If there are multiple URLs, convert the list to a tuple so we can efficiently
     %% round-robin through them.
@@ -64,19 +66,20 @@ new(Id) ->
             BaseUrls = #url { host = Ip, port = Port, path = Path },
             BaseUrlsIndex = 1;
         _ ->
-            BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path}
+            BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path }
                                        || Ip <- Ips]),
             BaseUrlsIndex = random:uniform(tuple_size(BaseUrls))
     end,
 
     {ok, #state { client_id = ClientId,
                   base_urls = BaseUrls,
-                  base_urls_index = BaseUrlsIndex }}.
+                  base_urls_index = BaseUrlsIndex,
+                  path_params = Params }}.
 
 
 run(get, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(NextUrl, KeyGen) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
         {not_found, _Url} ->
             {ok, S2};
         {ok, _Url, _Headers} ->
@@ -86,7 +89,7 @@ run(get, KeyGen, _ValueGen, State) ->
     end;
 run(update, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(NextUrl, KeyGen) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
         {error, Reason} ->
             {error, Reason, S2};
 
@@ -106,7 +109,21 @@ run(update, KeyGen, ValueGen, State) ->
                 {error, Reason} ->
                     {error, Reason, S2}
             end
+    end;
+run(insert, KeyGen, ValueGen, State) ->
+    %% Go ahead and evaluate the keygen so that we can use the
+    %% sequential_int_gen to do a controlled # of inserts (if we desire). Note
+    %% that the actual insert randomly generates a key (server-side), so the
+    %% output of the keygen is ignored.
+    KeyGen(),
+    {NextUrl, S2} = next_url(State),
+    case do_post(url(NextUrl, State#state.path_params), [], ValueGen) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
     end.
+
 
 
 %% ====================================================================
@@ -122,8 +139,13 @@ next_url(State) ->
     { element(State#state.base_urls_index, State#state.base_urls),
       State#state { base_urls_index = State#state.base_urls_index + 1 }}.
 
-do_get(BaseUrl, KeyGen) ->
-    Url = BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen()]) },
+url(BaseUrl, Params) ->
+    BaseUrl#url { path = lists:concat([BaseUrl#url.path, Params]) }.
+url(BaseUrl, KeyGen, Params) ->
+    BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
+
+
+do_get(Url) ->
     case send_request(Url, [], get, [], [{response_format, binary}]) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
@@ -134,7 +156,6 @@ do_get(BaseUrl, KeyGen) ->
         {ok, Code, _Headers, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
-            disconnect(Url),
             {error, Reason}
     end.
 
@@ -142,14 +163,26 @@ do_put(Url, Headers, ValueGen) ->
     case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
                       put, ValueGen(), [{response_format, binary}]) of
         {ok, "204", _Header, _Body} ->
-            Res = ok;
+            ok;
         {ok, Code, _Header, _Body} ->
-            Res = {error, {http_error, Code}};
+            {error, {http_error, Code}};
         {error, Reason} ->
-            Res = {error, Reason}
-    end,
-    disconnect(Url),
-    Res.
+            {error, Reason}
+    end.
+
+do_post(Url, Headers, ValueGen) ->
+    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+                      post, ValueGen(), [{response_format, binary}]) of
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 
 connect(Url) ->
     case erlang:get({ibrowse_pid, Url#url.host}) of
@@ -186,14 +219,28 @@ send_request(_Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Url),
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 15000)) of
-        {'EXIT', {timeout, _}} ->
-            {error, req_timedout};
-        {'EXIT', Reason} ->
-            {error, {'EXIT', Reason}};
-        {error, connection_closed} ->
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 5000)) of
+        {ok, Status, RespHeaders, RespBody} ->
+            {ok, Status, RespHeaders, RespBody};
+
+        Error ->
             disconnect(Url),
-            send_request(Url, Headers, Method, Body, Options, Count-1);
-        Other ->
-            Other
+            case should_retry(Error) of
+                true ->
+                    send_request(Url, Headers, Method, Body, Options, Count-1);
+
+                false ->
+                    normalize_error(Method, Error)
+            end
     end.
+
+
+should_retry({error, send_failed})       -> true;
+should_retry({error, connection_closed}) -> true;
+should_retry({'EXIT', {normal, _}})      -> true;
+should_retry({'EXIT', {noproc, _}})      -> true;
+should_retry(_)                          -> false.
+
+normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
+normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
+normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
