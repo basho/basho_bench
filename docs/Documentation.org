@@ -273,9 +273,6 @@
     : % Generate a fixed size random binary of 512 bytes
     : {value_generator, {fixed_bin, 512}}.
 
-    : % Generate a random binary with a Poisson distributed size, lambda = 1000 bytes
-    : {value_generator, {poisson_bin, 1000}}.
-
     : % Generate a random binary whose size is exponentially distributed, starting at
     : % 1000 bytes and a lambda of 2000 bytes (thus mean ~3k)
     : {value_generator, {exponential_bin, 1000, 2000}}.

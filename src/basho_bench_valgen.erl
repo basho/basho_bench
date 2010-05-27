@@ -37,9 +37,6 @@
 new({fixed_bin, Size}, _Id) ->
     Source = crypto:rand_bytes(?SOURCE_SIZE),
     fun() -> data_block(Source, Size, <<>>) end;
-new({poisson_bin, Lambda}, _Id) ->
-    Source = crypto:rand_bytes(?SOURCE_SIZE),
-    fun() -> data_block(Source, stats_rv:poisson(Lambda), <<>>) end;
 new({exponential_bin, MinSize, Lambda}, _Id) ->
     Source = crypto:rand_bytes(?SOURCE_SIZE),
     fun() -> data_block(Source, MinSize + trunc(1 / stats_rv:exponential(Lambda)), <<>>) end;
