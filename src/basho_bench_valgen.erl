@@ -26,20 +26,16 @@
 
 -include("basho_bench.hrl").
 
--define(SOURCE_SIZE, 4096).
--define(BLOCK_SIZE, 512).
--define(MAX_OFFSET, ?SOURCE_SIZE - ?BLOCK_SIZE).
-
 %% ====================================================================
 %% API
 %% ====================================================================
 
 new({fixed_bin, Size}, _Id) ->
-    Source = crypto:rand_bytes(?SOURCE_SIZE),
-    fun() -> data_block(Source, Size, <<>>) end;
+    Source = init_source(),
+    fun() -> data_block(Source, Size) end;
 new({exponential_bin, MinSize, Lambda}, _Id) ->
-    Source = crypto:rand_bytes(?SOURCE_SIZE),
-    fun() -> data_block(Source, MinSize + trunc(1 / stats_rv:exponential(Lambda)), <<>>) end;
+    Source = init_source(),
+    fun() -> data_block(Source, MinSize + trunc(stats_rv:exponential(1 / Lambda))) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 
@@ -54,15 +50,18 @@ dimension(Other, _) ->
 %% Internal Functions
 %% ====================================================================
 
-data_block(_Source, 0, Acc) ->
-    Acc;
-data_block(Source, Size, Acc) ->
-    Offset = random:uniform(?MAX_OFFSET),
-    if
-        Size > ?BLOCK_SIZE ->
-            Step = ?BLOCK_SIZE;
+init_source() ->
+    SourceSz = basho_bench_config:get(value_generator_source_size, 1048576),
+    {SourceSz, crypto:rand_bytes(SourceSz)}.
+
+data_block({SourceSz, Source}, BlockSize) ->
+    case SourceSz - BlockSize > 0 of
         true ->
-            Step = Size
-    end,
-    <<_:Offset/bytes, Slice:Step/bytes, _Rest/binary>> = Source,
-    data_block(Source, Size - Step, <<Acc/binary, Slice/binary>>).
+            Offset = random:uniform(SourceSz - BlockSize),
+            <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
+            Slice;
+        false ->
+            ?WARN("value_generator_source_size is too small; it needs a value > ~p.\n",
+                  [BlockSize]),
+            Source
+    end.
