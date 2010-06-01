@@ -18,50 +18,44 @@
 
 ** How does it work?
 
-   When Basho Bench starts (basho\_bench.erl), it reads the
-   configuration (basho\_bench\_config.erl), creates a new results
-   directory, then sets up the
+   When Basho Bench starts (basho\_bench.erl), it reads the configuration
+   (basho\_bench\_config.erl), creates a new results directory, then sets up the
    test. (basho\_bench\_app.erl/basho\_bench\_sup.erl)
 
    During test setup, Basho Bench creates:
- 
+
    + One *log process* (basho\_bench\_log.erl). During startup, this
-     creates a new /log.txt/ file in the currently results directory, to
+     creates a new /log.txt/ file in the current results directory, to
      which output is logged at the specified logging level.
-     
-   + One *stats process* (basho\_bench\_stats.erl). This receieves
-     notifications when an operation completes, plus the elapsed time
-     of the operation, and stores it in a histogram. At regular
-     intervals, the histograms are dumped to /summary.csv/.
-  
-   + N *child workers*, where N is specified by the /concurrent/
-     configuration setting. (basho\_bench\_worker.erl). The worker process
-     wraps a driver module, specified by the /driver/ configuration
-     setting, calling the appropriate operations at the configured intervals.
-  
-   Once these processes have been created and initialized, Basho Bench
-   sends a run command to all worker processes, causing them to begin
-   the test. Each process acts independently in a semi-random
-   fashion. Each benchmark tests is started with a predifined random
-   seed, so the operations occur in a random order, but the sequence of
-   operations will be exactly the same if the same benchmark is run
-   again with the same settings.
-  
-   During the test, the worker processes repeatedly call Driver:run/4,
-   passing in the next operation to run, a keygen function, a valuegen
-   function, and the last state of the driver.
-  
-   The driver runs the operation, and returns ={ok, NewState}=,
-   ={error, Reason, NewState}=, ={'EXIT', Reason}=, or ={stop,
-   Reason}=. The worker process times the operation, and reports this
+
+   + One *stats process* (basho\_bench\_stats.erl). This receives notifications
+     when an operation completes, plus the elapsed time of the operation, and
+     stores it in a histogram. At regular intervals, the histograms are dumped
+     to /summary.csv/ as well as operation-specific latency CSVs
+     (e.g. /put_latencies.csv/ for the 'put' operation).
+
+   + N *workers*, where N is specified by the /concurrent/ configuration
+     setting. (basho\_bench\_worker.erl). The worker process wraps a driver
+     module, specified by the /driver/ configuration setting. The driver is
+     randomly invoked using the distribution of operations as specified by the
+     /operation/ configuration setting. The rate at which the driver invokes
+     operations is governed by the /mode/ setting.
+
+   Once these processes have been created and initialized, Basho Bench sends a
+   run command to all worker processes, causing them to begin the test. Each worker
+   is initialized with a common seed value for random number generation to ensure
+   that the generated workload is reproducible at a later date.
+
+   During the test, the workers repeatedly call /driver/:run/4, passing in the
+   next operation to run, a keygen function, a valuegen function, and the last
+   state of the driver. The worker process times the operation, and reports this
    to the stats process when the operation has completed.
-  
-   Finally, once the test has been run for the duration specified in
-   the config file, all workers and stats processes are told to stop,
-   and the benchmark ends.
-  
-   At this point, results can be found in /./tests/current/. Previous
-   results are in timestamped directories of the form /./tests/YYYYMMDD-HHMMSS/.
+
+   Finally, once the test has been run for the duration specified in the config
+   file, all workers and stats processes are terminated and the benchmark
+   ends. The measured latency and throughput of the test can be found in
+   /./tests/current/. Previous results are in timestamped directories of the
+   form /./tests/YYYYMMDD-HHMMSS/.
 
 * Installation
 
@@ -75,16 +69,14 @@
   Basho Bench is currently available as source code only. To get the
   latest code, clone the basho\_bench repository:
 
-  : hg clone ssh://hg@beachhead.bashotechnologies.net/basho_bench-0.1 basho_bench
+  : hg clone ssh://hg@bitbucket.org/basho/basho_bench
   : cd basho_bench
   : make
-
-  *TODO: Put the code somewhere publicly accessible?*
 
 * Usage
 
   Run basho\_bench:
-  
+
   : ./basho_bench myconfig.config
 
   This will generate results in /tests/current/. You will need to
@@ -92,41 +84,42 @@
   from a file in the /examples/ directory and modify settings using the
   /Configuration/ section below for reference.
 
+  Note that currently you must run the basho\_bench script from the directory
+  where it was built to ensure that the necessary dependencies are available.
+
 * Generating Benchmark Graphs
 
   The output of basho\_bench can be used to create graphs showing:
-  
-  + Throughput - Requests per second over time.
+
+  + Throughput - Operations per second over the duration of the test.
 
   + Latency at 99th percentile, 99.9th percentile and max latency for
-    get and put operations.
+    the selected operations.
 
-  + Median latency, mean latency, and 95th percentile latency for get
-    and put operations.
+  + Median latency, mean latency, and 95th percentile latency for the
+    selected operations.
 
 ** Prerequisites
 
-   The R statistics language is needed to generate graphs. 
+   The R statistics language is needed to generate graphs.
 
-   + More information: http://www.r-project.org/. 
+   + More information: http://www.r-project.org/.
 
    + Download R: http://cran.r-project.org/mirrors.html
 
    Follow the instructions for your platform to install R.
-   
+
 ** Generating a Graphs
 
    To generate a benchmark graph against the current results, run:
 
    : make results
 
-   This will create a results file in /tests/current/results.png/.
+   This will create a results file in /tests/current/summary.png/.
 
-   You can also run this manually by changing to the latest set of
-   results and invoking the R command.
+   You can also run this manually:
 
-   : cd tests/current
-   : R --vanilla < ../../priv/basho_bench.r
+   : priv/summary.r -i tests/current
 
 * Configuration
 
@@ -135,19 +128,25 @@
 
 ** Global Config Settings
 *** mode
-    
-    The *mode* setting determines whether basho\_bench pounds the
-    application under test as quickly as possible, or instead spaces
-    the requests out at some interval.
 
-    Default is 5 operations per second per worker.
-    
-    : % Run at max, ie: as quickly as possible.    
+    The *mode* setting controls the rate at which workers invoke the /driver/:run/4
+    function with a new operation. There are two possible values:
+
+    - max :: generate as many ops per second as possible
+
+    - {rate, N} :: generate N ops per second, with exponentially distributed
+                   interarrival times.
+
+    Note that this setting is applied to each driver independently. For example, if
+    /{rate, 5}/ is used with 3 concurrent workers, basho\_bench will be generating
+    15 (i.e. 5 * 3) operations per second.
+
+    : % Run at max, ie: as quickly as possible.
     : {mode, max}
 
     : % Run 15 operations per second.
     : {mode, {rate, 15}}
-    
+
 *** concurrent
 
     The number of concurrent worker processes. The default is 3 worker processes.
@@ -162,68 +161,6 @@
     : % Run the test for one hour.
     : {duration, 60}
 
-*** log\_level
-   
-    The *log\_level* setting determines which messages Basho Bench will
-    log to the console and to disk.
-
-    Default level is *debug*.
-
-    Valid levels are:
-    
-    : % Log all messages.
-    : {log_level, debug}.
-
-    : % Log informational messages and higher.
-    : {log_level, info}.
-
-    : % Log warning messages and higher.
-    : {log_level, warn}.
-
-    : % Only log error messages.
-    : {log_level, error}
-
-*** report\_interval
-    
-    How often, in seconds, should the stats process write histogram
-    data to disk. Default is 10 seconds.
-
-    : % Save stats every 12 seconds.
-    : {report_interval, 12}
-
-*** driver
-
-    The module name of the driver to use. Provided drivers are:
-
-    : % Benchmark a Riak server using the Erlang client.
-    : {driver, basho_bench_driver_riakclient}.
-
-    : % Benchmark a Riak server via the HTTP interface.
-    : {driver, basho_bench_driver_http}.
-
-    : % Benchmark the Innostore library.
-    : {driver, basho_bench_driver_innostore}.
-
-    : % Benchmark a dets file.
-    : {driver, basho_bench_driver_dets}.
-
-*** code\_paths 
-
-    Some drivers need additional Erlang code in order to run. Specify
-    the paths to this code using the *code\_paths* configuration
-    setting.
-
-    The paths in this setting should be the root path of the Erlang
-    library containing the code. In other words, specify the directory
-    above the /ebin/ directory.
-
-    For example:
-    
-    : {code_paths, [
-    :   "deps/stats",
-    :   "../riak_src/apps/riak_kv",
-    :   "../riak_src/apps/riak_core"]}.
-
 *** operations
 
     The possible operations that the driver will run, plus their
@@ -234,7 +171,75 @@
 
     : % Run 80% gets, 20% puts.
     : {operations, [{get, 4}, {put, 1}]}.
-    
+
+    Operations are defined on a *per-driver* basis. Not all drivers will
+    implement the "get"/"put" operations discussed above. Consult the driver
+    source to determine the valid operations.
+
+    If a driver does not support a specified operation ("askdfput" in this
+    example) you may see errors like:
+
+    : DEBUG:Driver basho_bench_driver_null crashed: {function_clause,
+    :                                           [{basho_bench_driver_null,run,
+    :                                             [asdfput,
+    :                                              #Fun<basho_bench_keygen.4.46734364>,
+    :                                              #Fun<basho_bench_valgen.0.133134104>,
+    :                                              undefined]},
+    :                                            {basho_bench_worker,
+    :                                             worker_next_op,1},
+    :                                            {basho_bench_worker,
+    :                                             max_worker_run_loop,1}]}
+
+
+*** driver
+
+    The module name of the driver that basho\_bench will use to generate load. A
+    driver may simply invoke code in-process (such as when measuring the
+    performance of innostore or DETS) or may open network connections and
+    generate load on a remote system (such as when testing a Riak
+    server/cluster).
+
+    Available drivers include:
+
+    + basho\_bench\_driver\_http\_raw :: Uses Riak's HTTP interface to
+         get/put/delete data on a Riak server
+    + basho\_bench\_driver\_riakc\_pb :: Uses Riak's Protocol Buffers interface
+         to get/put/delete data on a Riak server
+    + basho\_bench\_driver\_riakclient :: Uses Riak's Dist. Erlang interface to
+         get/put/delete data on a Riak server
+    + basho\_bench\_driver\_bitcask :: Directly invokes the Bitcask API
+    + basho\_bench\_driver\_dets :: Directly invokes the DETS API
+    + basho\_bench\_driver\_innostore :: Directly invokes the Innostore API
+
+    On invocation of the /driver/:run/4 method, the driver may return one of the
+    following results:
+
+   + ={ok, NewState}= :: operation completed successfully
+   + ={error, Reason, NewState}= :: operation failed but the driver can
+        continue processing (i.e. recoverable error)
+   + ={stop, Reason}= :: operation failed; driver can't/won't continue processing
+   + ={'EXIT', Reason}= :: operation failed; driver crashed
+
+
+*** code\_paths
+
+    Some drivers need additional Erlang code in order to run. Specify
+    the paths to this code using the *code\_paths* configuration
+    setting.
+
+    As noted previously, basho\_bench /must/ be run in the directory it was
+    built, for dependency reasons. *code\_paths* should include, minimally, a
+    reference to "deps/stats" which is the library that basho\_bench uses for
+    various statistical purposes.
+
+    For example:
+
+    : {code_paths, [
+    :   "deps/stats",
+    :   "../riak_src/apps/riak_kv",
+    :   "../riak_src/apps/riak_core"]}.
+
+
 *** key\_generator
 
     The generator to use for creating keys. Generators are defined in
@@ -276,6 +281,35 @@
     : % Generate a random binary whose size is exponentially distributed, starting at
     : % 1000 bytes and a lambda of 2000 bytes (thus mean ~3k)
     : {value_generator, {exponential_bin, 1000, 2000}}.
+
+*** log\_level
+
+    The *log\_level* setting determines which messages Basho Bench will
+    log to the console and to disk.
+
+    Default level is *debug*.
+
+    Valid levels are:
+
+    : % Log all messages.
+    : {log_level, debug}.
+
+    : % Log informational messages and higher.
+    : {log_level, info}.
+
+    : % Log warning messages and higher.
+    : {log_level, warn}.
+
+    : % Only log error messages.
+    : {log_level, error}
+
+*** report\_interval
+    
+    How often, in seconds, should the stats process write histogram
+    data to disk. Default is 10 seconds.
+
+    : % Save stats every 12 seconds.
+    : {report_interval, 12}
 
 *** test\_dir
 
@@ -343,9 +377,9 @@
 
    Not yet documented.
 
-* Custom Workers
+* Custom Driver
 
-  A custom worker must expose the following callbacks.
+  A custom driver must expose the following callbacks.
 
   : % Create the worker.
   : % ID is an integer.
