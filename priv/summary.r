@@ -45,7 +45,7 @@ png(file = opt$outfile, width = opt$width, height = opt$height)
 # First plot req/sec from summary
 plot1 <- qplot(elapsed, total / window, data = b$summary,
                geom = "smooth",
-               xlab = "Elapsed Secs", ylab = "Req/sec",
+               xlab = "Elapsed Secs", ylab = "Op/sec",
                main = "Throughput")
 
 # Setup common elements of the latency plots
