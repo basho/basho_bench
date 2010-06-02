@@ -55,7 +55,7 @@ new(Id) ->
     R = basho_bench_config:get(riakc_pb_r, Replies),
     W = basho_bench_config:get(riakc_pb_w, Replies),
     DW = basho_bench_config:get(riakc_pb_dw, Replies),
-    RW = basho_bench_config:get(riakc_pb_dw, Replies),
+    RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
 
     %% Choose the node using our ID as a modulus
