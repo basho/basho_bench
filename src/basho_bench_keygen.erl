@@ -26,6 +26,10 @@
 
 -include("basho_bench.hrl").
 
+%% Use a fixed shape for Pareto that will yield the desired 80/20
+%% ratio of generated values.
+-define(PARETO_SHAPE, 1.5).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -45,14 +49,11 @@ new({uniform_int_str, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), integer_to_list(Key) end;
 new({uniform_int, MaxKey}, _Id) ->
     fun() -> random:uniform(MaxKey) end;
-new({pareto_int, Mean, Shape}, _Id) ->
-    S1 = (-1 / Shape) - 1,
-    S2 = Mean * (Shape - 1),
-    fun() -> trunc(math:pow(1 - random:uniform(), S1) * S2) end;
-new({pareto_int_bin, Mean, Shape}, _Id) ->
-    S1 = (-1 / Shape) - 1,
-    S2 = Mean * (Shape - 1),
-    fun() -> Key = trunc(math:pow(1 - random:uniform(), S1) * S2), <<Key:32/native>> end;
+new({pareto_int, MaxKey}, _Id) ->
+    pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE);
+new({pareto_int_bin, MaxKey}, _Id) ->
+    Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
+    fun() -> <<(Pareto()):32/native>> end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
@@ -69,9 +70,9 @@ dimension({uniform_int_str, MaxKey}) ->
     MaxKey;
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
-dimension({pareto_int, _, _}) ->
+dimension({pareto_int, _}) ->
     0.0;
-dimension({pareto_int_bin, _, _}) ->
+dimension({pareto_int_bin, _}) ->
     0.0;
 dimension(Other) ->
     ?FAIL_MSG("Unsupported key generator dimension requested: ~p\n", [Other]).
@@ -82,6 +83,15 @@ dimension(Other) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+pareto(Mean, Shape) ->
+    S1 = (-1 / Shape),
+    S2 = Mean * (Shape - 1),
+    fun() ->
+            U = 1 - random:uniform(),
+            trunc((math:pow(U, S1) - 1) * S2)
+    end.
+
 
 sequential_int_generator(Ref, MaxValue) ->
    %% A bit of evil here. We want to generate numbers in sequence and stop
