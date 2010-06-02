@@ -393,8 +393,8 @@
 ** basho\_bench\_driver\_http\_raw Settings
 
 *** http\_raw\_ips
-    List of IP addresses to connect the workers to. Each worker is bound to a single
-    IP address, so ensure concurrent >= length(http_raw_ips).
+    List of IP addresses to connect the workers to. Each worker makes requests to each
+    IP in a round-robin fashion.
 
     Default is ={http_raw_ips, ["127.0.0.1"]}=
 
