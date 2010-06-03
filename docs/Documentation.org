@@ -182,8 +182,8 @@
     : DEBUG:Driver basho_bench_driver_null crashed: {function_clause,
     :                                           [{basho_bench_driver_null,run,
     :                                             [asdfput,
-    :                                              #Fun<basho_bench_keygen.4.46734364>,
-    :                                              #Fun<basho_bench_valgen.0.133134104>,
+    :                                              #Fun<basho_bench_keygen.4.4674>,
+    :                                              #Fun<basho_bench_valgen.0.1334>,
     :                                              undefined]},
     :                                            {basho_bench_worker,
     :                                             worker_next_op,1},
@@ -215,9 +215,10 @@
     following results:
 
    + ={ok, NewState}= :: operation completed successfully
-   + ={error, Reason, NewState}= :: operation failed but the driver can
-        continue processing (i.e. recoverable error)
-   + ={stop, Reason}= :: operation failed; driver can't/won't continue processing
+   + ={error, Reason, NewState}= :: operation failed but the driver can continue
+        processing (i.e. recoverable error)
+   + ={stop, Reason}= :: operation failed; driver can't/won't continue
+        processing
    + ={'EXIT', Reason}= :: operation failed; driver crashed
 
 
@@ -242,10 +243,40 @@
 
 *** key\_generator
 
-    The generator to use for creating keys. Generators are defined in
-    /basho\_bench\_keygen.erl/. 
+    The generator function to use for creating keys. Generators are defined in
+    /basho\_bench\_keygen.erl/. Available generators include:
 
-    Default is ={key_generator, {uniform_int, 100000}}=.
+    + {sequential\_int, MaxKey} :: generates integers from 0..MaxKey in order
+         and then stops the system. Note that each instance of this keygen is
+         specific to a worker.
+
+    + {sequential\_int\_bin, MaxKey} :: same as above, but the result from the
+         function is a 32-bit binary encoding of the integer.
+
+    + {sequential\_int\_str, MaxKey} :: same as /sequential\_int/, but the
+         result from the function is encoded as a string.
+
+    + {uniform\_int, MaxKey} :: selects an integer from uniform distribution of
+         0..MaxKey. I.e. all integers are equally probable.
+
+    + {uniform\_int\_bin, MaxKey} :: same as above, but the result of the
+         function is a 32-bit binary encoding of the integer.
+
+    + {uniform\_int\_str, MaxKey} :: same as /uniform\_int/ , but the result
+         from the function is encoded as a string.
+
+    + {pareto\_int, MaxKey} :: selects an integer from a Pareto distribution,
+         such that 20% of the available keys get selected 80% of the time. Note
+         that the current implementation of this generator MAY yield values
+         larger than MaxKey due to the mathematical properties of the Pareto
+         distribution.
+
+    + {pareto\_int\_bin, MaxKey} :: same as /pareto\_int/, but the result from
+         the function is a 32-bit binary encoding of the integer.
+
+    The default key generator is ={uniform_int, 100000}=.
+
+    Examples:
 
     : % Use a randomly selected integer between 1 and 10,000
     : {key_generator, {uniform_int, 10000}}.
@@ -253,34 +284,43 @@
     : % Use a randomly selected integer between 1 and 10,000, as binary.
     : {key_generator, {uniform_int_bin, 10000}}.
 
-    : % Use a randomly selected integer between 1 and 10,000, as string.
-    : {key_generator, {uniform_int_str, 10000}}.
-
-    : % Use a sequential integer from 1 to 10,000.
-    : % If max is reached, then the process will terminate causing the worker
-    : % to restart.
-    : {key_generator, {sequential_int, 10000}}.
-
-    : % Use a sequential integer from 1 to 10,000, as binary.
-    : % If max is reached, then the process will terminate causing the worker
-    : % to restart.
-    : {key_generator, {sequential_int_bin, 10000}}.
-
-    : % Use a pareto distributed integer between 1 and 10,000, with shape 0.5. 
-    : {key_generator, {pareto_int, 10000, 0.5}}.
+    : % Use a pareto distributed integer between 1 and 10,000; values < 2000
+    : % will be returned 80% of the time.
+    : {key_generator, {pareto_int, 10000}}.
 
 *** value\_generator
 
-    The generator to use for creating values. Generators are define in
-    /basho\_bench\_valgen.erl/. Default is ={value\_generator, {fixed\_bin,
-    100}}=.
+    The generator function to use for creating values. Generators are defined in
+    /basho\_bench\_valgen.erl/. Available generators include:
+
+    + {fixed\_bin, Size} :: generates a random binary of Size bytes. Every
+         binary is the same size, but varies in content.
+
+    + {exponential\_bin, MinSize, Mean} :: generate a random binary which has an
+         exponentially-distributed size. Most values will be approximately
+         MinSize + Mean bytes in size, with a long-tail of larger values.
+
+    The default value generator is ={value\_generator, {fixed\_bin, 100}}=.
+
+    Examples:
 
     : % Generate a fixed size random binary of 512 bytes
     : {value_generator, {fixed_bin, 512}}.
 
-    : % Generate a random binary whose size is exponentially distributed, starting at
-    : % 1000 bytes and a lambda of 2000 bytes (thus mean ~3k)
+    : % Generate a random binary whose size is exponentially distributed
+    : % starting at 1000 bytes and a mean of 2000 bytes
     : {value_generator, {exponential_bin, 1000, 2000}}.
+
+*** rng\_seed
+
+    The initial random seed to use. This is explicitly seeded, rather than
+    seeded from the current time, so that a test can be run in a predictable,
+    repeatable fashion.
+
+    Default is ={rng_seed, {42, 23, 12}}=.
+
+    : % Seed to {12, 34, 56}
+    : {rng_seed, {12, 34, 56}}.
 
 *** log\_level
 
@@ -291,44 +331,21 @@
 
     Valid levels are:
 
-    : % Log all messages.
-    : {log_level, debug}.
-
-    : % Log informational messages and higher.
-    : {log_level, info}.
-
-    : % Log warning messages and higher.
-    : {log_level, warn}.
-
-    : % Only log error messages.
-    : {log_level, error}
+    + debug
+    + info
+    + warn
+    + error
 
 *** report\_interval
-    
+
     How often, in seconds, should the stats process write histogram
     data to disk. Default is 10 seconds.
-
-    : % Save stats every 12 seconds.
-    : {report_interval, 12}
 
 *** test\_dir
 
     The directory in which to write result data. The default is
     /tests/.
 
-    : % Save results to the "mytests" directory.
-    : {test_dir, "mytests"}.
-
-*** rng\_seed
-
-    The initial random seed to use. This is explicitly seeded, rather
-    than seeded from the current time, so that a test can be run in a
-    predictable, repeatable fashion.
-
-    Default is ={rng_seed, {42, 23, 12}}=.
-
-    : % Seed to {12, 34, 56}
-    : {rng_seed, {12, 34, 56}}.
 
 ** basho\_bench\_driver\_riakclient Settings
 
@@ -375,7 +392,40 @@
 
 ** basho\_bench\_driver\_http\_raw Settings
 
-   Not yet documented.
+*** http\_raw\_ips
+    List of IP addresses to connect the workers to. Each worker makes requests to each
+    IP in a round-robin fashion.
+
+    Default is ={http_raw_ips, ["127.0.0.1"]}=
+
+    % Connect to a cluster of machines in the 10.x network
+    {http_raw_ips, ["10.0.0.1", "10.0.0.2", "10.0.0.3"]}.
+
+
+*** http_raw_port
+    Select the default port to connect on for the HTTP server.
+
+    Default is ={http_raw_port, 8098}.=
+
+    % Connect on port 8090
+    {http_raw_port, 8090}.
+
+*** http_raw_path
+    Base path to use for accessing riak - usually "/riak/<bucket>"
+
+    Defaults is ={http_raw_path, "/riak/test"}.=
+
+    % Place test data in another_bucket
+    {http_raw_path, "/riak/another_bucket"}.
+
+*** http_raw_params
+    Additional parameters to add to the end of the URL. This can be used to set
+    riak r/w/dw/rw parameters as as desired.
+
+    Default is ={http_raw_params, ""}.=
+
+    % Set R=1, W=1 for testing a system with n_val set to 1
+    {http_raw_params, "?r=1&w=1"}.
 
 * Custom Driver
 
@@ -389,4 +439,5 @@
   : run(Op, KeyGen, ValueGen, State) -> {ok, NewState} or {error, Reason, NewState}
 
   See the existing drivers for more details.
+
 

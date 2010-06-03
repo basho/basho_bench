@@ -33,15 +33,15 @@
 new({fixed_bin, Size}, _Id) ->
     Source = init_source(),
     fun() -> data_block(Source, Size) end;
-new({exponential_bin, MinSize, Lambda}, _Id) ->
+new({exponential_bin, MinSize, Mean}, _Id) ->
     Source = init_source(),
-    fun() -> data_block(Source, MinSize + trunc(stats_rv:exponential(1 / Lambda))) end;
+    fun() -> data_block(Source, MinSize + trunc(stats_rv:exponential(1 / Mean))) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 
 dimension({fixed_bin, Size}, KeyDimension) ->
     Size * KeyDimension;
-dimension(Other, _) ->
+dimension(_Other, _) ->
     0.0.
 
 
