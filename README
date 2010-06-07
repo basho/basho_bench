@@ -1,7 +1,1 @@
-To get stats:
-
-(cd tests/current && R --vanilla < ../../priv/basho_bench.r)
-
-That will generate:
-
-tests/current/results.png
+Please see docs/Documentation.org.
