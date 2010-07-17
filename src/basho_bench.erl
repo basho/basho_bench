@@ -29,6 +29,9 @@
 %% API
 %% ====================================================================
 
+main([]) ->
+    io:format("Usage: basho_bench CONFIG_FILE~n");
+
 main([Config]) ->
     %% Load baseline config
     ok = application:load(basho_bench),

@@ -36,6 +36,14 @@ new({fixed_bin, Size}, _Id) ->
 new({exponential_bin, MinSize, Mean}, _Id) ->
     Source = init_source(),
     fun() -> data_block(Source, MinSize + trunc(stats_rv:exponential(1 / Mean))) end;
+new({function, Module, Function, Args}, _Id) ->
+    case code:ensure_loaded(Module) of
+        {module, Module} -> 
+            erlang:apply(Module, Function, Args);
+        _Error -> 
+            error_logger:error_msg("Could not find module: ~p~n", [Module]),
+            throw({error, module_not_found, Module})
+    end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 
