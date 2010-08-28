@@ -142,10 +142,14 @@ user_friendly_bytes(Size) ->
                 {Size, bytes}, ['KB', 'MB', 'GB']).
 
 log_dimensions() ->
-    Keyspace = basho_bench_keygen:dimension(basho_bench_config:get(key_generator)),
-    Valspace = basho_bench_valgen:dimension(basho_bench_config:get(value_generator), Keyspace),
-    {Size, Desc} = user_friendly_bytes(Valspace),
-    ?INFO("Est. data size: ~.2f ~s\n", [Size, Desc]).
+    case basho_bench_keygen:dimension(basho_bench_config:get(key_generator)) of
+        undefined ->
+            ok;
+        Keyspace ->
+            Valspace = basho_bench_valgen:dimension(basho_bench_config:get(value_generator), Keyspace),
+            {Size, Desc} = user_friendly_bytes(Valspace),
+            ?INFO("Est. data size: ~.2f ~s\n", [Size, Desc])
+    end.
 
 
 load_source_files(Dir) ->

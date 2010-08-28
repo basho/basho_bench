@@ -54,6 +54,8 @@ new({pareto_int, MaxKey}, _Id) ->
 new({pareto_int_bin, MaxKey}, _Id) ->
     Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
     fun() -> <<(Pareto()):32/native>> end;
+new({external, M, F, A}, Id) ->
+    apply(M, F, [Id] ++ A);
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
@@ -70,12 +72,9 @@ dimension({uniform_int_str, MaxKey}) ->
     MaxKey;
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
-dimension({pareto_int, _}) ->
-    0.0;
-dimension({pareto_int_bin, _}) ->
-    0.0;
 dimension(Other) ->
-    ?FAIL_MSG("Unsupported key generator dimension requested: ~p\n", [Other]).
+    ?INFO("No dimension available for key generator: ~p\n", [Other]),
+    undefined.
 
 
 
