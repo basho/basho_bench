@@ -69,8 +69,23 @@ main([Config]) ->
     %% the supervisor process exits
     Mref = erlang:monitor(process, whereis(basho_bench_sup)),
     DurationMins = basho_bench_config:get(duration),
-    Duration = timer:minutes(DurationMins) + timer:seconds(1),
+    wait_for_stop(Mref, DurationMins).
 
+
+
+
+
+%% ====================================================================
+%% Internal functions
+%% ====================================================================
+
+wait_for_stop(Mref, infinity) ->
+    receive
+        {'DOWN', Mref, _, _, Info} ->
+            ?CONSOLE("Test stopped: ~p\n", [Info])
+    end;
+wait_for_stop(Mref, DurationMins) ->
+    Duration = timer:minutes(DurationMins) + timer:seconds(1),
     receive
         {'DOWN', Mref, _, _, Info} ->
             ?CONSOLE("Test stopped: ~p\n", [Info])
@@ -80,14 +95,6 @@ main([Config]) ->
             ?CONSOLE("Test completed after ~p mins.\n", [DurationMins])
     end.
 
-
-
-
-
-
-%% ====================================================================
-%% Internal functions
-%% ====================================================================
 
 
 %%
