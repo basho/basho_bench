@@ -42,6 +42,15 @@ main([Config]) ->
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
 
+    %% If a source directory is specified, compile and load all .erl files found
+    %% there.
+    case basho_bench_config:get(source_dir, []) of
+        [] ->
+            ok;
+        SourceDir ->
+            load_source_files(SourceDir)
+    end,
+
     %% Setup working directory for this test. All logs, stats, and config
     %% info will be placed here
     {ok, Cwd} = file:get_cwd(),
@@ -137,3 +146,17 @@ log_dimensions() ->
     Valspace = basho_bench_valgen:dimension(basho_bench_config:get(value_generator), Keyspace),
     {Size, Desc} = user_friendly_bytes(Valspace),
     ?INFO("Est. data size: ~.2f ~s\n", [Size, Desc]).
+
+
+load_source_files(Dir) ->
+    CompileFn = fun(F, _Acc) ->
+                        case compile:file(F, [report, binary]) of
+                            {ok, Mod, Bin} ->
+                                {module, Mod} = code:load_binary(Mod, F, Bin),
+                                ?INFO("Loaded ~p (~s)\n", [Mod, F]),
+                                ok;
+                            Error ->
+                                io:format("Failed to compile ~s: ~p\n", [F, Error])
+                        end
+                end,
+    filelib:fold_files(Dir, ".*.erl", false, CompileFn, ok).
