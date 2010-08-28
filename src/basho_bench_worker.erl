@@ -24,7 +24,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/1,
+-export([start_link/2,
          run/1,
          stop/1]).
 
@@ -41,7 +41,8 @@
                  ops_len,
                  rng_seed,
                  parent_pid,
-                 worker_pid }).
+                 worker_pid,
+                 sup_id}).
 
 -include("basho_bench.hrl").
 
@@ -49,8 +50,8 @@
 %% API
 %% ====================================================================
 
-start_link(Id) ->
-    gen_server:start_link(?MODULE, [Id], []).
+start_link(SupChild, Id) ->
+    gen_server:start_link(?MODULE, [SupChild, Id], []).
 
 run(Pids) ->
     [ok = gen_server:call(Pid, run) || Pid <- Pids],
@@ -64,7 +65,7 @@ stop(Pids) ->
 %% gen_server callbacks
 %% ====================================================================
 
-init([Id]) ->
+init([SupChild, Id]) ->
     %% Setup RNG seed for worker sub-process to use; incorporate the ID of
     %% the worker to ensure consistency in load-gen
     %%
@@ -87,7 +88,8 @@ init([Id]) ->
                      driver = Driver,
                      ops = Ops, ops_len = size(Ops),
                      rng_seed = RngSeed,
-                     parent_pid = self() },
+                     parent_pid = self(),
+                     sup_id = SupChild},
 
     %% Use a dedicated sub-process to do the actual work. The work loop may need
     %% to sleep or otherwise delay in a way that would be inappropriate and/or
@@ -127,13 +129,16 @@ handle_cast(run, State) ->
 handle_info({'EXIT', _Pid, Reason}, State) ->
     case Reason of
         normal ->
-            %% Clean shutdown of the worker; take down rest of the app as well
-            basho_bench_app:stop();
+            %% Clean shutdown of the worker; spawn a process to terminate this
+            %% process via the supervisor API and make sure it doesn't restart.
+            spawn(fun() -> stop_worker(State#state.sup_id) end),
+            {noreply, State};
 
         _ ->
-            ok
-    end,
-    {stop, normal, State}.
+            %% Worker process exited for some other reason; stop this process
+            %% as well so that everything gets restarted by the sup
+            {stop, normal, State}
+    end.
 
 terminate(_Reason, _State) ->
     ok.
@@ -146,6 +151,22 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+%%
+%% Stop a worker process via the supervisor and terminate the app
+%% if there are no workers remaining
+%%
+%% WARNING: Must run from a process other than the worker!
+%%
+stop_worker(SupChild) ->
+    ok = basho_bench_sup:stop_child(SupChild),
+    case basho_bench_sup:workers() of
+        [] ->
+            %% No more workers -- stop the system
+            basho_bench_app:stop();
+        _ ->
+            ok
+    end.
 
 %%
 %% Expand operations list into tuple suitable for weighted, random draw

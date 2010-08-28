@@ -25,7 +25,8 @@
 
 %% API
 -export([start_link/0,
-         workers/0]).
+         workers/0,
+         stop_child/1]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -44,6 +45,10 @@ start_link() ->
 
 workers() ->
     [Pid || {_Id, Pid, worker, [basho_bench_worker]} <- supervisor:which_children(?MODULE)].
+
+stop_child(Id) ->
+    ok = supervisor:terminate_child(?MODULE, Id),
+    ok = supervisor:delete_child(?MODULE, Id).
 
 
 %% ===================================================================
@@ -66,6 +71,6 @@ worker_specs(0, Acc) ->
     Acc;
 worker_specs(Count, Acc) ->
     Id = list_to_atom(lists:concat(['basho_bench_worker_', Count])),
-    Spec = {Id, {basho_bench_worker, start_link, [Count]},
+    Spec = {Id, {basho_bench_worker, start_link, [Id, Count]},
             permanent, 5000, worker, [basho_bench_worker]},
     worker_specs(Count-1, [Spec | Acc]).
