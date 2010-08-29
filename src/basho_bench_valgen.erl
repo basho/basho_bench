@@ -40,13 +40,12 @@ new({uniform_bin, MinSize, MaxSize}, _Id) ->
     Source = init_source(),
     Diff = MaxSize - MinSize,
     fun() -> data_block(Source, MinSize + random:uniform(Diff)) end;
-new({function, Module, Function, Args}, _Id) ->
+new({function, Module, Function, Args}, Id) ->
     case code:ensure_loaded(Module) of
-        {module, Module} -> 
-            erlang:apply(Module, Function, Args);
-        _Error -> 
-            error_logger:error_msg("Could not find module: ~p~n", [Module]),
-            throw({error, module_not_found, Module})
+        {module, Module} ->
+            erlang:apply(Module, Function, [Id] ++ Args);
+        _Error ->
+            ?FAIL_MSG("Could not find valgen function: ~p:~p\n", [Module, Function])
     end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).

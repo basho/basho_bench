@@ -54,8 +54,13 @@ new({pareto_int, MaxKey}, _Id) ->
 new({pareto_int_bin, MaxKey}, _Id) ->
     Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
     fun() -> <<(Pareto()):32/native>> end;
-new({external, M, F, A}, Id) ->
-    apply(M, F, [Id] ++ A);
+new({function, Module, Function, Args}, Id) ->
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            erlang:apply(Module, Function, [Id] ++ Args);
+        _Error ->
+            ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
+    end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
