@@ -1,7 +1,7 @@
 .PHONY: deps
 
 all: deps
-	./rebar compile test escriptize
+	./rebar compile eunit escriptize
 
 deps:
 	./rebar get-deps
