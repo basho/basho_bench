@@ -36,7 +36,7 @@ new({fixed_bin, Size}, _Id) ->
 new({exponential_bin, MinSize, Mean}, _Id) ->
     Source = init_source(),
     fun() -> data_block(Source, MinSize + trunc(stats_rv:exponential(1 / Mean))) end;
-new({uniform_bin, MinSize, MaxSize}) ->
+new({uniform_bin, MinSize, MaxSize}, _Id) ->
     Source = init_source(),
     Diff = MaxSize - MinSize,
     fun() -> data_block(Source, MinSize + random:uniform(Diff)) end;
