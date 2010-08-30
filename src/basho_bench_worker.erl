@@ -177,6 +177,9 @@ ops_tuple() ->
 
 
 worker_init(State) ->
+    %% Trap exits from linked parent process; use this to ensure the driver
+    %% gets a chance to cleanup
+    process_flag(trap_exit, true),
     random:seed(State#state.rng_seed),
     worker_idle_loop(State).
 
@@ -229,6 +232,10 @@ worker_next_op(State) ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
             basho_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
+
+            %% Give the driver a chance to cleanup
+            (catch (State#state.driver):terminate({'EXIT', Reason}, State#state.driver_state)),
+
             ?DEBUG("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
             crash;
 
@@ -236,13 +243,34 @@ worker_next_op(State) ->
             %% Driver (or something within it) has requested that this worker
             %% terminate cleanly.
             ?INFO("Driver ~p (~p) has requested stop: ~p\n", [State#state.driver, self(), Reason]),
+
+            %% Give the driver a chance to cleanup
+            (catch (State#state.driver):terminate(normal, State#state.driver_state)),
+
             normal
     end.
+
+needs_shutdown(State) ->
+    Parent = State#state.parent_pid,
+    receive
+        {'EXIT', Parent, _Reason} ->
+            %% Give the driver a chance to cleanup
+            (catch (State#state.driver):terminate(normal, State#state.driver_state)),
+            true
+    after 0 ->
+            false
+    end.
+
 
 max_worker_run_loop(State) ->
     case worker_next_op(State) of
         {ok, State2} ->
-            max_worker_run_loop(State2);
+            case needs_shutdown(State2) of
+                true ->
+                    ok;
+                false ->
+                    max_worker_run_loop(State2)
+            end;
         ExitReason ->
             exit(ExitReason)
     end.
@@ -253,7 +281,12 @@ rate_worker_run_loop(State, Lambda) ->
     timer:sleep(trunc(stats_rv:exponential(Lambda))),
     case worker_next_op(State) of
         {ok, State2} ->
-            rate_worker_run_loop(State2, Lambda);
+            case needs_shutdown(State2) of
+                true ->
+                    ok;
+                false ->
+                    rate_worker_run_loop(State2, Lambda)
+            end;
         ExitReason ->
             exit(ExitReason)
     end.
