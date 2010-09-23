@@ -66,6 +66,12 @@ new({pareto_int, MaxKey}, _Id) ->
 new({pareto_int_bin, MaxKey}, _Id) ->
     Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
     fun() -> <<(Pareto()):32/native>> end;
+new({truncated_pareto_int, MaxKey}, Id) ->
+    Pareto = new({pareto_int, MaxKey}, Id),
+    fun() -> erlang:min(MaxKey, Pareto()) end;
+new({truncated_pareto_int_bin, MaxKey}, Id) ->
+    TPareto = new({truncated_pareto_int, MaxKey}, Id),
+    fun() -> <<(TPareto()):32/native>> end;
 new({function, Module, Function, Args}, Id) ->
     case code:ensure_loaded(Module) of
         {module, Module} ->
