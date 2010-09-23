@@ -87,6 +87,16 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
+run(get_existing, KeyGen, _ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+        {not_found, Url} ->
+            {error, {not_found, Url}, S2};
+        {ok, _Url, _Headers} ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 run(update, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
@@ -100,6 +110,24 @@ run(update, KeyGen, ValueGen, State) ->
                 {error, Reason} ->
                     {error, Reason, S2}
             end;
+
+        {ok, Url, Headers} ->
+            Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
+            case do_put(Url, [State#state.client_id, Vclock], ValueGen) of
+                ok ->
+                    {ok, S2};
+                {error, Reason} ->
+                    {error, Reason, S2}
+            end
+    end;
+run(update_existing, KeyGen, ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+        {error, Reason} ->
+            {error, Reason, S2};
+
+        {not_found, Url} ->
+            {error, {not_found, Url}, S2};
 
         {ok, Url, Headers} ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
