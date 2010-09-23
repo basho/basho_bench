@@ -291,8 +291,8 @@ should_disconnect_secs(Seconds, Url) ->
 clear_disconnect_freq(Url) ->
     case erlang:get(disconnect_freq) of
         infinity -> ok;
-        {ops, Count} -> erlang:put({ops_since_disconnect, Url#url.host}, 0);
-        Seconds -> erlang:put({last_disconnect, Url#url.host}, erlang:now())
+        {ops, _Count} -> erlang:put({ops_since_disconnect, Url#url.host}, 0);
+        _Seconds -> erlang:put({last_disconnect, Url#url.host}, erlang:now())
     end.
 
 send_request(Url, Headers, Method, Body, Options) ->
