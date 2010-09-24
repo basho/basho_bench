@@ -33,14 +33,14 @@
 new(_Id) ->
     {ok, undefined}.
 
-run(get, KeyGen, _ValueGen, _State) ->
+run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    {ok, Key};
-run(put, KeyGen, ValueGen, _State) ->
+    {ok, State};
+run(put, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     ValueGen(),
-    {ok, Key};
-run(delete, KeyGen, _ValueGen, _State) ->
+    {ok, State};
+run(delete, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    {ok, Key}.
+    {ok, State}.
 

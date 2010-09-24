@@ -43,6 +43,18 @@ new({sequential_int_bin, MaxKey}, _Id) ->
 new({sequential_int_str, MaxKey}, _Id) ->
     Ref = make_ref(),
     fun() -> Key = sequential_int_generator(Ref, MaxKey), integer_to_list(Key) end;
+new({partitioned_sequential_int, MaxKey}, Id) ->
+    Workers = basho_bench_config:get(concurrent),
+    MaxValue = MaxKey div Workers,
+    MinValue = MaxValue * (Id - 1),
+    Ref = make_ref(),
+    fun() -> sequential_int_generator(Ref,MaxValue) + MinValue end;
+new({partitioned_sequential_int_bin, MaxKey}, Id) ->
+    Gen = new({partitioned_sequential_int, MaxKey}, Id),
+    fun() -> <<(Gen()):32/native>> end;
+new({partitioned_sequential_int_str, MaxKey}, Id) ->
+    Gen = new({partitioned_sequential_int, MaxKey}, Id),
+    fun() -> integer_to_list(Gen()) end;
 new({uniform_int_bin, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
 new({uniform_int_str, MaxKey}, _Id) ->
@@ -54,6 +66,15 @@ new({pareto_int, MaxKey}, _Id) ->
 new({pareto_int_bin, MaxKey}, _Id) ->
     Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
     fun() -> <<(Pareto()):32/native>> end;
+new({pareto_int_str, MaxKey}, _Id) ->
+    Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
+    fun() -> integer_to_list(Pareto()) end;
+new({truncated_pareto_int, MaxKey}, Id) ->
+    Pareto = new({pareto_int, MaxKey}, Id),
+    fun() -> erlang:min(MaxKey, Pareto()) end;
+new({truncated_pareto_int_bin, MaxKey}, Id) ->
+    TPareto = new({truncated_pareto_int, MaxKey}, Id),
+    fun() -> <<(TPareto()):32/native>> end;
 new({function, Module, Function, Args}, Id) ->
     case code:ensure_loaded(Module) of
         {module, Module} ->
@@ -70,6 +91,12 @@ dimension({sequential_int, MaxKey}) ->
 dimension({sequential_int_bin, MaxKey}) ->
     MaxKey;
 dimension({sequential_int_str, MaxKey}) ->
+    MaxKey;
+dimension({partitioned_sequential_int, MaxKey}) ->
+    MaxKey;
+dimension({partitioned_sequential_int_bin, MaxKey}) ->
+    MaxKey;
+dimension({partitioned_sequential_int_str, MaxKey}) ->
     MaxKey;
 dimension({uniform_int_bin, MaxKey}) ->
     MaxKey;

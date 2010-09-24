@@ -49,7 +49,7 @@ new(Id) ->
 
     Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
     Port  = basho_bench_config:get(riakc_pb_port, 8087),
-    %% riakc_pb_replies sets defaults for R, W, DW and RW. 
+    %% riakc_pb_replies sets defaults for R, W, DW and RW.
     %% Each can be overridden separately
     Replies = basho_bench_config:get(riakc_pb_replies, 2),
     R = basho_bench_config:get(riakc_pb_r, Replies),
@@ -70,7 +70,7 @@ new(Id) ->
                           w = W,
                           dw = DW,
                           rw = RW
-                        }};
+                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [TargetIp, Port, Reason2])
@@ -78,12 +78,23 @@ new(Id) ->
 
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key, 
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
                              [{r, State#state.r}]) of
         {ok, _} ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(get_existing, KeyGen, _ValueGen, State) ->
+    Key = KeyGen(),
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                             [{r, State#state.r}]) of
+        {ok, _} ->
+            {ok, State};
+        {error, notfound} ->
+            {error, {not_found, Key}, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -99,12 +110,12 @@ run(put, KeyGen, ValueGen, State) ->
     end;
 run(update, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket, 
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}]) of
         {ok, Robj} ->
             Robj2 = riakc_obj:update_value(Robj, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                              {dw, State#state.dw}]) of 
+                                                              {dw, State#state.dw}]) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
@@ -114,16 +125,32 @@ run(update, KeyGen, ValueGen, State) ->
             Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
             Robj = riakc_obj:update_value(Robj0, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
-                                                             {dw, State#state.dw}]) of 
+                                                             {dw, State#state.dw}]) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
             end
     end;
+run(update_existing, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
+                             Key, [{r, State#state.r}]) of
+        {ok, Robj} ->
+            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
+            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+                                                              {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, notfound} ->
+            {error, {not_found, Key}, State}
+    end;
 run(delete, KeyGen, _ValueGen, State) ->
     %% Pass on rw
-    case riakc_pb_socket:delete(State#state.pid, State#state.bucket, KeyGen(), 
+    case riakc_pb_socket:delete(State#state.pid, State#state.bucket, KeyGen(),
                                 [{rw, State#state.rw}]) of
         ok ->
             {ok, State};

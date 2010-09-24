@@ -33,6 +33,7 @@
                  base_urls_index,    % #url to use for next request
                  path_params }).     % Params to append on the path
 
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -57,6 +58,17 @@ new(Id) ->
     Port = basho_bench_config:get(http_raw_port, 8098),
     Path = basho_bench_config:get(http_raw_path, "/riak/test"),
     Params = basho_bench_config:get(http_raw_params, ""),
+    Disconnect = basho_bench_config:get(http_raw_disconnect_frequency, infinity),
+
+    case Disconnect of
+        infinity -> ok;
+        Seconds when is_integer(Seconds) -> ok;
+        {ops, Ops} when is_integer(Ops) -> ok;
+        _ -> ?FAIL_MSG("Invalid configuration for http_raw_disconnect_frequency: ~p~n", [Disconnect])
+    end,
+
+    %% Uses pdict to avoid threading state record through lots of functions
+    erlang:put(disconnect_freq, Disconnect),
 
     %% If there are multiple URLs, convert the list to a tuple so we can efficiently
     %% round-robin through them.
@@ -87,6 +99,16 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
+run(get_existing, KeyGen, _ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+        {not_found, Url} ->
+            {error, {not_found, Url}, S2};
+        {ok, _Url, _Headers} ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 run(update, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
@@ -100,6 +122,24 @@ run(update, KeyGen, ValueGen, State) ->
                 {error, Reason} ->
                     {error, Reason, S2}
             end;
+
+        {ok, Url, Headers} ->
+            Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
+            case do_put(Url, [State#state.client_id, Vclock], ValueGen) of
+                ok ->
+                    {ok, S2};
+                {error, Reason} ->
+                    {error, Reason, S2}
+            end
+    end;
+run(update_existing, KeyGen, ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+        {error, Reason} ->
+            {error, Reason, S2};
+
+        {not_found, Url} ->
+            {error, {not_found, Url}, S2};
 
         {ok, Url, Headers} ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
@@ -211,6 +251,49 @@ disconnect(Url) ->
     erlang:erase({ibrowse_pid, Url#url.host}),
     ok.
 
+maybe_disconnect(Url) ->
+    case erlang:get(disconnect_freq) of
+        infinity -> ok;
+        {ops, Count} -> should_disconnect_ops(Count,Url) andalso disconnect(Url);
+        Seconds -> should_disconnect_secs(Seconds,Url) andalso disconnect(Url)
+    end.
+
+should_disconnect_ops(Count, Url) ->
+    Key = {ops_since_disconnect, Url#url.host},
+    case erlang:get(Key) of
+        undefined ->
+            erlang:put(Key, 1),
+            false;
+        Count ->
+            erlang:put(Key, 0),
+            true;
+        Incr ->
+            erlang:put(Key, Incr + 1),
+            false
+    end.
+
+should_disconnect_secs(Seconds, Url) ->
+    Key = {last_disconnect, Url#url.host},
+    case erlang:get(Key) of
+        undefined ->
+            erlang:put(Key, erlang:now()),
+            false;
+        Time when is_tuple(Time) andalso size(Time) == 3 ->
+            Diff = timer:now_diff(erlang:now(), Time),
+            if
+                Diff >= Seconds * 1000000 ->
+                    erlang:put(Key, erlang:now()),
+                    true;
+                true -> false
+            end
+    end.
+
+clear_disconnect_freq(Url) ->
+    case erlang:get(disconnect_freq) of
+        infinity -> ok;
+        {ops, _Count} -> erlang:put({ops_since_disconnect, Url#url.host}, 0);
+        _Seconds -> erlang:put({last_disconnect, Url#url.host}, erlang:now())
+    end.
 
 send_request(Url, Headers, Method, Body, Options) ->
     send_request(Url, Headers, Method, Body, Options, 3).
@@ -221,9 +304,11 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Url),
     case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 5000)) of
         {ok, Status, RespHeaders, RespBody} ->
+            maybe_disconnect(Url),
             {ok, Status, RespHeaders, RespBody};
 
         Error ->
+            clear_disconnect_freq(Url),
             disconnect(Url),
             case should_retry(Error) of
                 true ->
