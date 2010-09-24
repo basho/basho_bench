@@ -66,6 +66,9 @@ new({pareto_int, MaxKey}, _Id) ->
 new({pareto_int_bin, MaxKey}, _Id) ->
     Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
     fun() -> <<(Pareto()):32/native>> end;
+new({pareto_int_str, MaxKey}, _Id) ->
+    Pareto = pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE),
+    fun() -> integer_to_list(Pareto()) end;
 new({truncated_pareto_int, MaxKey}, Id) ->
     Pareto = new({pareto_int, MaxKey}, Id),
     fun() -> erlang:min(MaxKey, Pareto()) end;
