@@ -44,7 +44,7 @@ png(file = opt$outfile, width = opt$width, height = opt$height)
 
 # First plot req/sec from summary
 plot1 <- qplot(elapsed, total / window, data = b$summary,
-               geom = "smooth",
+               geom = c("smooth", "point"),
                xlab = "Elapsed Secs", ylab = "Op/sec",
                main = "Throughput")
 
