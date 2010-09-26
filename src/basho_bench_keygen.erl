@@ -44,16 +44,26 @@ new({sequential_int_str, MaxKey}, _Id) ->
     Ref = make_ref(),
     fun() -> Key = sequential_int_generator(Ref, MaxKey), integer_to_list(Key) end;
 new({partitioned_sequential_int, MaxKey}, Id) ->
+    new({partitioned_sequential_int, 0, MaxKey}, Id);
+new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     Workers = basho_bench_config:get(concurrent),
-    MaxValue = MaxKey div Workers,
-    MinValue = MaxValue * (Id - 1),
+    Range = NumKeys div Workers,
+    MinValue = StartKey + Range * (Id - 1),
+    MaxValue = StartKey + Range * Id,
     Ref = make_ref(),
+    ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
     fun() -> sequential_int_generator(Ref,MaxValue) + MinValue end;
 new({partitioned_sequential_int_bin, MaxKey}, Id) ->
     Gen = new({partitioned_sequential_int, MaxKey}, Id),
     fun() -> <<(Gen()):32/native>> end;
+new({partitioned_sequential_int_bin, StartKey, NumKeys}, Id) ->
+    Gen = new({partitioned_sequential_int, StartKey, NumKeys}, Id),
+    fun() -> <<(Gen()):32/native>> end;
 new({partitioned_sequential_int_str, MaxKey}, Id) ->
     Gen = new({partitioned_sequential_int, MaxKey}, Id),
+    fun() -> integer_to_list(Gen()) end;
+new({partitioned_sequential_int_str, StartKey, NumKeys}, Id) ->
+    Gen = new({partitioned_sequential_int, StartKey, NumKeys}, Id),
     fun() -> integer_to_list(Gen()) end;
 new({uniform_int_bin, MaxKey}, _Id) ->
     fun() -> Key = random:uniform(MaxKey), <<Key:32/native>> end;
