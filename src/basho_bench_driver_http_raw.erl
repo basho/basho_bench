@@ -302,7 +302,7 @@ send_request(_Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Url),
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, 5000)) of
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, basho_bench_config:get(http_raw_request_timeout, 5000))) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Url),
             {ok, Status, RespHeaders, RespBody};
