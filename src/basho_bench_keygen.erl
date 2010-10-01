@@ -1,4 +1,4 @@
-%% -------------------------------------------------------------------
+ in%% -------------------------------------------------------------------
 %%
 %% basho_bench: Benchmarking Suite
 %%
@@ -52,7 +52,7 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     MaxValue = StartKey + Range * Id,
     Ref = make_ref(),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
-    fun() -> sequential_int_generator(Ref,MaxValue) + MinValue end;
+    fun() -> sequential_int_generator(Ref,Range) + MinValue end;
 new({partitioned_sequential_int_bin, MaxKey}, Id) ->
     Gen = new({partitioned_sequential_int, MaxKey}, Id),
     fun() -> <<(Gen()):32/native>> end;
