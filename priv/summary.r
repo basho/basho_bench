@@ -43,10 +43,12 @@ if (nrow(b$latencies) == 0)
 png(file = opt$outfile, width = opt$width, height = opt$height)
 
 # First plot req/sec from summary
-plot1 <- qplot(elapsed, total / window, data = b$summary,
-               geom = c("smooth", "point"),
-               xlab = "Elapsed Secs", ylab = "Op/sec",
-               main = "Throughput")
+plot1 <- qplot(elapsed, successful / window, data = b$summary,
+                geom = c("smooth", "point"),
+                xlab = "Elapsed Secs", ylab = "Op/sec",
+                main = "Throughput") +
+                geom_smooth(aes(y = failed / window, colour = "Errors")) +
+                scale_colour_manual(name = "", values = c("red"))
 
 # Setup common elements of the latency plots
 latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
