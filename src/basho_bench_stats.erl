@@ -125,7 +125,7 @@ handle_info(report, State) ->
 
     %% Reset latency histograms
     [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],
-
+    
     %% Write summary
     file:write(State#state.summary_file,
                io_lib:format("~w, ~w, ~w, ~w, ~w\n",
@@ -138,7 +138,8 @@ handle_info(report, State) ->
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
         true ->
-            ?INFO("Errors:~p\n", [ets:tab2list(basho_bench_errors)]);
+            ?INFO("Errors:~p\n", [ets:tab2list(basho_bench_errors)]),
+            reset_error_counters();
         false ->
             ok
     end,
@@ -187,7 +188,10 @@ error_counter(Key) ->
         Value ->
             Value
     end.
-        
+
+reset_error_counters() ->
+    ets:delete_all_objects(basho_bench_errors).
+
 %%
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
