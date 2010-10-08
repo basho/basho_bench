@@ -34,13 +34,13 @@ new(_Id) ->
     {ok, undefined}.
 
 run(get, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
+    _Key = KeyGen(),
     {ok, State};
 run(put, KeyGen, ValueGen, State) ->
-    Key = KeyGen(),
+    _Key = KeyGen(),
     ValueGen(),
     {ok, State};
 run(delete, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
+    _Key = KeyGen(),
     {ok, State}.
 

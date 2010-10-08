@@ -48,7 +48,7 @@
 %% ====================================================================
 
 new(Id) ->
-    %% Try to tell the user politely if there's a missing movule and where
+    %% Try to tell the user politely if there's a missing module and where
     %% that module might be found.
     DepMods = [
                {brick_simple,
@@ -68,7 +68,7 @@ new(Id) ->
               ] ++
         [{Mod, x} || Mod <- [
                              %% gdss app
-                             brick_simple, brick_server, brick_hash, 
+                             brick_simple, brick_server, brick_hash,
                              %% gmt app
                              gmt_util,
                              %% ubf app
@@ -89,7 +89,7 @@ new(Id) ->
                                         ?FAIL_MSG(
                                            "Please double-check the path for "
                                            "this module in\nthe basho_bench "
-                                           "config file, e.g.\n    ~s\n", 
+                                           "config file, e.g.\n    ~s\n",
                                            [Dir]);
                                    true ->
                                         ok
@@ -175,7 +175,7 @@ do(native, _Clnt, Table, OpList) ->
         brick_simple:do(Table, OpList, ?BASIC_TIMEOUT)
     catch _X:_Y ->
         ?ERROR("Error on ~p: ~p ~p\n", [Table, _X, _Y]),
-        {error, {_X, _Y}}                                 
+        {error, {_X, _Y}}
     end;
 do(Type, Clnt, Table, OpList)
   when Type == ubf; Type == ebf; Type == jsf ->
@@ -188,11 +188,9 @@ do(Type, Clnt, Table, OpList)
         error:{badmatch, {error, socket_closed}} ->
             socket_closed;
         error:{badmatch, timeout} ->
-            timeout;                                                     
+            timeout;
         error:badpid ->
             %% This error corresponds to a timeout error .....
-            %%
-            %%
             ?ERROR("TODO: error:badpid for ~p\n", [Clnt]),
             error_badpid;
         _X:_Y ->
@@ -278,8 +276,8 @@ close_and_reopen(#state{clnt = OldClnt,
     %%?INFO("close_and_reopen #~p\n", [OldId]),
     catch ubf_client:close(OldClnt),
 
-    %% Take advantage of the fact that native clients don't need to re-do
-    %% anything, so just pass 'foo' instead.
+    %% Take advantage of the fact that native clients don't need to
+    %% re-do anything, so just pass 'foo' instead.
     Id = if HibariType == native -> foo;
             true                 -> OldId
          end,
