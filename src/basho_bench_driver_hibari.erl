@@ -39,8 +39,10 @@
           id,
           hibari_servers,
           hibari_port,
+          hibari_service,
           clnt,
-          table
+          table,
+          value_generator
          }).
 
 %% ====================================================================
@@ -61,6 +63,8 @@ new(Id) ->
                 "/path/to/your-hibari-distro/src/erl-apps/cluster-info__HEAD/ebin"},
                {jsf,
                 "/path/to/your-hibari-distro/src/erl-tools/ubf-jsonrpc__HEAD/ebin"},
+               {tbf,
+                "/path/to/your-hibari-distro/src/erl-tools/ubf-thrift__HEAD/ebin"},
                {mochijson2,
                 "/path/to/your-hibari-distro/src/erl-third-party/mochiweb__HEAD/ebin"},
                {ubf_client,
@@ -106,20 +110,24 @@ new(Id) ->
     HibariServers = basho_bench_config:get(hibari_servers),
     HibariType = basho_bench_config:get(hibari_client_type),
     HibariTcpPort = basho_bench_config:get(hibari_server_tcp_port),
+    HibariService = basho_bench_config:get(hibari_server_service),
     Native1Node = basho_bench_config:get(hibari_native_1node),
     NativeSname = basho_bench_config:get(hibari_native_my_sname),
     NativeTickTime = basho_bench_config:get(hibari_native_ticktime),
     NativeCookie = basho_bench_config:get(hibari_native_cookie),
+    ValueGenerator = basho_bench_config:get(value_generator),
 
     Clnt = make_clnt(HibariType, Id, NativeSname, NativeTickTime, NativeCookie,
-                     Native1Node, HibariServers, HibariTcpPort, false),
+                     Native1Node, HibariServers, HibariTcpPort, HibariService, ValueGenerator, false),
 
     {ok, #state{hibari_type = HibariType,
                 id = Id,
                 hibari_servers = HibariServers,
                 hibari_port = HibariTcpPort,
+                hibari_service = HibariService,
                 clnt = Clnt,
-                table = Table
+                table = Table,
+                value_generator = ValueGenerator
                }}.
 
 run(get, KeyGen, _ValueGen, #state{hibari_type = ClientType, clnt = Clnt,
@@ -129,7 +137,6 @@ run(get, KeyGen, _ValueGen, #state{hibari_type = ClientType, clnt = Clnt,
         [{ok, _TS, _Val}] ->
             {ok, S};
         [key_not_exist] ->
-            %%io:format("g!"),
             {ok, S};
         timeout ->
             {error, timeout, close_and_reopen(S)};
@@ -158,7 +165,6 @@ run(delete, KeyGen, _ValueGen, #state{hibari_type = ClientType, clnt = Clnt,
         [ok] ->
             {ok, S};
         [key_not_exist] ->
-            %%io:format("d!"),
             {ok, S};
         timeout ->
             {error, timeout, close_and_reopen(S)};
@@ -178,7 +184,7 @@ do(native, _Clnt, Table, OpList) ->
         {error, {_X, _Y}}
     end;
 do(Type, Clnt, Table, OpList)
-  when Type == ubf; Type == ebf; Type == jsf ->
+  when Type == ubf; Type == ebf; Type == jsf; Type == tbf ->
     try begin
             DoOp = {do, Table, OpList, [], ?BASIC_TIMEOUT+100},
             {reply, Res, none} = ubf_client:rpc(Clnt, DoOp, ?BASIC_TIMEOUT),
@@ -199,7 +205,7 @@ do(Type, Clnt, Table, OpList)
     end.
 
 make_clnt(HibariType, Id, NativeSname, NativeTickTime, NativeCookie,
-          Native1Node, HibariServers, HibariTcpPort, RetryP) ->
+          Native1Node, HibariServers, HibariTcpPort, HibariService, ValueGenerator, RetryP) ->
     case HibariType of
         native when Id == 1 ->
             ?INFO("Try to start net_kernel with name ~p\n", [NativeSname]),
@@ -236,7 +242,7 @@ make_clnt(HibariType, Id, NativeSname, NativeTickTime, NativeCookie,
         native ->
             %% All the work was done above in Id == 1 clause
             undefined;
-        X when X == ebf; X == ubf; X == jsf ->
+        X when X == ebf; X == ubf; X == jsf; X == tbf ->
             %% Choose the node using our ID as a modulus
             Server = lists:nth((Id rem length(HibariServers)+1),
                                HibariServers),
@@ -247,8 +253,21 @@ make_clnt(HibariType, Id, NativeSname, NativeTickTime, NativeCookie,
             case ubf_client:connect(Server, HibariTcpPort,
                                     [{proto, HibariType}], 60*1000) of
                 {ok, Pid, _} ->
+                    Args =
+                        case HibariService of
+                            gdss_stub ->
+                                case ValueGenerator of
+                                    %% extract and set value size to be used for gdss stub's get responses
+                                    {value_generator, {fixed_bin, ValueSize}} when is_integer(ValueSize) ->
+                                        [{get_value_size, ValueSize}];
+                                    _ ->
+                                        []
+                                end;
+                            _ ->
+                                []
+                        end,
                     {reply, {ok, ok}, none} =
-                        ubf_client:rpc(Pid, {startSession, ?S("gdss"), []},
+                        ubf_client:rpc(Pid, {startSession, ?S(atom_to_list(HibariService)), Args},
                                        60*1000),
                     Pid;
                 Error ->
@@ -258,11 +277,11 @@ make_clnt(HibariType, Id, NativeSname, NativeTickTime, NativeCookie,
             end
     end.
 
-%% UBF/EBF/JSF timeouts cause problems for basho_bench.  If we report
-%% an error, we'll timeout.  But if we don't report an error, then
-%% basho_bench will assume that we can continue using the same #state
-%% and therefore the same UBF/EBF/JSF client ... but that client is
-%% now in an undefined state and cannot be used again.
+%% UBF/EBF/JSF/TBF timeouts cause problems for basho_bench.  If we
+%% report an error, we'll timeout.  But if we don't report an error,
+%% then basho_bench will assume that we can continue using the same
+%% #state and therefore the same UBF/EBF/JSF/TBF client ... but that
+%% client is now in an undefined state and cannot be used again.
 %%
 %% So, we use this function to forcibly close the current client and
 %% open a new one.  For the native client, this ends up doing almost
@@ -272,7 +291,9 @@ close_and_reopen(#state{clnt = OldClnt,
                         id = OldId,
                         hibari_type = HibariType,
                         hibari_servers = HibariServers,
-                        hibari_port = HibariTcpPort} = S) ->
+                        hibari_port = HibariTcpPort,
+                        hibari_service = HibariService,
+                        value_generator = ValueGenerator} = S) ->
     %%?INFO("close_and_reopen #~p\n", [OldId]),
     catch ubf_client:close(OldClnt),
 
@@ -282,6 +303,5 @@ close_and_reopen(#state{clnt = OldClnt,
             true                 -> OldId
          end,
     NewClnt = make_clnt(HibariType, Id, foo, foo, foo,
-                        foo, HibariServers, HibariTcpPort, true),
+                        foo, HibariServers, HibariTcpPort, HibariService, ValueGenerator, true),
     S#state{clnt = NewClnt}.
-
