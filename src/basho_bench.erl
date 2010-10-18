@@ -30,14 +30,14 @@
 %% ====================================================================
 
 main([]) ->
-    io:format("Usage: basho_bench CONFIG_FILE~n");
+    io:format("Usage: basho_bench CONFIG_FILE ..~n");
 
-main([Config]) ->
-    %% Load baseline config
+main(Configs) ->
+    %% Load baseline configs
     ok = application:load(basho_bench),
 
-    %% Load the config file
-    basho_bench_config:load(Config),
+    %% Load the config files
+    basho_bench_config:load(Configs),
 
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
@@ -64,7 +64,8 @@ main([Config]) ->
     [] = os:cmd(?FMT("rm -f ~s; ln -sf ~s ~s", [TestLink, TestDir, TestLink])),
 
     %% Copy the config into the test dir for posterity
-    {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))),
+    [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
+      || Config <- Configs ],
 
     %% Set our CWD to the test dir
     ok = file:set_cwd(TestDir),

@@ -31,17 +31,19 @@
 %% Public API
 %% ===================================================================
 
-load(File) ->
-    case file:consult(File) of
-        {ok, Terms} ->
-            load_config(Terms);
-        {error, Reason} ->
-            ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason])
-    end.
+load(Files) ->
+    TermsList =
+        [ case file:consult(File) of
+              {ok, Terms} ->
+                  Terms;
+              {error, Reason} ->
+                  ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason])
+          end || File <- Files ],
+    load_config(lists:append(TermsList)).
 
 set(Key, Value) ->
     ok = application:set_env(basho_bench, Key, Value).
-    
+
 get(Key) ->
     case application:get_env(basho_bench, Key) of
         {ok, Value} ->
