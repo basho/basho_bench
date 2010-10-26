@@ -42,5 +42,11 @@ run(put, KeyGen, ValueGen, State) ->
     {ok, State};
 run(delete, KeyGen, _ValueGen, State) ->
     _Key = KeyGen(),
-    {ok, State}.
+    {ok, State};
+run(an_error, KeyGen, _ValueGen, State) ->
+    _Key = KeyGen(),
+    {error, went_wrong, State};
+run(another_error, KeyGen, _ValueGen, State) ->
+    _Key = KeyGen(),
+    {error, {bad, things, happened}, State}.
 

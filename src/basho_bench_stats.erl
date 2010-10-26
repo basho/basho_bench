@@ -39,7 +39,8 @@
                  last_write_time,
                  report_interval,
                  errors_since_last_report = false,
-                 summary_file}).
+                 summary_file,
+                 errors_file}).
 
 %% Tracks latencies up to 5 secs w/ 250 us resolution
 -define(NEW_HIST, stats_histogram:new(0, 5000000, 20000)).
@@ -65,8 +66,13 @@ init([]) ->
     %% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
     
-    %% Initialize an ETS table to track error and crash counters
+    %% Initialize an ETS table to track error and crash counters during
+    %% reporting interval
     ets:new(basho_bench_errors, [protected, named_table]),
+
+    %% Initialize an ETS table to track error and crash counters since
+    %% the start of the run
+    ets:new(basho_bench_total_errors, [protected, named_table]),
 
     %% Get the list of operations we'll be using for this test
     Ops = [Op || {Op, _} <- basho_bench_config:get(operations)],
@@ -85,12 +91,18 @@ init([]) ->
     {ok, SummaryFile} = file:open("summary.csv", [raw, binary, write]),
     file:write(SummaryFile, <<"elapsed, window, total, successful, failed\n">>),
 
+    %% Setup errors file w/counters for each error.  Embedded commas likely
+    %% in the error messages so quote the columns.
+    {ok, ErrorsFile} = file:open("errors.csv", [raw, binary, write]),
+    file:write(ErrorsFile, <<"\"error\",\"count\"\n">>),
+
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
     {ok, #state{ ops = Ops,
                  report_interval = ReportInterval,
-                 summary_file = SummaryFile }}.
+                 summary_file = SummaryFile,
+                 errors_file = ErrorsFile}}.
 
 handle_call(run, _From, State) ->
     %% Schedule next report
@@ -112,47 +124,21 @@ handle_cast(_, State) ->
     {noreply, State}.
 
 handle_info(report, State) ->
-    %% Determine how much time has elapsed (seconds) since our last report
     Now = now(),
-    Elapsed = trunc(timer:now_diff(Now, State#state.start_time) / 1000000),
-    Window  = trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000),
-
-    %% Time to report latency data to our CSV files
-    {Oks, Errors} = lists:foldl(fun(Op, {TotalOks, TotalErrors}) ->
-                                        {Oks, Errors} = report_latency(Elapsed, Window, Op),
-                                        {TotalOks + Oks, TotalErrors + Errors}
-                                end, {0,0}, State#state.ops),
-
-    %% Reset latency histograms
-    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],
-    
-    %% Write summary
-    file:write(State#state.summary_file,
-               io_lib:format("~w, ~w, ~w, ~w, ~w\n",
-                             [Elapsed,
-                              Window,
-                              Oks + Errors,
-                              Oks,
-                              Errors])),
-
-    %% Dump current error counts to console
-    case (State#state.errors_since_last_report) of
-        true ->
-            ?INFO("Errors:~p\n", [ets:tab2list(basho_bench_errors)]),
-            reset_error_counters();
-        false ->
-            ok
-    end,
+    process_stats(Now, State),
 
     %% Schedule next report
     erlang:send_after(State#state.report_interval, self(), report),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
+    %% Do the final stats report and write the errors file
+    process_stats(now(), State),
+    report_total_errors(State),
+
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
-
-    ?CONSOLE("~p\n", [ets:tab2list(basho_bench_errors)]),
+    ok = file:close(State#state.errors_file),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -171,13 +157,16 @@ op_csv_file(Op) ->
     F.
 
 increment_error_counter(Key) ->
+    ets_increment(basho_bench_errors, Key, 1).
+
+ets_increment(Tab, Key, Incr) ->
     %% Increment the counter for this specific key. We have to deal with
     %% missing keys, so catch the update if it fails and init as necessary
-    case catch(ets:update_counter(basho_bench_errors, Key, 1)) of
+    case catch(ets:update_counter(Tab, Key, Incr)) of
         Value when is_integer(Value) ->
             ok;
         {'EXIT', _} ->
-            true = ets:insert_new(basho_bench_errors, {Key, 1}),
+            true = ets:insert_new(Tab, {Key, Incr}),
             ok
     end.
 
@@ -188,9 +177,49 @@ error_counter(Key) ->
         Value ->
             Value
     end.
+        
+process_stats(Now, State) ->
+    %% Determine how much time has elapsed (seconds) since our last report
+    %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
+    %% tools.
+    case trunc(timer:now_diff(Now, State#state.start_time) / 1000000) of
+        0 ->
+            Elapsed = 1;
+        Elapsed ->
+            ok
+    end,
+    Window  = trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000),
 
-reset_error_counters() ->
-    ets:delete_all_objects(basho_bench_errors).
+    %% Time to report latency data to our CSV files
+    {Oks, Errors} = lists:foldl(fun(Op, {TotalOks, TotalErrors}) ->
+                                        {Oks, Errors} = report_latency(Elapsed, Window, Op),
+                                        {TotalOks + Oks, TotalErrors + Errors}
+                                end, {0,0}, State#state.ops),
+
+    %% Reset latency histograms
+    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],
+
+    %% Write summary
+    file:write(State#state.summary_file,
+               io_lib:format("~w, ~w, ~w, ~w, ~w\n",
+                             [Elapsed,
+                              Window,
+                              Oks + Errors,
+                              Oks,
+                              Errors])),
+
+    %% Dump current error counts to console
+    case (State#state.errors_since_last_report) of
+        true ->
+            ErrCounts = ets:tab2list(basho_bench_errors),
+            true = ets:delete_all_objects(basho_bench_errors),
+            ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
+            [ets_increment(basho_bench_total_errors, Err, Count) || 
+                              {Err, Count} <- ErrCounts],
+            ok;
+        false ->
+            ok
+    end.
 
 %%
 %% Write latency info for a given op to the appropriate CSV. Returns the
@@ -223,4 +252,24 @@ report_latency(Elapsed, Window, Op) ->
     end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
     {stats_histogram:observations(Hist), Errors}.
-                          
+
+report_total_errors(State) ->                          
+    case ets:tab2list(basho_bench_total_errors) of
+        [] ->
+            ?INFO("No Errors.\n", []);
+        UnsortedErrCounts ->
+            ErrCounts = lists:sort(UnsortedErrCounts),
+            ?INFO("Total Errors:\n", []),
+            F = fun({Key, Count}) ->
+                        case lists:member(Key, State#state.ops) of
+                            true ->
+                                ok; % per op total
+                            false ->
+                                ?INFO("  ~p: ~p\n", [Key, Count]),
+                                file:write(State#state.errors_file, 
+                                           io_lib:format("\"~w\",\"~w\"\n",
+                                                         [Key, Count]))
+                        end
+                end,
+            lists:foreach(F, ErrCounts)
+    end.
