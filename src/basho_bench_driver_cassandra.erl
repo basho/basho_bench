@@ -29,7 +29,9 @@
 
 -record(state, { client,
                  keyspace,
-                 colpath }).
+                 colpath,
+                 conlevel
+               }).
 
 
 %% ====================================================================
@@ -50,6 +52,7 @@ new(Id) ->
     Port     = basho_bench_config:get(cassandra_port, 9160),
     Keyspace = basho_bench_config:get(cassandra_keyspace, "Keyspace1"),
     ColPath  = #columnPath { column_family = "Standard1", column = "col1" },
+    ConLevel = basho_bench_config:get(cassandra_consistencylevel, 1),
 
     %% Choose the node using our ID as a modulus
     TargetHost = lists:nth((Id rem length(Hosts)+1), Hosts),
@@ -59,7 +62,8 @@ new(Id) ->
         {ok, Client} ->
             {ok, #state { client = Client,
                           keyspace = Keyspace,
-                          colpath = ColPath }};
+                          colpath = ColPath,
+                          conlevel = ConLevel }};
         {error, Reason} ->
             ?FAIL_MSG("Failed to get a thrift_client for ~p: ~p\n", [TargetHost, Reason])
     end.
@@ -72,22 +76,47 @@ tstamp() ->
     (Mega * 1000000) + Sec.
 
 
-run(get, KeyGen, _ValueGen, State) ->
+run(get, KeyGen, _ValueGen,
+    #state{keyspace=KeySpace, colpath=ColPath, conlevel=ConLevel}=State) ->
     Key = KeyGen(),
-    case call(State, get, [State#state.keyspace, Key, State#state.colpath, 1]) of
+    Args = [KeySpace, Key, ColPath, ConLevel],
+    case call(State, get, Args) of
         {ok, _} ->
             {ok, State};
         {notFoundException} ->
+            %% DEBUG io:format("g(~p)",[Key]),
+            io:format("g"),
             {ok, State};
         {'EXIT', {timeout, _}} ->
             {error, timeout, State};
         Error ->
             {error, Error, State}
     end;
-run(put, KeyGen, ValueGen, State) ->
-    case call(State, insert, [State#state.keyspace, KeyGen(), State#state.colpath,
-                              ValueGen(), tstamp(), 1]) of
+run(put, KeyGen, ValueGen,
+    #state{keyspace=KeySpace, colpath=ColPath, conlevel=ConLevel}=State) ->
+    Key = KeyGen(),
+    Val = ValueGen(),
+    TS = tstamp(),
+    Args = [KeySpace, Key, ColPath, Val, TS, ConLevel],
+    case call(State, insert, Args) of
         {ok, ok} ->
+            {ok, State};
+        {'EXIT', {timeout, _}} ->
+            {error, timeout, State};
+        Error ->
+            {error, Error, State}
+    end;
+run(delete, KeyGen, _ValueGen,
+    #state{keyspace=KeySpace, colpath=ColPath, conlevel=ConLevel}=State) ->
+    Key = KeyGen(),
+    TS = 0, %% TBD: cannot specify a "known" timestamp value?
+    Args = [KeySpace, Key, ColPath, TS, ConLevel],
+    case call(State, remove, Args) of
+        {ok, _} ->
+            {ok, State};
+        {notFoundException} ->
+            %% DEBUG io:format("d(~p)",[Key]),
+            io:format("d"),
             {ok, State};
         {'EXIT', {timeout, _}} ->
             {error, timeout, State};
