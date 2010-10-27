@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(basho_bench).
@@ -111,7 +111,7 @@ wait_for_stop(Mref, DurationMins) ->
 %% Construct a string suitable for use as a unique ID for this test run
 %%
 id() ->
-    {{Y, M, D}, {H, Min, S}} = calendar:local_time(), 
+    {{Y, M, D}, {H, Min, S}} = calendar:local_time(),
     ?FMT("~w~2..0w~2..0w_~2..0w~2..0w~2..0w", [Y, M, D, H, Min, S]).
 
 
