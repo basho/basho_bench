@@ -177,18 +177,15 @@ error_counter(Key) ->
         Value ->
             Value
     end.
+
+
         
 process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-    case trunc(timer:now_diff(Now, State#state.start_time) / 1000000) of
-        0 ->
-            Elapsed = 1;
-        Elapsed ->
-            ok
-    end,
-    Window  = trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000),
+    Elapsed = erlang:max(trunc(timer:now_diff(Now, State#state.start_time) / 1000000), 1),
+    Window  = erlang:max(trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000), 1),
 
     %% Time to report latency data to our CSV files
     {Oks, Errors} = lists:foldl(fun(Op, {TotalOks, TotalErrors}) ->
