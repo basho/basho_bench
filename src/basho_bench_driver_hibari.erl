@@ -21,8 +21,7 @@
 %% -------------------------------------------------------------------
 -module(basho_bench_driver_hibari).
 
--export([new/1,
-         run/4]).
+-export([new/1, run/4]).
 
 -include("basho_bench.hrl").
 
@@ -50,62 +49,6 @@
 %% ====================================================================
 
 new(Id) ->
-    %% Try to tell the user politely if there's a missing module and where
-    %% that module might be found.
-    DepMods = [
-               {brick_simple,
-                "/path/to/your-hibari-distro/src/erl-apps/gdss__HEAD/ebin"},
-               {gmt_util,
-                "/path/to/your-hibari-distro/src/erl-apps/gmt-util__HEAD/ebin"},
-               {ubf_gdss_plugin,
-                "/path/to/your-hibari-distro/src/erl-apps/gdss-ubf-proto__HEAD/ebin"},
-               {cluster_info,
-                "/path/to/your-hibari-distro/src/erl-apps/cluster-info__HEAD/ebin"},
-               {jsf,
-                "/path/to/your-hibari-distro/src/erl-tools/ubf-jsonrpc__HEAD/ebin"},
-               {tbf,
-                "/path/to/your-hibari-distro/src/erl-tools/ubf-thrift__HEAD/ebin"},
-               {mochijson2,
-                "/path/to/your-hibari-distro/src/erl-third-party/mochiweb__HEAD/ebin"},
-               {ubf_client,
-                "/path/to/your-hibari-distro/src/erl-tools/ubf__HEAD/ebin"}
-              ] ++
-        [{Mod, x} || Mod <- [
-                             %% gdss app
-                             brick_simple, brick_server, brick_hash,
-                             %% gmt app
-                             gmt_util,
-                             %% ubf app
-                             contract_driver, ubf, ubf_client, ubf_driver
-                            ]],
-    if Id == 1 ->
-            F = fun({Mod, Dir}) ->
-                        case code:load_file(Mod) of
-                            {module, Mod} ->
-                                ok;
-                            {error, not_purged} ->
-                                %% This is OK: generator #1 crashed & restarted.
-                                ok;
-                            _Load ->
-                                ?ERROR("~p: error loading '~p' module: ~p.\n\n",
-                                       [?MODULE, Mod, _Load]),
-                                if is_list(Dir) ->
-                                        ?FAIL_MSG(
-                                           "Please double-check the path for "
-                                           "this module in\nthe basho_bench "
-                                           "config file, e.g.\n    ~s\n",
-                                           [Dir]);
-                                   true ->
-                                        ok
-                                end
-                        end
-                end,
-            lists:map(F, DepMods),
-            ?INFO("All required modules are available.\n", []);
-       true ->
-            ok
-    end,
-
     Table = basho_bench_config:get(hibari_table),
     HibariServers = basho_bench_config:get(hibari_servers),
     HibariType = basho_bench_config:get(hibari_client_type),
@@ -180,8 +123,8 @@ do(native, _Clnt, Table, OpList) ->
     try
         brick_simple:do(Table, OpList, ?BASIC_TIMEOUT)
     catch _X:_Y ->
-        ?ERROR("Error on ~p: ~p ~p\n", [Table, _X, _Y]),
-        {error, {_X, _Y}}
+            ?ERROR("Error on ~p: ~p ~p\n", [Table, _X, _Y]),
+            {error, {_X, _Y}}
     end;
 do(Type, Clnt, Table, OpList)
   when Type == ubf; Type == ebf; Type == jsf; Type == tbf ->
