@@ -22,8 +22,7 @@
 -module(basho_bench_keygen).
 
 -export([new/2,
-         dimension/1,
-         mod_factor/2]).
+         dimension/1]).
 
 -include("basho_bench.hrl").
 
