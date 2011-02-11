@@ -22,7 +22,8 @@
 -module(basho_bench_keygen).
 
 -export([new/2,
-         dimension/1]).
+         dimension/1,
+         mod_factor/2]).
 
 -include("basho_bench.hrl").
 
@@ -66,10 +67,15 @@ new({function, Module, Function, Args}, Id) ->
         _Error ->
             ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
     end;
+new({modulo_format, InputGen, Format, Pieces}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> lists:flatten(io_lib:format(Format, mod_factor(Gen(), Pieces))) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
 dimension({Converter, InputGen}) when Converter == int_to_str orelse Converter == int_to_bin ->
+    dimension(InputGen);
+dimension({modulo_format, InputGen, _, _}) ->
     dimension(InputGen);
 dimension({sequential_int, MaxKey}) ->
     MaxKey;
@@ -98,22 +104,32 @@ pareto(Mean, Shape) ->
 
 
 sequential_int_generator(Ref, MaxValue) ->
-   %% A bit of evil here. We want to generate numbers in sequence and stop
-   %% at MaxKey. This means we need state in our anonymous function. Use the process
-   %% dictionary to keep track of where we are.
-   case erlang:get({sigen, Ref}) of
-       undefined ->
-           erlang:put({sigen, Ref}, 1),
-           0;
-       MaxValue ->
-           throw({stop, empty_keygen});
-       Value ->
-           case Value rem 5000 of
-               0 ->
-                   ?DEBUG("sequential_int_gen: ~p (~w%)\n", [Value, trunc(100 * (Value / MaxValue))]);
-               _ ->
-                   ok
-           end,
-           erlang:put({sigen, Ref}, Value+1),
-           Value
-   end.
+%% A bit of evil here. We want to generate numbers in sequence and stop
+%% at MaxKey. This means we need state in our anonymous function. Use the process
+%% dictionary to keep track of where we are.
+    case erlang:get({sigen, Ref}) of
+        undefined ->
+            erlang:put({sigen, Ref}, 1),
+            0;
+        MaxValue ->
+            throw({stop, empty_keygen});
+        Value ->
+            case Value rem 5000 of
+                0 ->
+                    ?DEBUG("sequential_int_gen: ~p (~w%)\n", [Value, trunc(100 * (Value / MaxValue))]);
+                _ ->
+                    ok
+            end,
+            erlang:put({sigen, Ref}, Value+1),
+            Value
+    end.
+
+% Factors a number into constituent pieces by progressively dividing
+% it by the given numbers. All factors are one-based (rather than zero).
+mod_factor(Value, Pieces) ->
+    mod_factor(Value, lists:reverse(Pieces), []).
+
+mod_factor(_Value, [], Acc) ->
+    Acc;
+mod_factor(Value, [Divisor|Rest], Acc) ->
+    mod_factor(Value div Divisor, Rest, [(Value rem Divisor)+1|Acc]).
