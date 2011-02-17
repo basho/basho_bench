@@ -1,0 +1,84 @@
+* basho_bench
+** Overview
+   Basho Bench is a benchmarking tool created to conduct accurate and
+   repeatable performance tests and stress tests, and produce
+   performance graphs.
+
+   Originally developed to benchmark Riak, it exposes a pluggable
+   driver interface and has been extended to serve as a benchmarking
+   tool across a variety of projects.
+
+   Basho Bench focuses on two metrics of performance:
+
+   - Throughput: number of operations performed in a timeframe,
+     captured in aggregate across all operation types
+   - Latency: time to complete single operations, captured in
+     quantiles per-operation
+
+** Quick Start
+
+   You must have [[http://erlang.org/download.html][Erlang/OTP R13B03]] or later to build and run Basho
+   Bench, and [[http://www.r-project.org/][R]] to generate graphs of your benchmarks.  A sane
+   GNU-style build system is also required if you want to use =make=
+   to build the project.
+
+#+BEGIN_SRC shell
+git clone git://github.com/basho/basho_bench.git
+cd basho_bench
+make all
+#+END_SRC
+   
+   This will build an executable script, =basho_bench=, which you can
+   use to run one of the existing benchmark configurations from the
+   =examples/= directory.
+
+#+BEGIN_SRC shell
+$ ./basho_bench examples/riakc_pb.config
+INFO: Est. data size: 95.37 MB
+INFO: Using target ip {127,0,0,1} for worker 1
+INFO: Starting max worker: <0.55.0>
+#+END_SRC
+
+   At the end of the benchmark, results will be available in CSV
+   format in the =tests/current/= directory. Now you can generate a
+   graph:
+
+#+BEGIN_SRC shell
+$ make results
+$ open tests/current/summary.png
+#+END_SRC
+
+** Customizing your Benchmark
+   Basho Bench has many drivers, each with its own configuration, and
+   a number of key and value generators that you can use to customize
+   your benchmark. It is also straightforward -- with less than 200
+   lines of Erlang code -- to create custom drivers that can exercise
+   other systems or perform custom operations. These are covered more
+   in detail in =docs/Documentation.org= in this repository and on the
+   [[http://wiki.basho.com/Benchmarking-with-Basho-Bench.html][Basho wiki]].
+
+** Contributing
+   We encourage contributions to Basho Bench from the community.
+
+   1) Fork the =basho_bench= repository on [[https://github.com/basho/basho_bench][Github]].
+   2) Clone your fork or add the remote if you already have a clone of
+      the repository.
+#+BEGIN_SRC shell
+git clone git@github.com:yourusername/basho_bench.git
+# or
+git remote add mine git@github.com:yourusername/basho_bench.git
+#+END_SRC
+   3) Create a topic branch for your change.
+#+BEGIN_SRC shell
+git checkout -b some-topic-branch
+#+END_SRC
+   4) Make your change and commit. Use a clear and descriptive commit
+      message, spanning multiple lines if detailed explanation is
+      needed.
+   5) Push to your fork of the repository and then send a pull-request
+      through Github.
+#+BEGIN_SRC shell
+git push mine some-topic-branch
+#+END_SRC
+   6) A Basho engineer or community maintainer will review your patch
+      and merge it into the main repository or send you feedback.
