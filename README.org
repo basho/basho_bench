@@ -45,6 +45,13 @@ INFO: Starting max worker: <0.55.0>
 
 #+BEGIN_SRC shell
 $ make results
+priv/summary.r -i tests/current
+Loading required package: proto
+Loading required package: reshape
+Loading required package: plyr
+Loading required package: digest
+null device 
+          1 
 $ open tests/current/summary.png
 #+END_SRC
 
@@ -54,8 +61,7 @@ $ open tests/current/summary.png
    your benchmark. It is also straightforward -- with less than 200
    lines of Erlang code -- to create custom drivers that can exercise
    other systems or perform custom operations. These are covered more
-   in detail in =docs/Documentation.org= in this repository and on the
-   [[http://wiki.basho.com/Benchmarking-with-Basho-Bench.html][Basho wiki]].
+   in detail on the [[http://wiki.basho.com/Benchmarking-with-Basho-Bench.html][Basho wiki]].
 
 ** Contributing
    We encourage contributions to Basho Bench from the community.
