@@ -30,7 +30,9 @@ make all
    
    This will build an executable script, =basho_bench=, which you can
    use to run one of the existing benchmark configurations from the
-   =examples/= directory.
+   =examples/= directory. You will likely have to make some minor directory
+   changes to the configs in order to get the examples running (see, e.g., the 
+   source of the bitcask and innostore benchmark config files for direction).
 
 #+BEGIN_SRC shell
 $ ./basho_bench examples/riakc_pb.config
