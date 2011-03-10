@@ -88,6 +88,14 @@ new(Id) ->
                   base_urls_index = BaseUrlsIndex,
                   path_params = Params }}.
 
+run(stat, _, _, State) ->
+    {Url, S2} = next_url(State),
+    case do_stat(stat_url(Url)) of
+        {ok, _, _} ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 
 run(get, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
@@ -184,6 +192,18 @@ url(BaseUrl, Params) ->
 url(BaseUrl, KeyGen, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
 
+stat_url(BaseUrl) ->
+    BaseUrl#url{path="/stats"}.
+
+do_stat(Url) ->
+    case send_request(Url, [], get, [], [{response_format, binary}]) of
+        {ok, "200", Headers, _Body} ->
+            {ok, Url, Headers};
+        {ok, Code, _, _} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 do_get(Url) ->
     case send_request(Url, [], get, [], [{response_format, binary}]) of
