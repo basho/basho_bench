@@ -158,6 +158,14 @@ run(delete, KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
+    end;
+run(listkeys, _KeyGen, _ValueGen, State) ->
+    %% Pass on rw
+    case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket) of
+        {ok, _Keys} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
     end.
 
 
