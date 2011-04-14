@@ -45,6 +45,9 @@ init() ->
             ok;
         {error, {already_started, _}} ->
             ok;
+        {error, {{already_started, _}}, _} ->
+            %% TODO: doesn't match documentation
+            ok;
         {error, Reason1} ->
             ?FAIL_MSG("Failed to start net_kernel for ~p: ~p\n", [?MODULE, Reason1])
     end,
