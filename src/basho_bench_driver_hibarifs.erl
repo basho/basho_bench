@@ -84,6 +84,7 @@ new(_Id) ->
             ?FAIL_MSG("Failed to get a hibarifs client: ~p\n", [Reason1])
     end.
 
+%% file operations
 run(create=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
     case file:write_file(File, <<>>) of
@@ -122,6 +123,7 @@ run(read=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+%% directory operations
 run(lsdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     case file:list_dir(Dir) of
@@ -132,6 +134,7 @@ run(lsdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+%% empty directory operations
 run(mkdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
     Dir = empty_dirname(BaseDir, KeyGen),
     case file:make_dir(Dir) of
@@ -161,7 +164,39 @@ run(lsdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
             {error, ok, State};
         {error, Reason} ->
             {error, Reason, State}
+    end;
+%% special file operations
+run(create_and_delete_topdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+    File = filename(BaseDir, KeyGen),
+    case file:write_file(File, <<>>) of
+        ok ->
+            case file:delete(File) of
+                ok ->
+                    {ok, State};
+                {error, enoent} ->
+                    {error, ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(create_and_delete_subdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+    File = ensure_dirfile(BaseDir, KeyGen),
+    case file:write_file(File, <<>>) of
+        ok ->
+            case file:delete(File) of
+                ok ->
+                    {ok, State};
+                {error, enoent} ->
+                    {error, ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
     end.
+
 
 %% ====================================================================
 %% Internal functions
