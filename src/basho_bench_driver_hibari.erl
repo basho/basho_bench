@@ -72,7 +72,7 @@ new(_Id) ->
             ?FAIL_MSG("Failed to get a hibari client: ~p\n", [Reason1])
     end.
 
-run(get, KeyGen, _ValueGen, State) ->
+run(get, KeyGen, _ValGen, State) ->
     Key = KeyGen(),
     case (State#state.client):get(State#state.table, Key) of
         {ok, _TS, _Val} ->
@@ -82,16 +82,16 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(put, KeyGen, ValueGen, State) ->
+run(put, KeyGen, ValGen, State) ->
     Key = KeyGen(),
-    Value = ValueGen(),
+    Value = ValGen(),
     case (State#state.client):set(State#state.table, Key, Value) of
         ok ->
             {ok, State};
         Reason ->
             {error, Reason, State}
     end;
-run(delete, KeyGen, _ValueGen, State) ->
+run(delete, KeyGen, _ValGen, State) ->
     Key = KeyGen(),
     case (State#state.client):delete(State#state.table, Key) of
         ok ->

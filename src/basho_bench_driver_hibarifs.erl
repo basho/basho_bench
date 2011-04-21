@@ -23,7 +23,8 @@
 %% -------------------------------------------------------------------
 -module(basho_bench_driver_hibarifs).
 
--export([init/0,
+-export([runfun/2,
+         init/0,
          new/1,
          run/4]).
 
@@ -37,6 +38,22 @@
 %% ====================================================================
 %% API
 %% ====================================================================
+
+runfun(Op, Id) ->
+    KeyGen = basho_bench_keygen:new(basho_bench_config:get(key_generator), Id),
+    ValGen = basho_bench_valgen:new(basho_bench_config:get(value_generator), Id),
+    {ok, State} = new(Id),
+    runfun(Op, Id, KeyGen, ValGen, State).
+
+runfun(Op, Id, KeyGen, ValGen, State) ->
+    fun () ->
+            case run(Op, KeyGen, ValGen, State) of
+                {ok, NewState} ->
+                    {ok, runfun(Op, Id, KeyGen, ValGen, NewState)};
+                {error, Reason, NewState} ->
+                    {{error, Reason}, runfun(Op, Id, KeyGen, ValGen, NewState)}
+            end
+    end.
 
 init() ->
     Node    = basho_bench_config:get(hibarifs_node, 'hibarifs@127.0.0.1'),
@@ -85,7 +102,7 @@ new(_Id) ->
     end.
 
 %% file operations
-run(create=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
     case file:write_file(File, <<>>) of
         ok ->
@@ -93,15 +110,15 @@ run(create=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(write=_Op, KeyGen, ValueGen, #state{basedir=BaseDir}=State) ->
+run(write=_Op, KeyGen, ValGen, #state{basedir=BaseDir}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
-    case file:write_file(File, ValueGen()) of
+    case file:write_file(File, ValGen()) of
         ok ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(delete=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     File = filename(Dir, KeyGen),
     case file:delete(File) of
@@ -112,7 +129,7 @@ run(delete=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(read=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     File = filename(Dir, KeyGen),
     case file:read_file(File) of
@@ -124,7 +141,7 @@ run(read=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
             {error, Reason, State}
     end;
 %% directory operations
-run(lsdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(lsdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     case file:list_dir(Dir) of
         {ok, _Filenames} ->
@@ -135,7 +152,7 @@ run(lsdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
             {error, Reason, State}
     end;
 %% empty directory operations
-run(mkdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(mkdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = empty_dirname(BaseDir, KeyGen),
     case file:make_dir(Dir) of
         ok ->
@@ -145,7 +162,7 @@ run(mkdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(rmdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(rmdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = empty_dirname(BaseDir, KeyGen),
     case file:del_dir(Dir) of
         ok ->
@@ -155,7 +172,7 @@ run(rmdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(lsdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(lsdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = empty_dirname(BaseDir, KeyGen),
     case file:list_dir(Dir) of
         {ok, _Filenames} ->
@@ -166,7 +183,7 @@ run(lsdir_empty=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
             {error, Reason, State}
     end;
 %% special file operations
-run(create_and_delete_topdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(create_and_delete_topdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     File = filename(BaseDir, KeyGen),
     case file:write_file(File, <<>>) of
         ok ->
@@ -181,7 +198,7 @@ run(create_and_delete_topdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=Sta
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(create_and_delete_subdir=_Op, KeyGen, _ValueGen, #state{basedir=BaseDir}=State) ->
+run(create_and_delete_subdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
     case file:write_file(File, <<>>) of
         ok ->
