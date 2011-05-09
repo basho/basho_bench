@@ -33,7 +33,12 @@
 -record(state, { client,
                  table,
                  proto,
-                 basedir }).
+                 basedir,
+                 files = [],
+                 filescnt = 0,
+                 emptydirs = [],
+                 emptydirscnt = 0
+               }).
 
 %% ====================================================================
 %% API
@@ -102,23 +107,35 @@ new(_Id) ->
     end.
 
 %% file operations
-run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
+run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, files=Files, filescnt=Cnt}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
     case file:write_file(File, <<>>) of
         ok ->
-            {ok, State};
+            case lists:member(File, Files) of
+                true ->
+                    {ok, State};
+                false ->
+                    {ok, State#state{files=[File|Files], filescnt=Cnt+1}}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(write=_Op, KeyGen, ValGen, #state{basedir=BaseDir}=State) ->
+run(write=_Op, KeyGen, ValGen, #state{basedir=BaseDir, files=Files, filescnt=0}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
     case file:write_file(File, ValGen()) of
         ok ->
-            {ok, State};
+            {ok, State#state{files=[File|Files], filescnt=1}};
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
+run(write=_Op, _KeyGen, ValGen, #state{files=[File|Files]}=State) ->
+    case file:write_file(File, ValGen()) of
+        ok ->
+            {ok, State#state{files=lists:append(Files, [File])}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     File = filename(Dir, KeyGen),
     case file:delete(File) of
@@ -129,7 +146,16 @@ run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
+run(delete=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) ->
+    case file:delete(File) of
+        ok ->
+            {ok, State#state{files=Files, filescnt=Cnt-1}};
+        {error, enoent} ->
+            {error, ok, State#state{files=Files, filescnt=Cnt-1}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     File = filename(Dir, KeyGen),
     case file:read_file(File) of
@@ -137,6 +163,15 @@ run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
             {ok, State};
         {error, enoent} ->
             {error, ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(read=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) ->
+    case file:read_file(File) of
+        {ok, _Binary} ->
+            {ok, State#state{files=lists:append(Files, [File])}};
+        {error, enoent} ->
+            {error, ok, State#state{files=Files, filescnt=Cnt-1}};
         {error, Reason} ->
             {error, Reason, State}
     end;
