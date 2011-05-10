@@ -30,8 +30,8 @@
 
 -include("basho_bench.hrl").
 
--define(DEBUG, true).
-%-undef(DEBUG).
+%-define(DEBUG, true).
+-undef(DEBUG).
 
 -ifdef(DEBUG).
 
@@ -55,15 +55,16 @@
 
 -endif.
 
--record(state, { client,
+-record(state, { id, % Note: Worker Id in *string*, not integer
+                 client,
                  table,
                  proto,
                  basedir,
                  files = [],
                  filescnt = 0,
-                 largedirs = [],
                  emptydirs = [],
-                 emptydirscnt = 0
+                 emptydirscnt = 0,
+                 dirname_gen
                }).
 
 %% ====================================================================
@@ -89,7 +90,6 @@ runfun(Op, Id, KeyGen, ValGen, State) ->
 
 %% init called only once per test
 init() ->
-    io:format("init() called.~n"),
     Node    = basho_bench_config:get(hibarifs_node, 'hibarifs@127.0.0.1'),
     Cookie  = basho_bench_config:get(hibarifs_cookie, 'hibari'),
 
@@ -116,36 +116,61 @@ init() ->
     %% Try to initialize the protocol-specific implementation
     Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
     Table  = basho_bench_config:get(hibarifs_table, tab1),
-    init(Proto, Table, Node).
+    ok = init(Proto, Table, Node),
+
+    %% Initialize common objects
+    DirCount = 50, % TODO hard-coded
+    ok = init_dirs(0, DirCount, mount_dir()),
+
+    %% done
+    ok.
 
 %% new called on each worker creation
 new(Id) ->
     io:format("new(~p) called.~n", [Id]),
-    Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
-    Table  = basho_bench_config:get(hibarifs_table, tab1),
 
-    %% Get a client
-    case Proto of
-        brick_simple_stub ->
-            State =  #state { client = brick_simple,
-                              table = Table,
-                              proto = Proto,
-                              basedir = mount_dir()
-                            },
-            {ok, _Dirs} = populate_large_dir(Id, State),
-            {ok, State};
-        local ->
-            State = #state { basedir = "/tmp/hibaribench" },
-            {ok, _Dirs} = populate_large_dir(Id, State),
-            {ok, State};
-        _ ->
-            Reason1 = Proto,
-            ?FAIL_MSG("Failed to get a hibarifs client: ~p\n", [Reason1])
-    end.
+    Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
+
+    DirCount  = 50, % TODO: hard-coded
+    FileCount = 20, % TODO: hard-coded
+
+    %% Worker has a separate keygen for directory name generation.
+    DirNameGen = basho_bench_keygen:new({truncated_pareto_int, DirCount - 1}, Id),
+
+    %% Get client
+    State = case Proto of
+                localfs ->
+                    #state { id = integer_to_list(Id),
+                             basedir = mount_dir(),
+                             dirname_gen = DirNameGen
+                           };
+                brick_simple_stub ->
+                    Table  = basho_bench_config:get(hibarifs_table, tab1),
+                    #state { id = integer_to_list(Id),
+                             client = brick_simple,
+                             table = Table,
+                             proto = Proto,
+                             basedir = mount_dir(),
+                             dirname_gen = DirNameGen
+                            };
+                _ ->
+                    Reason1 = Proto,
+                    ?FAIL_MSG("Failed to get a hibarifs client: ~p\n", [Reason1])
+            end,
+
+    {ok, Files} = populate_dirs(0, DirCount, FileCount,
+                                integer_to_list(Id), mount_dir(), []),
+
+    io:format("Created total ~p files.~n", [length(Files)]),
+
+    {ok, State#state{ files = Files }}.
 
 %% file operations
-run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, files=Files, filescnt=Cnt}=State) ->
-    File = ensure_dirfile(BaseDir, KeyGen),
+run(create=_Op, KeyGen, _ValGen,
+    #state{id=Id, basedir=BaseDir, files=Files, filescnt=Cnt,
+           dirname_gen=DirNameGen}=State) ->
+
+    File = filename(Id, BaseDir, DirNameGen, KeyGen),
     ?TRACE_OPE(_Op, File),
     case file:write_file(File, <<>>) of
         ok ->
@@ -158,8 +183,11 @@ run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, files=Files, filescnt=C
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(write=_Op, KeyGen, ValGen, #state{basedir=BaseDir, files=Files, filescnt=0}=State) ->
-    File = ensure_dirfile(BaseDir, KeyGen),
+run(write=_Op, KeyGen, ValGen,
+    #state{id=Id, basedir=BaseDir, files=Files, filescnt=0,
+           dirname_gen=DirNameGen}=State) ->
+
+    File = filename(Id, BaseDir, DirNameGen, KeyGen),
     ?TRACE_OPE(_Op, File),
     case file:write_file(File, ValGen()) of
         ok ->
@@ -175,9 +203,16 @@ run(write=_Op, _KeyGen, ValGen, #state{files=[File|Files]}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
-    Dir = dirname(BaseDir, KeyGen),
-    File = filename(Dir, KeyGen),
+run(rename=_Op, _KeyGen, _ValGen,
+    #state{basedir=_BaseDir, files=[_FileFrom|_Files]}=_State) ->
+    %?TRACE_OPE(_Op, File),
+    %FileTo = FileFrom,
+    %{ok, State#state{files=[FileTo|Files]}};
+    error(not_inplemented);
+run(delete=_Op, KeyGen, _ValGen,
+    #state{id=Id, basedir=BaseDir, filescnt=0, dirname_gen=DirNameGen}=State) ->
+
+    File = filename(Id, BaseDir, DirNameGen, KeyGen),
     ?TRACE_OPE(_Op, File),
     case file:delete(File) of
         ok ->
@@ -197,9 +232,10 @@ run(delete=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
-    Dir = dirname(BaseDir, KeyGen),
-    File = filename(Dir, KeyGen),
+run(read=_Op, KeyGen, _ValGen,
+    #state{id=Id, basedir=BaseDir, filescnt=0, dirname_gen=DirNameGen}=State) ->
+
+    File = filename(Id, BaseDir, DirNameGen, KeyGen),
     ?TRACE_OPE(_Op, File),
     case file:read_file(File) of
         {ok, _Binary} ->
@@ -220,9 +256,8 @@ run(read=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) 
             {error, Reason, State}
     end;
 %% directory operations
-run(lsdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
-    %Dir = dirname(BaseDir, KeyGen),
-    Dir =  filename:join(State#state.basedir, "large_1"),
+run(lsdir=_Op, _KeyGen, _ValGen, #state{basedir=BaseDir, dirname_gen=DirNameGen}=State) ->
+    Dir = dirname(BaseDir, DirNameGen),
     ?TRACE_OPE(_Op, Dir),
     case file:list_dir(Dir) of
         {ok, _Filenames} ->
@@ -259,8 +294,7 @@ run(rmdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
             {error, Reason, State}
     end;
 run(lsdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
-    %Dir = empty_dirname(BaseDir, KeyGen),
-    Dir = 
+    Dir = empty_dirname(BaseDir, KeyGen),
     ?TRACE_OPE(_Op, Dir),
     case file:list_dir(Dir) of
         {ok, _Filenames} ->
@@ -271,8 +305,10 @@ run(lsdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
             {error, Reason, State}
     end;
 %% special file operations
-run(create_and_delete_topdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
-    File = filename(BaseDir, KeyGen),
+run(create_and_delete_topdir=_Op, KeyGen, _ValGen,
+    #state{id=Id, basedir=BaseDir}=State) ->
+
+    File = filename(Id, BaseDir, KeyGen),
     ?TRACE_OPE(_Op, File),
     case file:write_file(File, <<>>) of
         ok ->
@@ -287,8 +323,10 @@ run(create_and_delete_topdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(create_and_delete_subdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
-    File = ensure_dirfile(BaseDir, KeyGen),
+run(create_and_delete_subdir=_Op, KeyGen, _ValGen,
+    #state{id=Id, basedir=BaseDir, dirname_gen=DirNameGen}=State) ->
+
+    File = filename(Id, BaseDir, DirNameGen, KeyGen),
     ?TRACE_OPE(_Op, File),
     case file:write_file(File, <<>>) of
         ok ->
@@ -309,7 +347,11 @@ run(create_and_delete_subdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State
 %% Internal functions
 %% ====================================================================
 
+init(localfs=_Proto, _Table, _Node) ->
+    io:format("init(localfs)~n"),
+    file:make_dir(mount_dir());
 init(brick_simple_stub=Proto, Table, Node) ->
+    io:format("init(brick_simple_stub)~n"),
     HibariFS = hibarifs_fuse,
     HibariFSApp = "hibarifs_fuse.app",
 
@@ -342,35 +384,41 @@ init(brick_simple_stub=Proto, Table, Node) ->
 
     %% done
     ok;
-init(local=Proto, _Table, _Node) ->
-    Dir = "/tmp/hibaribench",
-    ok = filelib:ensure_dir(Dir),
-    ok;
 init(Proto, _Table, _Node) ->
     ?FAIL_MSG("Unknown protocol for ~p: ~p\n", [?MODULE, Proto]).
 
-populate_large_dir(Id, State) ->
-    FileCount = 100, % TODO: Set this value via config.
-    Dir = filename:join(State#state.basedir, "large_" ++ integer_to_list(Id)),
-    ok =  file:make_dir(Dir),
-    ok = create_file(0, FileCount, Dir),
-
-    %{ok, FileNames} =  file:list_dir(Dir),
-    %io:format("~p~n", [FileNames]),
-
-    {ok, [Dir]}.
-
-create_file(X, X, _) ->
-    io:format("Created ~p files.~n", [X]),
+init_dirs(N, N, _) ->
+    io:format("Created ~p shared directories.~n", [N]),
     ok;
-create_file(I, Max, Dir) ->
-    File = filename:join(Dir, integer_to_list(I)), 
+init_dirs(N, DirCount, BaseDir) ->
+    Dir = dirname(BaseDir, N),
+    case file:make_dir(Dir) of
+        ok ->
+            init_dirs(N + 1, DirCount, BaseDir);
+        {error, Reason} ->
+            io:format("ERROR: Failed to create dir: ~p (~p)~n", [Dir, Reason]),
+            {error, Reason}
+    end.
+
+populate_dirs(N, N, _, _, _, AllFiles) ->
+    {ok, AllFiles};
+populate_dirs(N, DirCount, FileCount, Id, BaseDir, AllFiles) ->
+    Dir = dirname(BaseDir, N),
+    {ok, Files} = init_files(0, FileCount, Id, Dir, []),
+
+    populate_dirs(N + 1, DirCount, FileCount, Id, BaseDir,
+                  lists:append(AllFiles, Files)).
+
+init_files(N, N, _, Dir, Files) ->
+    io:format("Created ~p files under ~p.~n", [N, Dir]),
+    {ok, Files};
+init_files(N, FileCount, Id, Dir, Files) ->
+    File = filename:join(Dir, Id ++ integer_to_list(N)),
     case file:write_file(File, <<>>) of 
         ok -> 
-            create_file(I + 1, Max, Dir); 
-        _ -> 
-            io:format("ERROR!!!!!!~n"),
-            {error, cant_create_file}
+            init_files(N + 1, FileCount, Id, Dir, [File|Files]);
+        {error, Reason} ->
+            {error, Reason}
     end.            
 
 ping(Node) ->
@@ -394,36 +442,45 @@ mount_dir() ->
     {ok, Cwd} = file:get_cwd(),
     filename:join([Cwd, ?MODULE_STRING ++ "." ++ atom_to_list(node())]).
 
-ensure_dirfile(BaseDir, KeyGen) ->
-    %Dir = dirname(BaseDir, KeyGen),
-    Dir = filename:join(BaseDir, "large_1"),
-    case filelib:is_dir(Dir) of
-        false ->
-            case file:make_dir(Dir) of
-                ok ->
-                    ok;
-                {error, eexist} ->
-                    ok;
-                {error, Reason} ->
-                    exit({ensure_dirfile, Dir, Reason})
-            end;
-        true ->
-            ok
-    end,
-    filename(Dir, KeyGen).
 
-dirname(BaseDir, KeyGen) ->
-    Dir = integer_to_list(KeyGen()),
-    filename:join([BaseDir, Dir]).
+% TODO we still want to measure performance of is_dir
 
-empty_dirname(BaseDir, KeyGen) ->
-    Dir = integer_to_list(KeyGen()),
+%ensure_dirfile(BaseDir, KeyGen) ->
+%    %Dir = dirname(BaseDir, KeyGen),
+%    Dir = filename:join(BaseDir, "large_1"),
+%    case filelib:is_dir(Dir) of
+%        false ->
+%            case file:make_dir(Dir) of
+%                ok ->
+%                    ok;
+%                {error, eexist} ->
+%                    ok;
+%                {error, Reason} ->
+%                    exit({ensure_dirfile, Dir, Reason})
+%            end;
+%        true ->
+%            ok
+%    end,
+%    filename(Dir, KeyGen).
+
+dirname(BaseDir, N) when is_integer(N) ->
+    Dir = integer_to_list(N),
+    filename:join([BaseDir, Dir]);
+dirname(BaseDir, DirNameGen) ->
+    dirname(BaseDir, DirNameGen()).
+
+empty_dirname(BaseDir, DirNameGen) ->
+    Dir = integer_to_list(DirNameGen()),
     Empty = "$",
     EmptyDir = Dir ++ Empty,
     filename:join([BaseDir, EmptyDir]).
 
-filename(KeyGen) ->
-    integer_to_list(KeyGen()).
+filename(Id, KeyGen) ->
+    Id ++ integer_to_list(KeyGen()).
 
-filename(Dir, KeyGen) ->
-    filename:join([Dir, filename(KeyGen)]).
+filename(Id, Dir, KeyGen) ->
+    filename:join([Dir, filename(Id, KeyGen)]).
+
+filename(Id, BaseDir, DirNameGen, KeyGen) ->
+    Dir = dirname(BaseDir, DirNameGen),
+    filename(Id, Dir, KeyGen).
