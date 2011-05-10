@@ -30,12 +30,38 @@
 
 -include("basho_bench.hrl").
 
+-define(DEBUG, true).
+%-undef(DEBUG).
+
+-ifdef(DEBUG).
+
+-define(FILENAME(X), 
+        string:substr(X, length(State#state.basedir) + 1)).
+
+%-define(TRACE_OPE(Ope, Var),
+%        BaseDirLen = length(State#state.basedir),
+%        io:format("~s(~p)~n", [Ope, string:substr(Var, BaseDirLen + 1)])).
+-define(TRACE_OPE(Ope, Var), true).
+-define(TRACE_LSDIR(Dir, Filenames), 
+        io:format("lsdir(~p) => ~p~n", [?FILENAME(Dir), Filenames])).
+-define(TRACE_LSDIR_ERR(Dir, Error), 
+        io:format("lsdir(~p) => ~p~n", [?FILENAME(Dir), Error])).
+
+-else.
+
+-define(TRACE_OPE(Ope, Var), true).
+-define(TRACE_LSDIR(Filename), true).
+-define(TRACE_LSDIR_ERR(Error), true).
+
+-endif.
+
 -record(state, { client,
                  table,
                  proto,
                  basedir,
                  files = [],
                  filescnt = 0,
+                 largedirs = [],
                  emptydirs = [],
                  emptydirscnt = 0
                }).
@@ -60,7 +86,10 @@ runfun(Op, Id, KeyGen, ValGen, State) ->
             end
     end.
 
+
+%% init called only once per test
 init() ->
+    io:format("init() called.~n"),
     Node    = basho_bench_config:get(hibarifs_node, 'hibarifs@127.0.0.1'),
     Cookie  = basho_bench_config:get(hibarifs_cookie, 'hibari'),
 
@@ -89,18 +118,26 @@ init() ->
     Table  = basho_bench_config:get(hibarifs_table, tab1),
     init(Proto, Table, Node).
 
-new(_Id) ->
+%% new called on each worker creation
+new(Id) ->
+    io:format("new(~p) called.~n", [Id]),
     Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
     Table  = basho_bench_config:get(hibarifs_table, tab1),
 
     %% Get a client
     case Proto of
         brick_simple_stub ->
-            {ok, #state { client = brick_simple,
-                          table = Table,
-                          proto = Proto,
-                          basedir = mount_dir()
-                        }};
+            State =  #state { client = brick_simple,
+                              table = Table,
+                              proto = Proto,
+                              basedir = mount_dir()
+                            },
+            {ok, _Dirs} = populate_large_dir(Id, State),
+            {ok, State};
+        local ->
+            State = #state { basedir = "/tmp/hibaribench" },
+            {ok, _Dirs} = populate_large_dir(Id, State),
+            {ok, State};
         _ ->
             Reason1 = Proto,
             ?FAIL_MSG("Failed to get a hibarifs client: ~p\n", [Reason1])
@@ -109,6 +146,7 @@ new(_Id) ->
 %% file operations
 run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, files=Files, filescnt=Cnt}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
+    ?TRACE_OPE(_Op, File),
     case file:write_file(File, <<>>) of
         ok ->
             case lists:member(File, Files) of
@@ -122,6 +160,7 @@ run(create=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, files=Files, filescnt=C
     end;
 run(write=_Op, KeyGen, ValGen, #state{basedir=BaseDir, files=Files, filescnt=0}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
+    ?TRACE_OPE(_Op, File),
     case file:write_file(File, ValGen()) of
         ok ->
             {ok, State#state{files=[File|Files], filescnt=1}};
@@ -129,6 +168,7 @@ run(write=_Op, KeyGen, ValGen, #state{basedir=BaseDir, files=Files, filescnt=0}=
             {error, Reason, State}
     end;
 run(write=_Op, _KeyGen, ValGen, #state{files=[File|Files]}=State) ->
+    ?TRACE_OPE(_Op, File),
     case file:write_file(File, ValGen()) of
         ok ->
             {ok, State#state{files=lists:append(Files, [File])}};
@@ -138,6 +178,7 @@ run(write=_Op, _KeyGen, ValGen, #state{files=[File|Files]}=State) ->
 run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     File = filename(Dir, KeyGen),
+    ?TRACE_OPE(_Op, File),
     case file:delete(File) of
         ok ->
             {ok, State};
@@ -147,6 +188,7 @@ run(delete=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
             {error, Reason, State}
     end;
 run(delete=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) ->
+    ?TRACE_OPE(_Op, File),
     case file:delete(File) of
         ok ->
             {ok, State#state{files=Files, filescnt=Cnt-1}};
@@ -158,6 +200,7 @@ run(delete=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State
 run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
     Dir = dirname(BaseDir, KeyGen),
     File = filename(Dir, KeyGen),
+    ?TRACE_OPE(_Op, File),
     case file:read_file(File) of
         {ok, _Binary} ->
             {ok, State};
@@ -167,6 +210,7 @@ run(read=_Op, KeyGen, _ValGen, #state{basedir=BaseDir, filescnt=0}=State) ->
             {error, Reason, State}
     end;
 run(read=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) ->
+    ?TRACE_OPE(_Op, File),
     case file:read_file(File) of
         {ok, _Binary} ->
             {ok, State#state{files=lists:append(Files, [File])}};
@@ -177,18 +221,24 @@ run(read=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) 
     end;
 %% directory operations
 run(lsdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
-    Dir = dirname(BaseDir, KeyGen),
+    %Dir = dirname(BaseDir, KeyGen),
+    Dir =  filename:join(State#state.basedir, "large_1"),
+    ?TRACE_OPE(_Op, Dir),
     case file:list_dir(Dir) of
         {ok, _Filenames} ->
+            %?TRACE_LSDIR(Dir, _Filenames), 
             {ok, State};
         {error, enoent} ->
+            %?TRACE_LSDIR_ERR(Dir, enoent),
             {error, ok, State};
         {error, Reason} ->
+            %?TRACE_LSDIR_ERR(Dir, Reason),
             {error, Reason, State}
     end;
 %% empty directory operations
 run(mkdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = empty_dirname(BaseDir, KeyGen),
+    ?TRACE_OPE(_Op, Dir),
     case file:make_dir(Dir) of
         ok ->
             {ok, State};
@@ -199,6 +249,7 @@ run(mkdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     end;
 run(rmdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     Dir = empty_dirname(BaseDir, KeyGen),
+    ?TRACE_OPE(_Op, Dir),
     case file:del_dir(Dir) of
         ok ->
             {ok, State};
@@ -208,7 +259,9 @@ run(rmdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
             {error, Reason, State}
     end;
 run(lsdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
-    Dir = empty_dirname(BaseDir, KeyGen),
+    %Dir = empty_dirname(BaseDir, KeyGen),
+    Dir = 
+    ?TRACE_OPE(_Op, Dir),
     case file:list_dir(Dir) of
         {ok, _Filenames} ->
             {ok, State};
@@ -220,6 +273,7 @@ run(lsdir_empty=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
 %% special file operations
 run(create_and_delete_topdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     File = filename(BaseDir, KeyGen),
+    ?TRACE_OPE(_Op, File),
     case file:write_file(File, <<>>) of
         ok ->
             case file:delete(File) of
@@ -235,6 +289,7 @@ run(create_and_delete_topdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State
     end;
 run(create_and_delete_subdir=_Op, KeyGen, _ValGen, #state{basedir=BaseDir}=State) ->
     File = ensure_dirfile(BaseDir, KeyGen),
+    ?TRACE_OPE(_Op, File),
     case file:write_file(File, <<>>) of
         ok ->
             case file:delete(File) of
@@ -287,9 +342,36 @@ init(brick_simple_stub=Proto, Table, Node) ->
 
     %% done
     ok;
+init(local=Proto, _Table, _Node) ->
+    Dir = "/tmp/hibaribench",
+    ok = filelib:ensure_dir(Dir),
+    ok;
 init(Proto, _Table, _Node) ->
     ?FAIL_MSG("Unknown protocol for ~p: ~p\n", [?MODULE, Proto]).
 
+populate_large_dir(Id, State) ->
+    FileCount = 100, % TODO: Set this value via config.
+    Dir = filename:join(State#state.basedir, "large_" ++ integer_to_list(Id)),
+    ok =  file:make_dir(Dir),
+    ok = create_file(0, FileCount, Dir),
+
+    %{ok, FileNames} =  file:list_dir(Dir),
+    %io:format("~p~n", [FileNames]),
+
+    {ok, [Dir]}.
+
+create_file(X, X, _) ->
+    io:format("Created ~p files.~n", [X]),
+    ok;
+create_file(I, Max, Dir) ->
+    File = filename:join(Dir, integer_to_list(I)), 
+    case file:write_file(File, <<>>) of 
+        ok -> 
+            create_file(I + 1, Max, Dir); 
+        _ -> 
+            io:format("ERROR!!!!!!~n"),
+            {error, cant_create_file}
+    end.            
 
 ping(Node) ->
     case net_adm:ping(Node) of
@@ -313,7 +395,8 @@ mount_dir() ->
     filename:join([Cwd, ?MODULE_STRING ++ "." ++ atom_to_list(node())]).
 
 ensure_dirfile(BaseDir, KeyGen) ->
-    Dir = dirname(BaseDir, KeyGen),
+    %Dir = dirname(BaseDir, KeyGen),
+    Dir = filename:join(BaseDir, "large_1"),
     case filelib:is_dir(Dir) of
         false ->
             case file:make_dir(Dir) of
