@@ -26,7 +26,11 @@
 -export([runfun/2,
          init/0,
          new/1,
-         run/4]).
+         run/4, 
+         run_brick_simple/0
+        ]).
+
+%-export([test/0]).
 
 -include("basho_bench.hrl").
 
@@ -70,6 +74,10 @@
 %% ====================================================================
 %% API
 %% ====================================================================
+
+run_brick_simple() ->
+    basho_bench_config:set(hibarifs_proto, brick_simple),
+    init().
 
 runfun(Op, Id) ->
     KeyGen = basho_bench_keygen:new(basho_bench_config:get(key_generator), Id),
@@ -119,7 +127,7 @@ init() ->
     ok = init(Proto, Table, Node),
 
     %% Initialize common objects
-    DirCount = 50, % TODO hard-coded
+    {DirCount, _} = getopt_initial_file_count(),
     ok = init_dirs(0, DirCount, mount_dir()),
 
     %% done
@@ -130,9 +138,7 @@ new(Id) ->
     io:format("new(~p) called.~n", [Id]),
 
     Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
-
-    DirCount  = 50, % TODO: hard-coded
-    FileCount = 20, % TODO: hard-coded
+    {DirCount, FileCount} = getopt_initial_file_count(),
 
     %% Worker has a separate keygen for directory name generation.
     DirNameGen = basho_bench_keygen:new({truncated_pareto_int, DirCount - 1}, Id),
@@ -145,6 +151,15 @@ new(Id) ->
                              dirname_gen = DirNameGen
                            };
                 brick_simple_stub ->
+                    Table  = basho_bench_config:get(hibarifs_table, tab1),
+                    #state { id = integer_to_list(Id),
+                             client = brick_simple,
+                             table = Table,
+                             proto = Proto,
+                             basedir = mount_dir(),
+                             dirname_gen = DirNameGen
+                            };
+                brick_simple ->  % TODO: Try not repeat the same code here
                     Table  = basho_bench_config:get(hibarifs_table, tab1),
                     #state { id = integer_to_list(Id),
                              client = brick_simple,
@@ -203,12 +218,35 @@ run(write=_Op, _KeyGen, ValGen, #state{files=[File|Files]}=State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(rename=_Op, KeyGen, _ValGen,
+    #state{id=Id, basedir=BaseDir, filescnt=0, dirname_gen=DirNameGen}=State) ->
+
+    FileFrom = filename(Id, BaseDir, DirNameGen, KeyGen),
+    FileTo   = FileFrom ++ "_renamed",
+    ?TRACE_OPE(_Op, [FileFrom, " -> ", FileTo]),
+    case file:rename(FileFrom, FileTo) of
+        ok ->
+            {ok, State};
+        {error, enoent} ->
+            {error, ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 run(rename=_Op, _KeyGen, _ValGen,
-    #state{basedir=_BaseDir, files=[_FileFrom|_Files]}=_State) ->
-    %?TRACE_OPE(_Op, File),
-    %FileTo = FileFrom,
-    %{ok, State#state{files=[FileTo|Files]}};
-    error(not_inplemented);
+    #state{files=[FileFrom|Files], filescnt=Cnt}=State) ->
+    ?TRACE_OPE(_Op, File),
+    FileTo = FileFrom ++ "_renamed",
+    case file:rename(FileFrom, FileTo) of 
+        ok ->
+            {ok, State#state{files=lists:append(Files, [FileTo])}};
+        {error, enoent} ->
+            {error, ok, State#state{files=Files, filescnt=Cnt-1}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(move=_Op, _KeyGen, _ValGen, _State) ->
+    %% TODO: Implement move operation
+    throw(unsupported_operation);
 run(delete=_Op, KeyGen, _ValGen,
     #state{id=Id, basedir=BaseDir, filescnt=0, dirname_gen=DirNameGen}=State) ->
 
@@ -342,6 +380,8 @@ run(create_and_delete_subdir=_Op, KeyGen, _ValGen,
             {error, Reason, State}
     end.
 
+%% TODO: rename dir operation
+
 
 %% ====================================================================
 %% Internal functions
@@ -381,6 +421,80 @@ init(brick_simple_stub=Proto, Table, Node) ->
     ok = rpc(Node, application, set_env, [HibariFS, mount_table, Table]),
     ok = rpc(Node, application, set_env, [HibariFS, mount_varprefixnum, 0]),
     ok = rpc(Node, application, start, [HibariFS]),
+
+    %% done
+    ok;
+init(brick_simple=_Proto, Table, HibariFSNode) ->
+    io:format("init(brick_simple, ~p, ~p)~n", [Table, HibariFSNode]),
+
+    HibariNodes = basho_bench_config:get(hibari_admin_nodes, ['hibari@127.0.0.1']),
+    HibariNode  = hd(HibariNodes),
+
+    HibariFS = hibarifs_fuse,
+    HibariFSApp = "hibarifs_fuse.app",
+
+    %application:start(sasl),
+
+    %% Make sure gmt_util is running
+    case application:start(gmt_util) of
+        ok ->
+            ok;
+        {error, {already_started, gmt_util}} ->
+            ok;
+        {error, Reason1} ->
+            ?FAIL_MSG("Failed to start gmt_util for ~p: ~p\n", [?MODULE, Reason1])
+    end,
+
+    %% Make sure gdss_client is running
+    case application:start(gdss_client) of
+        ok ->
+            ok;
+        {error, {already_started, gdss_client}} ->
+            ok;
+        {error, Reason2} ->
+            ?FAIL_MSG("Failed to start gdss_client for ~p: ~p\n", [?MODULE, Reason2])
+    end,
+
+    %% Register client nodes to Hibari
+    ok = rpc(HibariNode, brick_admin, add_client_monitor, [HibariFSNode]),
+    ok = rpc(HibariNode, brick_admin, add_client_monitor, [node()]),
+    
+    %% Check if the table exists
+    case rpc(HibariNode, brick_admin, get_table_info, [Table]) of
+        {ok, _} ->
+            %% TODO: This operation could take forever. Maybe recreate the table?
+            %ok = brick_simple:clear_table(Table);
+            ok;
+        {error, _} ->
+            ok
+    end,
+
+    %% Wait for table
+    %timer:sleep(5000),
+
+    %% Umount
+    case rpc(HibariFSNode, application, stop, [HibariFS]) of
+        ok ->
+            ok = rpc(HibariFSNode, application, unload, [HibariFS]),
+            ok;
+        {error,{not_started,HibariFS}} ->
+            ok
+    end,
+
+    %% Mount
+    Dir = mount_dir(),
+    ok = filelib:ensure_dir(Dir),
+    EBinDir = rpc(HibariFSNode, code, lib_dir, [HibariFS, ebin]),
+    {ok, [App]} = rpc(HibariFSNode, file, consult, [filename:join(EBinDir, HibariFSApp)]),
+    _ = rpc(HibariFSNode, application, load, [App]),
+    ok = rpc(HibariFSNode, application, set_env, [HibariFS, mount_point, Dir]),
+    ok = rpc(HibariFSNode, application, set_env, [HibariFS, mount_table, Table]),
+    ok = rpc(HibariFSNode, application, set_env, [HibariFS, mount_varprefixnum, 0]),
+    ok = rpc(HibariFSNode, application, start, [HibariFS]),
+
+    %% Un-register this node from Hibari
+    ok = rpc(HibariNode, brick_admin, delete_client_monitor, [node()]),
+    ok = application:stop(gdss_client),
 
     %% done
     ok;
@@ -430,6 +544,7 @@ ping(Node) ->
     end.
 
 rpc(Node, M, F, A) ->
+    io:format("rpc(~p, ~p, ~p, ~p)~n", [Node, M, F, A]),
     case rpc:call(Node, M, F, A, 15000) of
         {badrpc, Reason} ->
             ?FAIL_MSG("RPC(~p:~p:~p) to ~p failed: ~p\n",
@@ -484,3 +599,10 @@ filename(Id, Dir, KeyGen) ->
 filename(Id, BaseDir, DirNameGen, KeyGen) ->
     Dir = dirname(BaseDir, DirNameGen),
     filename(Id, Dir, KeyGen).
+
+
+getopt_initial_file_count() ->
+    Option = basho_bench_config:get(initial_file_count, {{dir, 50}, {file, 20}}),
+    {{dir, DirCount}, {file, FileCount}} = Option,
+
+    {DirCount, FileCount}.
