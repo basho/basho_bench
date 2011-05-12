@@ -470,7 +470,7 @@ init(brick_simple=_Proto, Table, HibariFSNode) ->
     end,
 
     %% Wait for table
-    %timer:sleep(5000),
+    timer:sleep(5000),
 
     %% Umount
     case rpc(HibariFSNode, application, stop, [HibariFS]) of
