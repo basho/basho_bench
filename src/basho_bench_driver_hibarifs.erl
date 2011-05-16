@@ -150,8 +150,9 @@ new(Id) ->
 
     io:format("Creating files"),
 
+    ValGen = basho_bench_valgen:new(basho_bench_config:get(value_generator), Id),
     {ok, Files} = populate_dirs(0, DirCount, FileCount,
-                                integer_to_list(Id), mount_dir(), []),
+                                integer_to_list(Id), mount_dir(), ValGen, []),
 
     io:format("\nCreated total ~p files.\n", [length(Files)]),
 
@@ -478,26 +479,24 @@ init_dirs(N, DirCount, BaseDir) ->
             init_dirs(N + 1, DirCount, BaseDir)
     end.
 
-populate_dirs(N, N, _, _, _, AllFiles) ->
+populate_dirs(N, N, _FileCount, _Id, _BaseDir, _ValGen, AllFiles) ->
     {ok, AllFiles};
-populate_dirs(N, DirCount, FileCount, Id, BaseDir, AllFiles) ->
+populate_dirs(N, DirCount, FileCount, Id, BaseDir, ValGen, AllFiles) ->
     Dir = dirname(BaseDir, N),
-    {ok, Files} = init_files(0, FileCount, Id, Dir, []),
+    {ok, Files} = init_files(0, FileCount, Id, Dir, ValGen, []),
 
-    populate_dirs(N + 1, DirCount, FileCount, Id, BaseDir,
+    populate_dirs(N + 1, DirCount, FileCount, Id, BaseDir, ValGen,
                   lists:append(AllFiles, Files)).
 
-init_files(N, N, _, _Dir, Files) ->
+init_files(N, N, _FileCount, _Dir, _ValGen, Files) ->
     %% io:format("Created ~p files under ~p.\n", [N, _Dir]),
     io:format("."),
     {ok, Files};
-init_files(N, FileCount, Id, Dir, Files) ->
-    File = filename:join(Dir, Id ++ integer_to_list(N)),
-
-    %% @TODO: ENHANCEME: Use ValGen to write the real contents
-    case file:write_file(File, <<>>) of 
+init_files(N, FileCount, Id, Dir, ValGen, Files) ->
+    File = filename(Id, Dir, N),
+    case file:write_file(File, ValGen()) of
         ok -> 
-            init_files(N + 1, FileCount, Id, Dir, [File|Files]);
+            init_files(N + 1, FileCount, Id, Dir, ValGen, [File|Files]);
         {error, Reason} ->
             {error, Reason}
     end.            
@@ -557,11 +556,13 @@ empty_dirname(BaseDir, DirNameGen) ->
     EmptyDir = Dir ++ Empty,
     filename:join([BaseDir, EmptyDir]).
 
-filename(Id, KeyGen) ->
-    Id ++ "_" ++ integer_to_list(KeyGen()).
+filename(Id, N) when is_integer(N)->
+    Id ++ "_" ++ integer_to_list(N).
 
+filename(Id, Dir, N) when is_integer(N) ->
+    filename:join([Dir, filename(Id, N)]);
 filename(Id, Dir, KeyGen) ->
-    filename:join([Dir, filename(Id, KeyGen)]).
+    filename:join([Dir, filename(Id, KeyGen())]).
 
 filename(Id, BaseDir, DirNameGen, KeyGen) ->
     Dir = dirname(BaseDir, DirNameGen),
@@ -572,8 +573,16 @@ getopt_initial_file_count() ->
     Option = basho_bench_config:get(initial_file_count, {{dir, 50}, {file, 20}}),
     {{dir, DirCount}, {file, FileCount}} = Option,
 
-    {DirCount, FileCount}.
-
+    if
+        DirCount =< 0 ->
+            ?FAIL_MSG("Illegal \"dir\" value for initial_file_count. " ++
+                          "It must be > 0. ~p\n", [Option]);
+        FileCount < 0 ->
+            ?FAIL_MSG("Illegal \"file\" value for initial_file_count. " ++
+                          "It must be >= 0. ~p\n", [Option]);
+        true ->
+            {DirCount, FileCount}
+    end.
 
 
 %% @TODO: MOVEME: Move Hibari client related functions to a separate utility module
