@@ -164,7 +164,7 @@ run(create=_Op, KeyGen, _ValGen,
            dirname_gen=DirNameGen}=State) ->
 
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
-    case file:write_file(File, <<>>) of
+    case create_file(File) of
         ok ->
             case lists:member(File, Files) of
                 true ->
@@ -180,7 +180,7 @@ run(write=_Op, KeyGen, ValGen,
            dirname_gen=DirNameGen}=State) ->
 
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
-    case file:write_file(File, ValGen()) of
+    case write_file(File, ValGen()) of
         ok ->
             {ok, State#state{files=[File|Files], filescnt=1}};
         {error, Reason} ->
@@ -188,7 +188,7 @@ run(write=_Op, KeyGen, ValGen,
     end;
 run(write=_Op, _KeyGen, ValGen, #state{files=Files, filescnt=Cnt}=State) ->
     File = lists:nth(random:uniform(Cnt), Files),
-    case file:write_file(File, ValGen()) of
+    case write_file(File, ValGen()) of
         ok ->
             {ok, State};
         {error, Reason} ->
@@ -210,7 +210,7 @@ run(rename=_Op, KeyGen, _ValGen,
 run(rename=_Op, _KeyGen, _ValGen,
     #state{files=[FileFrom|Files], filescnt=Cnt}=State) ->
     FileTo = FileFrom ++ "_renamed",
-    case file:rename(FileFrom, FileTo) of 
+    case file:rename(FileFrom, FileTo) of
         ok ->
             {ok, State#state{files=[FileTo|Files]}};
         {error, enoent} ->
@@ -246,8 +246,8 @@ run(read=_Op, KeyGen, _ValGen,
     #state{id=Id, basedir=BaseDir, filescnt=0, dirname_gen=DirNameGen}=State) ->
 
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
-    case file:read_file(File) of
-        {ok, _Binary} ->
+    case read_file(File) of
+        {ok, _Count} ->
             {ok, State};
         {error, enoent} ->
             {error, ok, State};
@@ -256,8 +256,8 @@ run(read=_Op, KeyGen, _ValGen,
     end;
 run(read=_Op, _KeyGen, _ValGen, #state{files=Files, filescnt=Cnt}=State) ->
     File = lists:nth(random:uniform(Cnt), Files),
-    case file:read_file(File) of
-        {ok, _Binary} ->
+    case read_file(File) of
+        {ok, _Count} ->
             {ok, State};
         {error, enoent} ->
             {error, ok, State#state{files=lists:delete(File, Files), filescnt=Cnt-1}};
@@ -311,7 +311,7 @@ run(create_and_delete_topdir=_Op, KeyGen, _ValGen,
     #state{id=Id, basedir=BaseDir}=State) ->
 
     File = filename(Id, BaseDir, KeyGen),
-    case file:write_file(File, <<>>) of
+    case create_file(File) of
         ok ->
             case file:delete(File) of
                 ok ->
@@ -328,7 +328,7 @@ run(create_and_delete_subdir=_Op, KeyGen, _ValGen,
     #state{id=Id, basedir=BaseDir, dirname_gen=DirNameGen}=State) ->
 
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
-    case file:write_file(File, <<>>) of
+    case create_file(File) of
         ok ->
             case file:delete(File) of
                 ok ->
@@ -420,7 +420,7 @@ init(brick_simple=_Proto, Table, HibariFSNode) ->
     %% Register client nodes to Hibari
     ok = rpc(HibariNode, brick_admin, add_client_monitor, [HibariFSNode]),
     ok = rpc(HibariNode, brick_admin, add_client_monitor, [node()]),
-    
+
     wait_for_tables(HibariNode, [Table]),
 
     %% Check if the table exists
@@ -434,7 +434,7 @@ init(brick_simple=_Proto, Table, HibariFSNode) ->
                     ok
             end;
         error ->
-            ?FAIL_MSG("Table '~p' does not exist on Hibari ~p.\n", 
+            ?FAIL_MSG("Table '~p' does not exist on Hibari ~p.\n",
                       [Table, HibariNode])
     end,
 
@@ -496,7 +496,7 @@ init_files(N, N, _FileCount, _Dir, _ValGen, Files) ->
     {ok, Files};
 init_files(N, FileCount, Id, Dir, ValGen, Files) ->
     File = filename(Id, Dir, N),
-    case file:write_file(File, ValGen()) of
+    case write_file(File, ValGen()) of
         ok ->
             init_files(N + 1, FileCount, Id, Dir, ValGen, [File|Files]);
         {error, Reason} ->
@@ -570,6 +570,56 @@ filename(Id, BaseDir, DirNameGen, KeyGen) ->
     Dir = dirname(BaseDir, DirNameGen),
     filename(Id, Dir, KeyGen).
 
+
+create_file(Filename) ->
+    case file:open(Filename, [raw,write,binary]) of
+        {ok, FD} ->
+            file:close(FD);
+        Err ->
+            Err
+    end.
+
+write_file(Filename, Data) ->
+    case file:open(Filename, [raw,write,binary]) of
+        {ok, FD} ->
+            case file:write(FD, Data) of
+                ok ->
+                    file:close(FD);
+                Err ->
+                    file:close(FD),
+                    Err
+            end;
+        Err ->
+            Err
+    end.
+
+read_file(Filename) ->
+    case file:open(Filename, [raw,read,binary]) of
+        {ok, FD} ->
+            read_file_fully(FD);
+        Err ->
+            Err
+    end.
+
+read_file_fully(FD) ->
+    read_file_fully(FD, 0).
+
+read_file_fully(FD, N) ->
+    %% @TODO should this value of 128KB be larger or smaller ?
+    case file:read(FD, 131072) of
+        {ok, Data} ->
+            read_file_fully(FD, N + byte_size(Data));
+        eof ->
+            case file:close(FD) of
+                ok ->
+                    {ok, N};
+                Err ->
+                    Err
+            end;
+        Err ->
+            file:close(FD),
+            Err
+    end.
 
 getopt_initial_file_count() ->
     Option = basho_bench_config:get(initial_file_count, {{dir, 50}, {file, 20}}),
