@@ -186,10 +186,11 @@ run(write=_Op, KeyGen, ValGen,
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(write=_Op, _KeyGen, ValGen, #state{files=[File|Files]}=State) ->
+run(write=_Op, _KeyGen, ValGen, #state{files=Files, filescnt=Cnt}=State) ->
+    File = lists:nth(random:uniform(Cnt), Files),
     case file:write_file(File, ValGen()) of
         ok ->
-            {ok, State#state{files=lists:append(Files, [File])}};
+            {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -211,7 +212,7 @@ run(rename=_Op, _KeyGen, _ValGen,
     FileTo = FileFrom ++ "_renamed",
     case file:rename(FileFrom, FileTo) of 
         ok ->
-            {ok, State#state{files=lists:append(Files, [FileTo])}};
+            {ok, State#state{files=[FileTo|Files]}};
         {error, enoent} ->
             {error, ok, State#state{files=Files, filescnt=Cnt-1}};
         {error, Reason} ->
@@ -253,12 +254,13 @@ run(read=_Op, KeyGen, _ValGen,
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(read=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) ->
+run(read=_Op, _KeyGen, _ValGen, #state{files=Files, filescnt=Cnt}=State) ->
+    File = lists:nth(random:uniform(Cnt), Files),
     case file:read_file(File) of
         {ok, _Binary} ->
-            {ok, State#state{files=lists:append(Files, [File])}};
+            {ok, State};
         {error, enoent} ->
-            {error, ok, State#state{files=Files, filescnt=Cnt-1}};
+            {error, ok, State#state{files=lists:delete(File, Files), filescnt=Cnt-1}};
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -495,11 +497,11 @@ init_files(N, N, _FileCount, _Dir, _ValGen, Files) ->
 init_files(N, FileCount, Id, Dir, ValGen, Files) ->
     File = filename(Id, Dir, N),
     case file:write_file(File, ValGen()) of
-        ok -> 
+        ok ->
             init_files(N + 1, FileCount, Id, Dir, ValGen, [File|Files]);
         {error, Reason} ->
             {error, Reason}
-    end.            
+    end.
 
 ping(Node) ->
     case net_adm:ping(Node) of
