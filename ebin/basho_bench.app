@@ -15,7 +15,6 @@
              basho_bench_driver_hibari,
              basho_bench_driver_hibarifs,
              basho_bench_driver_hibarifs_impl,
-             basho_bench_driver_localfs,
              basho_bench_driver_null,
              basho_bench_log,
              basho_bench_keygen,
