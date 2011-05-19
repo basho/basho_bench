@@ -199,7 +199,7 @@ run(rename=_Op, KeyGen, _ValGen,
 
     FileFrom = filename(Id, BaseDir, DirNameGen, KeyGen),
     FileTo   = FileFrom ++ "_renamed",
-    case file:rename(FileFrom, FileTo) of
+    case basho_bench_erlang_file_alternative:rename(FileFrom, FileTo) of
         ok ->
             {ok, State};
         {error, enoent} ->
@@ -210,7 +210,7 @@ run(rename=_Op, KeyGen, _ValGen,
 run(rename=_Op, _KeyGen, _ValGen,
     #state{files=[FileFrom|Files], filescnt=Cnt}=State) ->
     FileTo = FileFrom ++ "_renamed",
-    case file:rename(FileFrom, FileTo) of
+    case basho_bench_erlang_file_alternative:rename(FileFrom, FileTo) of
         ok ->
             {ok, State#state{files=[FileTo|Files]}};
         {error, enoent} ->
@@ -225,7 +225,7 @@ run(delete=_Op, KeyGen, _ValGen,
     #state{id=Id, basedir=BaseDir, filescnt=0, dirname_gen=DirNameGen}=State) ->
 
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
-    case file:delete(File) of
+    case basho_bench_erlang_file_alternative:delete(File) of
         ok ->
             {ok, State};
         {error, enoent} ->
@@ -234,7 +234,7 @@ run(delete=_Op, KeyGen, _ValGen,
             {error, Reason, State}
     end;
 run(delete=_Op, _KeyGen, _ValGen, #state{files=[File|Files], filescnt=Cnt}=State) ->
-    case file:delete(File) of
+    case basho_bench_erlang_file_alternative:delete(File) of
         ok ->
             {ok, State#state{files=Files, filescnt=Cnt-1}};
         {error, enoent} ->
