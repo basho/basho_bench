@@ -41,6 +41,7 @@
                  basedir,
                  files = [],
                  filescnt = 0,
+                 maxfiles,
                  emptydirs = [],
                  emptydirscnt = 0,
                  dirname_gen
@@ -114,6 +115,7 @@ new(Id) ->
 
     Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
     {DirCount, FileCount} = getopt_initial_file_count(),
+    MaxFiles = basho_bench_config:get(max_files_per_worker, 5000),
 
     %% Worker has a separate keygen for directory name generation.
     DirNameGen = basho_bench_keygen:new({truncated_pareto_int, DirCount - 1}, Id),
@@ -123,7 +125,8 @@ new(Id) ->
                 localfs ->
                     #state { id = integer_to_list(Id),
                              basedir = mount_dir(),
-                             dirname_gen = DirNameGen
+                             dirname_gen = DirNameGen,
+                             maxfiles = MaxFiles
                            };
                 brick_simple_stub ->
                     Table  = basho_bench_config:get(hibarifs_table, tab1),
@@ -132,7 +135,8 @@ new(Id) ->
                              table = Table,
                              proto = Proto,
                              basedir = mount_dir(),
-                             dirname_gen = DirNameGen
+                             dirname_gen = DirNameGen,
+                             maxfiles = MaxFiles
                             };
                 brick_simple ->  %% @TODO: Try not repeat the same code here
                     Table  = basho_bench_config:get(hibarifs_table, tab1),
@@ -141,7 +145,8 @@ new(Id) ->
                              table = Table,
                              proto = Proto,
                              basedir = mount_dir(),
-                             dirname_gen = DirNameGen
+                             dirname_gen = DirNameGen,
+                             maxfiles = MaxFiles
                             };
                 _ ->
                     Reason1 = Proto,
@@ -160,8 +165,8 @@ new(Id) ->
 
 %% file operations
 run(create=_Op, KeyGen, _ValGen,
-    #state{id=Id, basedir=BaseDir, files=Files, filescnt=Cnt,
-           dirname_gen=DirNameGen}=State) when Cnt < 5000 ->
+    #state{id=Id, basedir=BaseDir, files=Files, filescnt=Cnt, maxfiles=MaxFiles,
+           dirname_gen=DirNameGen}=State) when Cnt < MaxFiles ->
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
     case create_file(File) of
         ok ->
@@ -188,6 +193,7 @@ run(write=_Op, KeyGen, ValGen,
             {error, Reason, State}
     end;
 run(write=_Op, _KeyGen, ValGen, #state{files=Files, filescnt=Cnt}=State) ->
+    %% @TODO ENHANCEME: list:nth/2 is O(n) operation. Need more efficient way (chunks, index etc.)
     File = lists:nth(random:uniform(Cnt), Files),
     case write_file(File, ValGen()) of
         ok ->
