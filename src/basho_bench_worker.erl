@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(basho_bench_worker).
@@ -99,7 +99,8 @@ init([SupChild, Id]) ->
     %%
     %% Link the worker and the sub-process to ensure that if either exits, the
     %% other goes with it.
-    WorkerPid = spawn_link(fun() -> worker_init(State) end),
+    SpawnOptions = basho_bench_config:get(worker_spawn_options, []),
+    WorkerPid = spawn_opt(fun() -> worker_init(State) end, [link | SpawnOptions]),
     WorkerPid ! {init_driver, self()},
     receive
         driver_ready ->
