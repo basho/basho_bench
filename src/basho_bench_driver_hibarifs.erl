@@ -161,8 +161,7 @@ new(Id) ->
 %% file operations
 run(create=_Op, KeyGen, _ValGen,
     #state{id=Id, basedir=BaseDir, files=Files, filescnt=Cnt,
-           dirname_gen=DirNameGen}=State) ->
-
+           dirname_gen=DirNameGen}=State) when Cnt < 5000 ->
     File = filename(Id, BaseDir, DirNameGen, KeyGen),
     case create_file(File) of
         ok ->
@@ -175,6 +174,8 @@ run(create=_Op, KeyGen, _ValGen,
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(create=_Op, _KeyGen, _ValGen, State) ->
+    {error, too_many_files, State};
 run(write=_Op, KeyGen, ValGen,
     #state{id=Id, basedir=BaseDir, files=Files, filescnt=0,
            dirname_gen=DirNameGen}=State) ->
