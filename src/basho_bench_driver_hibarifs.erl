@@ -47,6 +47,10 @@
                  dirname_gen
                }).
 
+%% The number of file name to drop(forget) from the file list when the list gets full.
+%% @TODO Make this number configurable
+-define(DEL_COUNT, 100).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -179,8 +183,10 @@ run(create=_Op, KeyGen, _ValGen,
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(create=_Op, _KeyGen, _ValGen, State) ->
-    {error, too_many_files, State};
+run(create=_Op, _KeyGen, _ValGen, #state{files=Files, filescnt=Cnt}=State) ->
+    DelCnt = min(?DEL_COUNT, Cnt - 1),
+    Files2 = lists:nthtail(DelCnt, Files),
+    {error, too_many_files, State#state{files=Files2, filescnt=Cnt-DelCnt}};
 run(write=_Op, KeyGen, ValGen,
     #state{id=Id, basedir=BaseDir, files=Files, filescnt=0,
            dirname_gen=DirNameGen}=State) ->
