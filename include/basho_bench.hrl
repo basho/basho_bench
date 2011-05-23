@@ -1,6 +1,6 @@
 
 
--define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), halt(1)).
+-define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), timer:sleep(1000), halt(1)).
 
 -define(CONSOLE(Str, Args), basho_bench_log:log(console, Str, Args)).
 
