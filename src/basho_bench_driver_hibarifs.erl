@@ -25,6 +25,7 @@
 
 -export([init/0,
          new/1,
+         pre_run/0,
          run/4
         ]).
 
@@ -50,6 +51,8 @@
 %% The number of file name to drop(forget) from the file list when the list gets full.
 %% @TODO Make this number configurable
 -define(DEL_COUNT, 100).
+
+-define(RPC_TIMEOUT, 15000).
 
 %% ====================================================================
 %% API
@@ -166,6 +169,12 @@ new(Id) ->
     io:format("\nCreated total ~p files.\n", [length(Files)]),
 
     {ok, State#state{ files = Files, filescnt = length(Files) }}.
+
+pre_run() ->
+    Proto = basho_bench_config:get(hibarifs_proto, brick_simple_stub),
+    Node    = basho_bench_config:get(hibarifs_node, 'hibarifs@127.0.0.1'),
+    Table  = basho_bench_config:get(hibarifs_table, tab1),
+    ok = pre_run(Proto, Table, Node).
 
 %% file operations
 run(create=_Op, KeyGen, _ValGen,
@@ -451,6 +460,15 @@ init(brick_simple=_Proto, Table, HibariFSNode) ->
                       [Table, HibariNode])
     end,
 
+    case go_async(HibariNode, Table) of
+        ok ->
+            ?INFO("do_sync = false\n", []),
+            ok;
+        {error, Err} ->
+            ?WARN("Failed to set do_sync to false on ~p [~p].\n", [Table, Err]),
+            ok
+    end,
+
     %% Umount
     case rpc(HibariFSNode, application, stop, [HibariFS]) of
         ok ->
@@ -479,6 +497,21 @@ init(brick_simple=_Proto, Table, HibariFSNode) ->
     ok;
 init(Proto, _Table, _Node) ->
     ?FAIL_MSG("Unknown protocol for ~p: ~p\n", [?MODULE, Proto]).
+
+pre_run(brick_simple=_Proto, Table, _Node) ->
+    HibariNodes = basho_bench_config:get(hibari_admin_nodes, ['hibari@127.0.0.1']),
+    HibariNode  = hd(HibariNodes),
+    checkpoint(HibariNode, Table),
+    case go_sync(HibariNode, Table) of
+        ok ->
+            ?INFO("do_sync = true\n", []),
+            ok;
+        {error, Err} ->
+            ?FAIL_MSG("Failed to set do_sync to true on ~p ~p.\n", [Table, Err])
+    end;
+
+pre_run(_Proto, _Table, _Node) ->
+    ok.
 
 init_dirs(N, N, _) ->
     io:format("Created ~p shared directories.\n", [N]),
@@ -526,7 +559,7 @@ ping(Node) ->
 
 rpc(Node, M, F, A) ->
     %% io:format("rpc(~p, ~p, ~p, ~p)\n", [Node, M, F, A]),
-    case rpc:call(Node, M, F, A, 15000) of
+    case rpc:call(Node, M, F, A, ?RPC_TIMEOUT) of
         {badrpc, Reason} ->
             ?FAIL_MSG("RPC(~p:~p:~p) to ~p failed: ~p\n",
                       [M, F, A, Node, Reason]);
@@ -659,10 +692,54 @@ wait_for_tables(GDSSAdmin, Tables) ->
 
 poll_table({GDSSAdmin,not_ready,Tab} = T) ->
     TabCh = gmt_util:atom_ify(gmt_util:list_ify(Tab) ++ "_ch1"),
-    case rpc:call(GDSSAdmin, brick_sb, get_status, [chain, TabCh]) of
+    case rpc:call(GDSSAdmin, brick_sb, get_status, [chain, TabCh], ?RPC_TIMEOUT) of
         {ok, healthy} ->
             {false, ok};
         _ ->
             ok = timer:sleep(50),
             {true, T}
     end.
+
+go_async(GDSSAdmin, Table) ->
+    go_sync(GDSSAdmin, Table, false).
+
+go_sync(GDSSAdmin, Table) ->
+    go_sync(GDSSAdmin, Table, true).
+
+go_sync(GDSSAdmin, Table, Bool) ->
+    [rpc:call(Node, brick_server, set_do_sync, [{Brick, Node}, Bool], ?RPC_TIMEOUT)
+     || {Brick, Node} <- running_bricks(GDSSAdmin, Table)],
+    SyncStatus = get_sync_properties(GDSSAdmin, Table),
+    Result = lists:foldl(fun(Status, Acc) ->
+                                 Status == Bool andalso Acc
+                         end,
+                         true,
+                         SyncStatus),
+    case Result of
+        true ->
+            ok;
+        false ->
+            {error, SyncStatus}
+    end.
+
+checkpoint(GDSSAdmin, Table) ->
+    [rpc:call(Node, brick_server, checkpoint, [Brick, Node], ?RPC_TIMEOUT)
+     || {Brick, Node} <- running_bricks(GDSSAdmin, Table)].
+
+get_sync_properties(GDSSAdmin, Table) ->
+    BrickStatusList = [rpc:call(Node, brick_server, status, [Brick, Node], ?RPC_TIMEOUT)
+                       || {Brick, Node} <- running_bricks(GDSSAdmin, Table)],
+    lists:map(fun({ok, BrickStatus}) ->
+                      BrickImpl = proplists:get_value(implementation, BrickStatus, undefined),
+                      proplists:get_value(do_sync, BrickImpl, undefined)
+              end,
+              BrickStatusList).
+
+running_bricks(GDSSAdmin, Table) ->
+    {ok, Properties} = rpc:call(GDSSAdmin, brick_admin, get_table_info,
+                        [{global, brick_admin}, Table], ?RPC_TIMEOUT),
+    GHash = proplists:get_value(ghash, Properties),
+    Chains = lists:usort(brick_hash:all_chains(GHash, current)
+                         ++
+                         brick_hash:all_chains(GHash, new)),
+    [Brick || {_Chain, Bricks} <- Chains, Brick <- Bricks].
