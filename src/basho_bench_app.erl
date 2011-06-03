@@ -73,7 +73,14 @@ start(_StartType, _StartArgs) ->
     application:set_env(basho_bench_app, is_running, true),
     ok = basho_bench_stats:run(),
     Workers = basho_bench_sup:workers(),
-    Driver:pre_run(),
+
+    case erlang:function_exported(Driver, pre_run, 0) of
+        true ->
+            Driver:pre_run();
+        false ->
+            ok
+    end,
+
     ok = basho_bench_worker:run(Workers),
     {ok, Pid}.
     
