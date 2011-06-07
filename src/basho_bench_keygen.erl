@@ -39,6 +39,9 @@ new({int_to_bin, InputGen}, Id) ->
 new({int_to_str, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> integer_to_list(Gen()) end;
+new({to_binstr, FmtStr, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> list_to_binary(io_lib:format(FmtStr, [Gen()])) end;
 new({sequential_int, MaxKey}, _Id) ->
     Ref = make_ref(),
     fun() -> sequential_int_generator(Ref, MaxKey) end;
