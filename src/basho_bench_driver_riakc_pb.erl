@@ -93,6 +93,8 @@ run(get_existing, KeyGen, _ValueGen, State) ->
                              [{r, State#state.r}]) of
         {ok, _} ->
             {ok, State};
+        {siblings, _} ->
+            {ok, State};
         {error, notfound} ->
             {error, {not_found, Key}, State};
         {error, Reason} ->
@@ -113,8 +115,9 @@ run(update, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}]) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
-            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+            Robj2 = riakc_obj:select_sibling(1, Robj),
+            Robj3 = riakc_obj:update_value(Robj2, ValueGen()),
+            case riakc_pb_socket:put(State#state.pid, Robj3, [{w, State#state.w},
                                                               {dw, State#state.dw}]) of
                 ok ->
                     {ok, State};
@@ -137,8 +140,9 @@ run(update_existing, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}]) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
-            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+            Robj2 = riakc_obj:select_sibling(1, Robj),
+            Robj3 = riakc_obj:update_value(Robj2, ValueGen()),
+            case riakc_pb_socket:put(State#state.pid, Robj3, [{w, State#state.w},
                                                               {dw, State#state.dw}]) of
                 ok ->
                     {ok, State};
