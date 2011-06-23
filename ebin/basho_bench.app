@@ -14,6 +14,8 @@
              basho_bench_driver_bitcask,
              basho_bench_driver_hibari,
              basho_bench_driver_null,
+             basho_bench_driver_riakc_java,
+             basho_bench_java_client,
              basho_bench_log,
              basho_bench_keygen,
              basho_bench_stats,
