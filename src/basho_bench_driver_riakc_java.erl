@@ -38,8 +38,8 @@
 %% ====================================================================
 
 new(Id) ->
-    Nodes  = basho_bench_config:get(riakc_java_nodes, [[{'java@127.0.0.1',{127,0,0,1}, 8087}]]),
-    %% riakc_pb_replies sets defaults for R, W, DW and RW.
+    {TargetNode, ClientNodes} = basho_bench_config:get(riakc_java_nodes, {'java@127.0.0.1', [{{127,0,0,1}, 8087}]}),
+    %% riakc_java_replies sets defaults for R, W, DW and RW.
     %% Each can be overridden separately
     Replies = basho_bench_config:get(riakc_java_replies, 2),
     R = basho_bench_config:get(riakc_java_r, Replies),
@@ -50,8 +50,6 @@ new(Id) ->
     Transport = basho_bench_config:get(riakc_java_transport, pb),
     PBBuffer = basho_bench_config:get(riakc_java_pbc_buffer, 16),
 
-    %% Choose the node using our ID as a modulus
-    {TargetNode, Ip, Port} = lists:nth((Id rem length(Nodes)+1), Nodes),
     ?INFO("Using target node ~p for worker ~p\n", [TargetNode, Id]),
 
     %% Check that we can at least talk to the jinterface riak java client node
@@ -62,8 +60,18 @@ new(Id) ->
         _ ->
             ok
     end,
-
-    case basho_bench_java_client:new(TargetNode, Ip, Port, PBBuffer, Transport) of
+    if Transport =:= pbcluster orelse Transport =:= httpcluster ->
+            Result = basho_bench_java_client:new(TargetNode, ClientNodes, PBBuffer, Transport),
+            FailureMsg = "Failed to connect java jinterface node ~p to cluster nodes ~p: ~p\n",
+            FailureArgs = [TargetNode, ClientNodes];
+       true ->
+            %% Choose the node using our ID as a modulus
+            {Ip, Port} = lists:nth((Id rem length(ClientNodes)+1), ClientNodes),
+            Result = basho_bench_java_client:new(TargetNode, Ip, Port, PBBuffer, Transport),
+            FailureMsg = "Failed to connect java jinterface node ~p on ip ~p to ~p port ~p: ~p\n",
+            FailureArgs = [TargetNode, Ip, Port]
+    end,
+    case Result of
         {ok, Pid} ->
             {ok, #state { pid = Pid,
                           bucket = Bucket,
@@ -72,9 +80,8 @@ new(Id) ->
                           dw = DW,
                           rw = RW
                         }};
-        {error, Reason2} ->
-            ?FAIL_MSG("Failed to connect java jinterface node ~p on ip ~p to ~p port ~p: ~p\n",
-                      [TargetNode, Ip, Port, Reason2])
+        {error, Reason} ->
+            ?FAIL_MSG(FailureMsg, FailureArgs ++ Reason)
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
