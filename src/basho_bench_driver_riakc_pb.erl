@@ -58,11 +58,14 @@ new(Id) ->
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
 
-    %% Choose the node using our ID as a modulus
-    TargetIp = lists:nth((Id rem length(Ips)+1), Ips),
-    ?INFO("Using target ip ~p for worker ~p\n", [TargetIp, Id]),
-
-    case riakc_pb_socket:start_link(TargetIp, Port) of
+    %% Choose the target node using our ID as a modulus
+    Target = lists:nth((Id rem length(Ips)+1), Ips),
+    {TargetIp, TargetPort} = case Target of
+                                 {_, _} -> Target;
+                                 _ -> {Target, Port}
+                             end,
+    ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
+    case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
             {ok, #state { pid = Pid,
                           bucket = Bucket,
@@ -70,10 +73,10 @@ new(Id) ->
                           w = W,
                           dw = DW,
                           rw = RW
-                         }};
+                        }};
         {error, Reason2} ->
-            ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
-                      [TargetIp, Port, Reason2])
+            ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
+                      [TargetIp, TargetPort, Reason2])
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
