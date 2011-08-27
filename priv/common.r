@@ -18,7 +18,7 @@ load_latency_frame <- function(File)
   }
 
 # Load summary and latency information for a given directory
-load_benchmark <- function(Dir)
+load_benchmark <- function(Dir, Tstart, Tend)
   {
     ## Load up summary data
     summary <- read.csv(sprintf("%s/%s", Dir, "summary.csv"))
@@ -32,7 +32,15 @@ load_benchmark <- function(Dir)
     ## Convert timing information in latencies from usecs -> msecs
     latencies[4:10] <- latencies[4:10] / 1000
 
-    return (list(summary = summary, latencies = latencies))
+    ## Trim values off that are outside our range of times
+    if (is.null(Tstart)) { Tstart = 0 }
+    if (is.null(Tend)) { Tend = max(summary$elapsed) }
+
+    print(Tstart)
+    print(Tend)
+
+    return (list(summary = summary[summary$elapsed >= Tstart & summary$elapsed <= Tend,],
+                 latencies = latencies[latencies$elapsed >= Tstart & latencies$elapsed <= Tend,]))
   }
 
 load_library("getopt")
