@@ -47,6 +47,7 @@ new(Id) ->
     DW = basho_bench_config:get(riakc_java_dw, Replies),
     RW = basho_bench_config:get(riakc_java_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_java_bucket, <<"test">>),
+    Transport = basho_bench_config:get(riakc_java_transport, pb),
     PBBuffer = basho_bench_config:get(riakc_java_pbc_buffer, 16),
 
     %% Choose the node using our ID as a modulus
@@ -62,7 +63,7 @@ new(Id) ->
             ok
     end,
 
-    case basho_bench_java_client:new(TargetNode, Ip, Port, PBBuffer) of
+    case basho_bench_java_client:new(TargetNode, Ip, Port, PBBuffer, Transport) of
         {ok, Pid} ->
             {ok, #state { pid = Pid,
                           bucket = Bucket,
