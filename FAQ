@@ -1,0 +1,37 @@
+  Frequently Asked Questions (FAQ) on basho_bench
+  ------------------------------------------------------------------
+
+Contributors:
+-------------------------------
+Steve Morin (San Francisco, California, USA) 
+
+Where to find the latest FAQ:
+-----------------------------
+This FAQ can be found at:
+https://github.com/smorin/basho_bench/blob/master/FAQ
+
+CONTENTS
+********
+
+      1)  COMPILING and BUILDING
+    1.1)  Build Error - Uncaught error in rebar_core: {'EXIT', {undef, [{crypto,start,[]}
+
+1)  COMPILING and BUILDING
+
+1.1)  Build Error - Uncaught error in rebar_core: {'EXIT', {undef, [{crypto,start,[]}
+    
+    If you get the following error: "Your local Erlang install doesn't include the crypto application. Make sure you have the erlang-crypto and erlang-dev packages installed if you're on Debian, erlang-crypto and erlang-devel on Redhat/Fedora." quoting "seancribbs" The simple mac solution is sudo port install erlang +ssl  
+    $ make all
+    ./rebar get-deps
+    Uncaught error in rebar_core: {'EXIT',
+                                  {undef,
+                                      [{crypto,start,[]},
+                                       {rebar,run_aux,1},
+                                       {rebar,main,1},
+                                       {escript,run,2},
+                                       {escript,start,1},
+                                       {init,start_it,1},
+                                       {init,start_em,1}]}}
+    make: *** [deps] Error 1
+
+
