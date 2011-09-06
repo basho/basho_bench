@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% basho_bench_driver_riakc_pb: Driver for riak protocol buffers client
+%% basho_bench_driver_2i_pb: Driver for Secondary Indices (via PB)
 %%
 %% Copyright (c) 2009 Basho Techonologies
 %%
@@ -19,7 +19,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(basho_bench_driver_2i_pb).
+-module(basho_bench_driver_2i).
 
 -export([new/1,
          run/4]).
@@ -94,7 +94,7 @@ run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
                              [{r, State#state.r}]) of
-        {ok, _} ->
+        {ok, Obj} ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
@@ -106,16 +106,14 @@ run(put, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     Value = ValueGen(),
     Indexes =
-        generate_integer_indexes(Value, State#state.num_integer_indexes) ++
-        generate_binary_indexes(Value, State#state.num_binary_indexes, State#state.binary_index_size),
+        generate_integer_indexes(Key, State#state.num_integer_indexes) ++
+        generate_binary_indexes(Key, State#state.num_binary_indexes, State#state.binary_index_size),
     MetaData = dict:from_list([{<<"index">>, Indexes}]),
 
-    %% Create the object...x
+    %% Create the object...
     Robj0 = riakc_obj:new(State#state.bucket, Key),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MetaData),
-
-    io:format("[~s:~p] DEBUG - Robj2: ~p~n", [?MODULE, ?LINE, Robj2]),
 
     %% Write the object...
     case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
@@ -125,60 +123,64 @@ run(put, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(int_eq_query, _KeyGen, ValueGen, State) ->
-    Value = ValueGen(),
-    [{Field, Value}|_] = generate_integer_indexes(Value, State#state.num_integer_indexes),
+run(int_eq_query, KeyGen, _ValueGen, State) ->
+    Key = KeyGen(),
+    [{Field,Term}|_] =
+        generate_integer_indexes(Key,
+                                 State#state.num_integer_indexes),
     case riakc_pb_socket:get_index(State#state.pid,
                                    State#state.bucket,
                                    Field,
-                                   Value) of
+                                   Term) of
         {ok, Results} ->
-            io:format("[~s:~p] DEBUG - Results: ~p~n", [?MODULE, ?LINE, Results]),
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(int_range_query, _KeyGen, ValueGen, State) ->
-    Value = ValueGen(),
-    [{Field, StartValue},{_, EndValue}|_] = generate_integer_indexes(Value, State#state.num_integer_indexes),
+run(int_range_query, KeyGen, _ValueGen, State) ->
+    Key = KeyGen(),
+    [{Field, StartTerm},{_, EndTerm}|_] =
+        generate_integer_indexes(Key,
+                                 State#state.num_integer_indexes),
     case riakc_pb_socket:get_index(State#state.pid,
                                    State#state.bucket,
                                    Field,
-                                   lists:min([StartValue, EndValue]),
-                                   lists:max([StartValue, EndValue])) of
+                                   lists:min([StartTerm, EndTerm]),
+                                   lists:max([StartTerm, EndTerm])) of
         {ok, Results} ->
-            io:format("[~s:~p] DEBUG - Results: ~p~n", [?MODULE, ?LINE, Results]),
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(bin_eq_query, _KeyGen, ValueGen, State) ->
-    Value = ValueGen(),
-    [{Field, Value}|_] = generate_binary_indexes(Value,
-                                                 State#state.num_binary_indexes,
-                                                 State#state.binary_index_size),
+run(bin_eq_query, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    _Value = ValueGen(),
+    [{Field, Term}|_] =
+        generate_binary_indexes(Key,
+                                State#state.num_binary_indexes,
+                                State#state.binary_index_size),
     case riakc_pb_socket:get_index(State#state.pid,
                                    State#state.bucket,
                                    Field,
-                                   Value) of
+                                   Term) of
         {ok, Results} ->
-            io:format("[~s:~p] DEBUG - Results: ~p~n", [?MODULE, ?LINE, Results]),
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(bin_range_query, _KeyGen, ValueGen, State) ->
-    Value = ValueGen(),
-    [{Field, StartValue},{_, EndValue}|_] = generate_binary_indexes(Value,
-                                                                    State#state.num_binary_indexes,
-                                                                    State#state.binary_index_size),
+run(bin_range_query, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    _Value = ValueGen(),
+    [{Field, StartTerm},{_, EndTerm}|_] =
+        generate_binary_indexes(Key,
+                                State#state.num_binary_indexes,
+                                State#state.binary_index_size),
     case riakc_pb_socket:get_index(State#state.pid,
                                    State#state.bucket,
                                    Field,
-                                   lists:min([StartValue, EndValue]),
-                                   lists:max([StartValue, EndValue])) of
+                                   lists:min([StartTerm, EndTerm]),
+                                   lists:max([StartTerm, EndTerm])) of
         {ok, Results} ->
-            io:format("[~s:~p] DEBUG - Results: ~p~n", [?MODULE, ?LINE, Results]),
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
@@ -192,35 +194,47 @@ run(Other, _, _, _) ->
 
 generate_integer_indexes(_, 0) ->
     [];
-generate_integer_indexes(Value, N) when is_binary(Value) ->
+generate_integer_indexes(Seed, N) when is_binary(Seed) ->
     %% Pull a field value out of the binary. In this case, a 32-bit integer...
-    <<V:32/integer, _/binary>> = Value,
-    <<_:1/binary, Value1/binary>> = Value,
+    <<V:32/integer, _/binary>> = Seed,
 
     %% Create the field name...
-    K = "field" ++ integer_to_list(N) ++ "_int",
+    K = list_to_binary("field" ++ integer_to_list(N) ++ "_int"),
 
     %% Loop.
-    [{K,V}|generate_integer_indexes(Value1, N - 1)];
-generate_integer_indexes(Value, _) when is_binary(Value) ->
-    throw({invalid_value, "Value must be a binary."}).
+    [{K,V}|generate_integer_indexes(erlang:md5(Seed), N - 1)];
+generate_integer_indexes(Seed, _) when is_binary(Seed) ->
+    throw({invalid_value, "Seed value must be a binary."}).
 
 
 generate_binary_indexes(_, 0, _) ->
     [];
-generate_binary_indexes(Value, N, Size) when is_binary(Value) ->
+generate_binary_indexes(Seed, N, Size) when is_binary(Seed) ->
     %% Pull a field value out of the binary...
-    <<V1:Size/binary, _/binary>> = Value,
-    <<_:1/binary, Value1/binary>> = Value,
+    V1 = generate_binary_index(Seed, Size),
 
     %% Create the field name and normalize the value...
-    K = "field" ++ integer_to_list(N) ++ "_bin",
+    K = list_to_binary("field" ++ integer_to_list(N) ++ "_bin"),
     V2 = normalize_binary_index(V1),
 
     %% Loop.
-    [{K,V2}|generate_binary_indexes(Value1, N - 1, Size)];
-generate_binary_indexes(Value, _N, _Size) when is_binary(Value) ->
-    throw({invalid_value, "Value must be a binary."}).
+    [{K,V2}|generate_binary_indexes(erlang:md5(Seed), N - 1, Size)];
+generate_binary_indexes(Seed, _N, _Size) when is_binary(Seed) ->
+    throw({invalid_value, "Seed value must be a binary."}).
+
+generate_binary_index(Seed, Size) ->
+    iolist_to_binary(generate_binary_index_1(Seed, Size)).
+generate_binary_index_1(_Seed, 0) ->
+    [];
+generate_binary_index_1(Seed, Size) when Size >= 16 ->
+    NewSeed = erlang:md5(Seed),
+    [NewSeed|generate_binary_index_1(NewSeed, Size - 16)];
+generate_binary_index_1(Seed, Size) ->
+    NewSeed = erlang:md5(Seed),
+    <<V:Size/binary, _/binary>> = NewSeed,
+    [V].
+
+
 
 normalize_binary_index(Value) ->
     normalize_binary_index(Value, <<>>).
