@@ -22,7 +22,8 @@
              basho_bench_stats,
              basho_bench_sup,
              basho_bench_worker,
-             basho_bench_valgen
+             basho_bench_valgen,
+             basho_bench_searchgen
              ]},
   {registered, [ basho_bench_sup ]},
   {applications, [kernel,
