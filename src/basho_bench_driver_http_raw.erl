@@ -66,7 +66,7 @@ new(Id) ->
                     undefined ->
                         undefined;
                     V ->
-                        basho_bench_searchgen:new(V, ClientId)
+                        searchgen(V, ClientId)
                 end,
 
     case Disconnect of
@@ -182,6 +182,10 @@ run(insert, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
+
+run(search, _KeyGen, _ValueGen, State) when State#state.searchgen == undefined ->
+    {_NextUrl, S2} = next_url(State),
+    {error, {badarg, "http_search_generator needed for search operation"}, S2};
 run(search, _KeyGen, _ValueGen, State) ->
     %% Handle missing searchgen
     {NextUrl, S2} = next_url(State),
@@ -194,6 +198,17 @@ run(search, _KeyGen, _ValueGen, State) ->
             {error, Reason, S2}
     end.
 
+%% ====================================================================
+%% Search Generator API
+%% ====================================================================
+
+searchgen({function, Module, Function, Args}, Id) ->
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            erlang:apply(Module, Function, [Id] ++ Args);
+        _Error ->
+            ?FAIL_MSG("Could not find searchgen function: ~p:~p\n", [Module, Function])
+    end.
 
 %% ====================================================================
 %% Internal functions
@@ -212,6 +227,7 @@ url(BaseUrl, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, Params]) }.
 url(BaseUrl, KeyGen, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
+
 search_url(BaseUrl, SolrPath, SearchGen) ->
     BaseUrl#url { path = lists:concat([SolrPath, '/select?', SearchGen()]) }.
 
