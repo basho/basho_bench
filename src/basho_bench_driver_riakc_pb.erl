@@ -57,7 +57,7 @@ new(Id) ->
     end,
 
     Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
-    Port  = basho_bench_config:get(riakc_pb_port, 8087),
+    Port0  = basho_bench_config:get(riakc_pb_port, 8087),
     %% riakc_pb_replies sets defaults for R, W, DW and RW.
     %% Each can be overridden separately
     Replies = basho_bench_config:get(riakc_pb_replies, 2),
@@ -67,10 +67,18 @@ new(Id) ->
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
+    Pairs =
+        case basho_bench_config:get(riakc_pb_ip_port_pairs) of
+            undefined ->
+                lists:zip(Ips, lists:duplicate(length(Ips), Port0));
+            Pairs0 ->
+                lists:flatten([ [{Ip, Port} || Port <- Ports]
+                                || {Ip, Ports} <- Pairs0 ])
+        end,
 
     %% Choose the node using our ID as a modulus
-    TargetIp = lists:nth((Id rem length(Ips)+1), Ips),
-    ?INFO("Using target ip ~p for worker ~p\n", [TargetIp, Id]),
+    {TargetIp, Port} = lists:nth((Id rem length(Pairs)+1), Pairs),
+    ?INFO("Using target ip ~p on port ~p for worker ~p\n", [TargetIp, Port, Id]),
 
     case riakc_pb_socket:start_link(TargetIp, Port) of
         {ok, Pid} ->
