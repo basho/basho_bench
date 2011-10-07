@@ -59,11 +59,8 @@ new(Id) ->
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
 
     %% Choose the target node using our ID as a modulus
-    Target = lists:nth((Id rem length(Ips)+1), Ips),
-    {TargetIp, TargetPort} = case Target of
-                                 {_, _} -> Target;
-                                 _ -> {Target, Port}
-                             end,
+    Targets = expand_ips(Ips, Port),
+    {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
@@ -176,3 +173,11 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
+expand_ips(Ips, Port) ->
+    lists:foldl(fun({Ip,Ports}, Acc) when is_list(Ports) ->
+                        Acc ++ lists:map(fun(P) -> {Ip, P} end, Ports);
+                   (T={_,_}, Acc) ->
+                        [T|Acc];
+                   (Ip, Acc) ->
+                        [{Ip,Port}|Acc]
+                end, [], Ips).
