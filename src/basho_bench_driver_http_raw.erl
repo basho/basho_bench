@@ -31,7 +31,9 @@
 -record(state, { client_id,          % Tuple client ID for HTTP requests
                  base_urls,          % Tuple of #url -- one for each IP
                  base_urls_index,    % #url to use for next request
-                 path_params }).     % Params to append on the path
+                 path_params,        % Params to append on the path
+                 solr_path,          % SOLR path for searches
+                 searchgen }).       % Search generator
 
 
 %% ====================================================================
@@ -59,6 +61,13 @@ new(Id) ->
     Path = basho_bench_config:get(http_raw_path, "/riak/test"),
     Params = basho_bench_config:get(http_raw_params, ""),
     Disconnect = basho_bench_config:get(http_raw_disconnect_frequency, infinity),
+    SolrPath = basho_bench_config:get(http_solr_path, "/solr/test"),
+    SearchGen = case basho_bench_config:get(http_search_generator, undefined) of
+                    undefined ->
+                        undefined;
+                    V ->
+                        searchgen(V, ClientId)
+                end,
 
     case Disconnect of
         infinity -> ok;
@@ -86,7 +95,9 @@ new(Id) ->
     {ok, #state { client_id = ClientId,
                   base_urls = BaseUrls,
                   base_urls_index = BaseUrlsIndex,
-                  path_params = Params }}.
+                  path_params = Params,
+                  solr_path = SolrPath,
+                  searchgen = SearchGen }}.
 
 run(stat, _, _, State) ->
     {Url, S2} = next_url(State),
@@ -170,9 +181,34 @@ run(insert, KeyGen, ValueGen, State) ->
             {ok, S2};
         {error, Reason} ->
             {error, Reason, S2}
+    end;
+
+run(search, _KeyGen, _ValueGen, State) when State#state.searchgen == undefined ->
+    {_NextUrl, S2} = next_url(State),
+    {error, {badarg, "http_search_generator needed for search operation"}, S2};
+run(search, _KeyGen, _ValueGen, State) ->
+    %% Handle missing searchgen
+    {NextUrl, S2} = next_url(State),
+    SearchUrl = search_url(NextUrl, State#state.solr_path, State#state.searchgen),
+    SearchRes = do_get(SearchUrl),
+    case SearchRes of
+        {ok, _Url, _Headers} ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
     end.
 
+%% ====================================================================
+%% Search Generator API
+%% ====================================================================
 
+searchgen({function, Module, Function, Args}, Id) ->
+    case code:ensure_loaded(Module) of
+        {module, Module} ->
+            erlang:apply(Module, Function, [Id] ++ Args);
+        _Error ->
+            ?FAIL_MSG("Could not find searchgen function: ~p:~p\n", [Module, Function])
+    end.
 
 %% ====================================================================
 %% Internal functions
@@ -191,6 +227,9 @@ url(BaseUrl, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, Params]) }.
 url(BaseUrl, KeyGen, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
+
+search_url(BaseUrl, SolrPath, SearchGen) ->
+    BaseUrl#url { path = lists:concat([SolrPath, '/select?', SearchGen()]) }.
 
 stat_url(BaseUrl) ->
     BaseUrl#url{path="/stats"}.

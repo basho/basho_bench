@@ -13,7 +13,9 @@ params = matrix(c(
   'width',   'x', 2, "integer",
   'height',  'y', 2, "integer",
   'outfile', 'o', 2, "character",
-  'indir',   'i', 2, "character"
+  'indir',   'i', 2, "character",
+  'tstart',  '1',  2, "integer",
+  'tend',    '2',  2, "integer"
   ), ncol=4, byrow=TRUE)
 
 # Parse the parameters
@@ -31,8 +33,8 @@ if (is.null(opt$height))  { opt$height  = 768 }
 if (is.null(opt$indir))   { opt$indir  = "current"}
 if (is.null(opt$outfile)) { opt$outfile = file.path(opt$indir, "summary.png") }
 
-# Load the benchmark data
-b = load_benchmark(opt$indir)
+# Load the benchmark data, passing the time-index range we're interested in
+b = load_benchmark(opt$indir, opt$tstart, opt$tend)
 
 # If there is no actual data available, bail
 if (nrow(b$latencies) == 0)

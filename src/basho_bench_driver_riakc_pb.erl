@@ -22,7 +22,8 @@
 -module(basho_bench_driver_riakc_pb).
 
 -export([new/1,
-         run/4]).
+         run/4,
+         mapred_valgen/2]).
 
 -include("basho_bench.hrl").
 
@@ -31,7 +32,15 @@
                  r,
                  w,
                  dw,
-                 rw}).
+                 rw,
+                 keylist_length}).
+
+-define(ERLANG_MR,
+        [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
+         {reduce, {modfun, riak_kv_mapreduce, reduce_count_inputs}, none, true}]).
+-define(JS_MR,
+        [{map, {jsfun, <<"Riak.mapValuesJson">>}, none, false},
+         {reduce, {jsfun, <<"Riak.reduceSum">>}, none, true}]).
 
 %% ====================================================================
 %% API
@@ -57,6 +66,7 @@ new(Id) ->
     DW = basho_bench_config:get(riakc_pb_dw, Replies),
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
+    KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
 
     %% Choose the target node using our ID as a modulus
     Targets = expand_ips(Ips, Port),
@@ -69,8 +79,9 @@ new(Id) ->
                           r = R,
                           w = W,
                           dw = DW,
-                          rw = RW
-                        }};
+                          rw = RW,
+                          keylist_length = KeylistLength
+                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
                       [TargetIp, TargetPort, Reason2])
@@ -166,8 +177,19 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
-    end.
-
+    end;
+run(mr_bucket_erlang, _KeyGen, _ValueGen, State) ->
+    mapred(State, State#state.bucket, ?ERLANG_MR);
+run(mr_bucket_js, _KeyGen, _ValueGen, State) ->
+    mapred(State, State#state.bucket, ?JS_MR);
+run(mr_keylist_erlang, KeyGen, _ValueGen, State) ->
+    Keylist = make_keylist(State#state.bucket, KeyGen,
+                           State#state.keylist_length),
+    mapred(State, Keylist, ?ERLANG_MR);
+run(mr_keylist_js, KeyGen, _ValueGen, State) ->
+    Keylist = make_keylist(State#state.bucket, KeyGen,
+                          State#state.keylist_length),
+    mapred(State, Keylist, ?JS_MR).
 
 %% ====================================================================
 %% Internal functions
@@ -181,3 +203,22 @@ expand_ips(Ips, Port) ->
                    (Ip, Acc) ->
                         [{Ip,Port}|Acc]
                 end, [], Ips).
+
+mapred(State, Input, Query) ->
+    case riakc_pb_socket:mapred(State#state.pid, Input, Query) of
+        {ok, _Result} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+make_keylist(_Bucket, _KeyGen, 0) ->
+    [];
+make_keylist(Bucket, KeyGen, Count) ->
+    [{Bucket, list_to_binary(KeyGen())}
+     |make_keylist(Bucket, KeyGen, Count-1)].
+
+mapred_valgen(_Id, MaxRand) ->
+    fun() ->
+            list_to_binary(integer_to_list(random:uniform(MaxRand)))
+    end.
