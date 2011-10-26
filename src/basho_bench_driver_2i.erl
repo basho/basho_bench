@@ -94,7 +94,7 @@ run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
                              [{r, State#state.r}]) of
-        {ok, Obj} ->
+        {ok, _Obj} ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
@@ -132,7 +132,7 @@ run(int_eq_query, KeyGen, _ValueGen, State) ->
                                    State#state.bucket,
                                    Field,
                                    Term) of
-        {ok, Results} ->
+        {ok, _Results} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
@@ -147,7 +147,7 @@ run(int_range_query, KeyGen, _ValueGen, State) ->
                                    Field,
                                    lists:min([StartTerm, EndTerm]),
                                    lists:max([StartTerm, EndTerm])) of
-        {ok, Results} ->
+        {ok, _Results} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
@@ -163,7 +163,7 @@ run(bin_eq_query, KeyGen, ValueGen, State) ->
                                    State#state.bucket,
                                    Field,
                                    Term) of
-        {ok, Results} ->
+        {ok, _Results} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
@@ -180,7 +180,7 @@ run(bin_range_query, KeyGen, ValueGen, State) ->
                                    Field,
                                    lists:min([StartTerm, EndTerm]),
                                    lists:max([StartTerm, EndTerm])) of
-        {ok, Results} ->
+        {ok, _Results} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
