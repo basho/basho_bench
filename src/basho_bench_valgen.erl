@@ -30,6 +30,9 @@
 %% API
 %% ====================================================================
 
+new({constant_bin, Size}, _Id) ->
+    Source = init_source(),
+    fun() -> data_block(Source, Size, 0) end;
 new({fixed_bin, Size}, _Id) ->
     Source = init_source(),
     fun() -> data_block(Source, Size) end;
@@ -66,9 +69,12 @@ init_source() ->
     {SourceSz, crypto:rand_bytes(SourceSz)}.
 
 data_block({SourceSz, Source}, BlockSize) ->
+    Offset = random:uniform(SourceSz - BlockSize),
+    data_block({SourceSz, Source}, BlockSize, Offset).
+
+data_block({SourceSz, Source}, BlockSize, Offset) ->
     case SourceSz - BlockSize > 0 of
         true ->
-            Offset = random:uniform(SourceSz - BlockSize),
             <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
             Slice;
         false ->

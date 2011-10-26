@@ -14,6 +14,9 @@
              basho_bench_driver_cassandra,
              basho_bench_driver_bitcask,
              basho_bench_driver_hibari,
+             basho_bench_driver_hibarifs,
+             basho_bench_driver_hibarifs_simple,
+             basho_bench_driver_hibarifs_impl,
              basho_bench_driver_null,
              basho_bench_driver_riakc_java,
              basho_bench_java_client,
@@ -22,7 +25,8 @@
              basho_bench_stats,
              basho_bench_sup,
              basho_bench_worker,
-             basho_bench_valgen
+             basho_bench_valgen,
+             basho_bench_erlang_file_alternative
              ]},
   {registered, [ basho_bench_sup ]},
   {applications, [kernel,

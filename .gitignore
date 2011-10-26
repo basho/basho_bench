@@ -2,4 +2,4 @@ ebin/*.beam
 deps/
 tests/
 basho_bench
-
+.eunit/
