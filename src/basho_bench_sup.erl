@@ -59,9 +59,13 @@ init([]) ->
     %% Get the number concurrent workers we're expecting and generate child
     %% specs for each
     Workers = worker_specs(basho_bench_config:get(concurrent), []),
+    MeasurementDriver =
+        case basho_bench_config:get(measurement_driver, undefined) of
+            undefined -> [];
+            _Driver -> [?CHILD(basho_bench_measurement, worker)]
+        end,
     {ok, {{one_for_one, 5, 10}, [?CHILD(basho_bench_log, worker),
-                                 ?CHILD(basho_bench_stats, worker)] ++ Workers}}.
-
+                                 ?CHILD(basho_bench_stats, worker)] ++ Workers ++ MeasurementDriver}}.
 
 %% ===================================================================
 %% Internal functions

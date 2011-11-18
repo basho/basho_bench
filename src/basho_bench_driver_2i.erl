@@ -90,6 +90,14 @@ new(Id) ->
                       [TargetIp, Port, Reason2])
     end.
 
+run(myput, _KeyGen, _ValueGen, State) ->
+    %% io:format("Put~n"),
+    timer:sleep(500),
+    {ok, State};
+run(myget, _KeyGen, _ValueGen, State) ->
+    %% io:format("Get~n"),
+    timer:sleep(500),
+    {ok, State};
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,

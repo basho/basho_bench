@@ -219,8 +219,9 @@ worker_idle_loop(State) ->
 
 worker_next_op(State) ->
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
+    {_Label, OpTag} = Next,
     Start = now(),
-    Result = (catch (State#state.driver):run(Next, State#state.keygen, State#state.valgen,
+    Result = (catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
                                              State#state.driver_state)),
     ElapsedUs = timer:now_diff(now(), Start),
     case Result of

@@ -18,6 +18,8 @@
              basho_bench_driver_riakc_java,
              basho_bench_java_client,
              basho_bench_log,
+             basho_bench_measurement,
+             basho_bench_measurement_erlangvm,
              basho_bench_keygen,
              basho_bench_stats,
              basho_bench_sup,

@@ -35,8 +35,8 @@
 -include("basho_bench.hrl").
 
 -record(state, { ops,
-                 start_time,
-                 last_write_time,
+                 start_time = now(),
+                 last_write_time = now(),
                  report_interval,
                  errors_since_last_report = false,
                  summary_file,
@@ -75,21 +75,28 @@ init([]) ->
     ets:new(basho_bench_total_errors, [protected, named_table]),
 
     %% Get the list of operations we'll be using for this test
-    F =
+    F1 =
         fun({OpTag, _Count}) -> {OpTag, OpTag};
            ({Label, OpTag, _Count}) -> {Label, OpTag}
         end,
-    Ops = [F(X) || X <- basho_bench_config:get(operations)],
+    Ops = [F1(X) || X <- basho_bench_config:get(operations)],
+
+    %% Get the list of measurements we'll be using for this test
+    F2 =
+        fun({MeasurementTag, _IntervalMS}) -> {MeasurementTag, MeasurementTag};
+           ({Label, MeasurementTag, _IntervalMS}) -> {Label, MeasurementTag}
+        end,
+    Measurements = [F2(X) || X <- basho_bench_config:get(measurements)],
 
     %% Setup stats instance for each operation -- we only track latencies on
     %% successful operations
     %%
     %% NOTE: Store the histograms in the process dictionary to avoid painful
     %%       copying on state updates.
-    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- Ops],
+    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- Ops ++ Measurements],
 
     %% Setup output file handles for dumping periodic CSV of histogram results.
-    [erlang:put({csv_file, Op}, op_csv_file(Op)) || Op <- Ops],
+    [erlang:put({csv_file, Op}, op_csv_file(Op)) || Op <- Ops ++ Measurements],
 
     %% Setup output file w/ counters for total requests, errors, etc.
     {ok, SummaryFile} = file:open("summary.csv", [raw, binary, write]),
@@ -103,7 +110,7 @@ init([]) ->
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
-    {ok, #state{ ops = Ops,
+    {ok, #state{ ops = Ops ++ Measurements,
                  report_interval = ReportInterval,
                  summary_file = SummaryFile,
                  errors_file = ErrorsFile}}.
