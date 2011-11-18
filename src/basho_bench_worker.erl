@@ -172,7 +172,13 @@ stop_worker(SupChild) ->
 %% Expand operations list into tuple suitable for weighted, random draw
 %%
 ops_tuple() ->
-    Ops = [lists:duplicate(Count, Op) || {Op, Count} <- basho_bench_config:get(operations)],
+    F =
+        fun({OpTag, Count}) ->
+                lists:duplicate(Count, {OpTag, OpTag});
+           ({Label, OpTag, Count}) ->
+                lists:duplicate(Count, {Label, OpTag})
+        end,
+    Ops = [F(X) || X <- basho_bench_config:get(operations)],
     list_to_tuple(lists:flatten(Ops)).
 
 

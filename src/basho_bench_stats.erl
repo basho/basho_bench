@@ -65,7 +65,7 @@ op_complete(Op, Result, ElapsedUs) ->
 init([]) ->
     %% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
-    
+
     %% Initialize an ETS table to track error and crash counters during
     %% reporting interval
     ets:new(basho_bench_errors, [protected, named_table]),
@@ -75,7 +75,11 @@ init([]) ->
     ets:new(basho_bench_total_errors, [protected, named_table]),
 
     %% Get the list of operations we'll be using for this test
-    Ops = [Op || {Op, _} <- basho_bench_config:get(operations)],
+    F =
+        fun({OpTag, _Count}) -> {OpTag, OpTag};
+           ({Label, OpTag, _Count}) -> {Label, OpTag}
+        end,
+    Ops = [F(X) || X <- basho_bench_config:get(operations)],
 
     %% Setup stats instance for each operation -- we only track latencies on
     %% successful operations
@@ -150,8 +154,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %% ====================================================================
 
-op_csv_file(Op) ->
-    Fname = lists:concat([Op, "_latencies.csv"]),
+op_csv_file({Label, _Op}) ->
+    Fname = lists:concat([Label, "_latencies.csv"]),
     {ok, F} = file:open(Fname, [raw, binary, write]),
     ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
     F.
