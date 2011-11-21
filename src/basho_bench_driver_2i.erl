@@ -39,14 +39,12 @@
 %% ====================================================================
 
 new(Id) ->
+    %% Ensure that inets is started...
+    application:start(inets),
+
     %% Ensure that riakc library is in the path...
-    case code:which(riakc_pb_socket) of
-        non_existing ->
-            ?FAIL_MSG("~s requires riakc_pb_socket module to be available on code path.\n",
-                      [?MODULE]);
-        _ ->
-            ok
-    end,
+    ensure_module(riakc_pb_socket),
+    ensure_module(mochijson2),
 
     %% Read config settings...
     PBIPs  = basho_bench_config:get(pb_ips, [{127,0,0,1}]),
@@ -72,7 +70,7 @@ new(Id) ->
 run(get_pb, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
-    Key = KeyGen(),
+    Key = to_binary(KeyGen()),
     case riakc_pb_socket:get(Pid, Bucket, Key) of
         {ok, _Obj} ->
             {ok, State};
@@ -111,10 +109,21 @@ run({query_http, N}, KeyGen, _ValueGen, State) ->
     Bucket = State#state.bucket,
     StartKey = to_integer(KeyGen()),
     EndKey = StartKey + N - 1,
-    URL = io:format("http://~s:~p/buckets/~p/index/field1_int/~p/~p", 
+    URL = io_lib:format("http://~s:~p/buckets/~s/index/field1_int/~p/~p", 
                     [Host, Port, Bucket, StartKey, EndKey]),
-    {ok, _} = json_get(URL),
-    {ok, State};
+    case json_get(URL) of
+        {ok, {struct, Proplist}} ->
+            case proplists:get_value(<<"keys">>, Proplist) of
+                Results when length(Results) == N ->
+                    {ok, State};
+                Results ->
+                    io:format("Not enough results for query_http: ~p~n", [Results]),
+                    {error, "Not enough results.", State}
+            end;
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
 
 %% Query results via the M/R interface.
 run({query_mr, N}, KeyGen, _ValueGen, State) ->
@@ -123,14 +132,14 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
     Bucket = State#state.bucket,
     StartKey = to_integer(KeyGen()),
     EndKey = StartKey + N - 1,
-    URL = io:format("http://~s:~p/mapred", [Host, Port]),
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
     Body = ["
       {
          \"inputs\":{
-             \"bucket\":\"", Bucket, "\",
+             \"bucket\":\"", to_list(Bucket), "\",
              \"index\":\"field1_int\",
-             \"start\":",to_list(StartKey), "
-             \"end\":", to_list(EndKey), "
+             \"start\":\"",to_list(StartKey), "\",
+             \"end\":\"", to_list(EndKey), "\"
          },
          \"query\":[
             {
@@ -144,20 +153,32 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
          ]
       }
     "],
-    {ok, _} = json_post(URL, Body),
-    {ok, State};
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == N ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p~n", [Results]),
+            {error, "Not enough results.", State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
 
-
+%% Query results via the PB interface.
 run({query_pb, N}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
     StartKey = to_integer(KeyGen()),
     EndKey = StartKey + N - 1,
-    case riakc_pb_socket:get_index(Pid, Bucket, Bucket,
+    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
                                    to_binary(StartKey), to_binary(EndKey)) of
-        {ok, _Results} ->
+        {ok, Results} when length(Results) == N ->
             {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_pb: ~p~n", [Results]),
+            {error, "Not enough results.", State};
         {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
 
@@ -172,7 +193,7 @@ generate_integer_indexes_for_key(Key, N) ->
     F = fun(X) ->
                 {"field" ++ to_list(X) ++ "_int", Key}
         end,
-    [F(X) || X <- N].
+    [F(X) || X <- lists:seq(1, N)].
 
 to_binary(B) when is_binary(B) ->
     B;
@@ -199,7 +220,7 @@ choose(N, L) ->
     lists:nth((N rem length(L) + 1), L).
 
 json_get(Url) ->
-    Request = {Url, []},
+    Request = {lists:flatten(Url), []},
     case httpc:request(get, Request, [], []) of
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, mochijson2:decode(Body)};
@@ -207,8 +228,8 @@ json_get(Url) ->
             {error, Other}
     end.
 
-json_post(Url, Body) ->
-    Request = {Url, [], "application/json", Body},
+json_post(Url, Payload) ->
+    Request = {lists:flatten(Url), [], "application/json", lists:flatten(Payload)},
     case httpc:request(post, Request, [], []) of
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, mochijson2:decode(Body)};
@@ -216,3 +237,10 @@ json_post(Url, Body) ->
             {error, Other}
     end.
 
+ensure_module(Module) ->
+    case code:which(Module) of
+        non_existing ->
+            ?FAIL_MSG("~s requires " ++ atom_to_list(Module) ++ " module to be available on code path.\n", [?MODULE]);
+        _ ->
+            ok
+    end.
