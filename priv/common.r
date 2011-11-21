@@ -29,9 +29,6 @@ load_benchmark <- function(Dir, Tstart, Tend)
                         load_latency_frame)
     latencies <- do.call('rbind', latencies)
 
-    ## Convert timing information in latencies from usecs -> msecs
-    latencies[4:10] <- latencies[4:10] / 1000
-
     ## Trim values off that are outside our range of times
     if (is.null(Tstart)) { Tstart = 0 }
     if (is.null(Tend)) { Tend = max(summary$elapsed) }
