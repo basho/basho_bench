@@ -90,8 +90,7 @@ run(filehandles, State) ->
                 %% We're sending back the process list, which sucks, but
                 %% not sure if there is a better way to do it.
                 Pid = rpc:call(Node, os, getpid, []),
-                io:format("[~s:~p] DEBUG - Pid: ~p~n", [?MODULE, ?LINE, Pid]),
-                Cmd = io_lib:format("lsof -p ~p | wc -l", [Pid]),
+                Cmd = io_lib:format("lsof -n -p ~p | wc -l", [Pid]),
                 S1 = rpc:call(Node, os, cmd, [Cmd]),
                 S2 = string:strip(S1, both),
                 S3 = string:strip(S2, both, $\n),

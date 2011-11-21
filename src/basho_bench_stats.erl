@@ -96,7 +96,10 @@ init([]) ->
     [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- Ops ++ Measurements],
 
     %% Setup output file handles for dumping periodic CSV of histogram results.
-    [erlang:put({csv_file, Op}, op_csv_file(Op)) || Op <- Ops ++ Measurements],
+    [erlang:put({csv_file, X}, op_csv_file(X)) || X <- Ops],
+
+    %% Setup output file handles for dumping periodic CSV of histogram results.
+    [erlang:put({csv_file, X}, measurement_csv_file(X)) || X <- Measurements],
 
     %% Setup output file w/ counters for total requests, errors, etc.
     {ok, SummaryFile} = file:open("summary.csv", [raw, binary, write]),
@@ -162,10 +165,36 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 
 op_csv_file({Label, _Op}) ->
-    Fname = lists:concat([Label, "_latencies.csv"]),
+    Fname = normalize_label(Label) ++ "_latencies.csv",
     {ok, F} = file:open(Fname, [raw, binary, write]),
     ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
     F.
+
+measurement_csv_file({Label, _Op}) ->
+    Fname = normalize_label(Label) ++ "_measurements.csv",
+    {ok, F} = file:open(Fname, [raw, binary, write]),
+    ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
+    F.
+
+normalize_label(Label) when is_list(Label) ->
+    replace_special_chars(Label);
+normalize_label(Label) when is_binary(Label) ->
+    normalize_label(binary_to_list(Label));
+normalize_label(Label) when is_atom(Label) ->
+    normalize_label(atom_to_list(Label));
+normalize_label(Label) when is_tuple(Label) ->
+    Parts = [normalize_label(X) || X <- tuple_to_list(Label)],
+    string:join(Parts, "-").
+
+replace_special_chars([H|T]) when
+      (H >= $0 andalso H =< $9) orelse
+      (H >= $A andalso H =< $Z) orelse
+      (H >= $a andalso H =< $z) ->
+    [H|replace_special_chars(T)];
+replace_special_chars([_|T]) ->
+    [$-|replace_special_chars(T)];
+replace_special_chars([]) ->
+    [].
 
 increment_error_counter(Key) ->
     ets_increment(basho_bench_errors, Key, 1).

@@ -74,15 +74,12 @@ handle_call(run, _From, State) ->
     NewState = restart_measurements(State),
     {reply, ok, NewState};
 handle_call({take_measurement, Measurement}, _From, State) ->
-    io:format("[~s:~p] DEBUG - Taking Measurement: ~p~n", [?MODULE, ?LINE, Measurement]),
-
     Driver = State#state.driver,
     DriverState = State#state.driver_state,
     {_Label, MeasurementTag} = Measurement,
     Result = (catch Driver:run(MeasurementTag, DriverState)),
     case Result of
         {ok, Value, NewDriverState} ->
-            io:format("[~s:~p] DEBUG - Value: ~p~n", [?MODULE, ?LINE, Value]),
             basho_bench_stats:op_complete(Measurement, ok, Value),
             {reply, ok, State#state { driver_state = NewDriverState}};
 
