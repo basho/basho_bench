@@ -79,14 +79,14 @@ init([]) ->
         fun({OpTag, _Count}) -> {OpTag, OpTag};
            ({Label, OpTag, _Count}) -> {Label, OpTag}
         end,
-    Ops = [F1(X) || X <- basho_bench_config:get(operations)],
+    Ops = [F1(X) || X <- basho_bench_config:get(operations, [])],
 
     %% Get the list of measurements we'll be using for this test
     F2 =
         fun({MeasurementTag, _IntervalMS}) -> {MeasurementTag, MeasurementTag};
            ({Label, MeasurementTag, _IntervalMS}) -> {Label, MeasurementTag}
         end,
-    Measurements = [F2(X) || X <- basho_bench_config:get(measurements)],
+    Measurements = [F2(X) || X <- basho_bench_config:get(measurements, [])],
 
     %% Setup stats instance for each operation -- we only track latencies on
     %% successful operations

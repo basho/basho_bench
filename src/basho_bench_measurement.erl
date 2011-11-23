@@ -135,5 +135,5 @@ restart_measurements(State) ->
                 {ok, TRef} = timer:apply_interval(IntervalMS, ?MODULE, take_measurement, [{Label, MeasurementTag}]),
                 TRef
         end,
-    TRefs = [F(X) || X <- basho_bench_config:get(measurements)],
+    TRefs = [F(X) || X <- basho_bench_config:get(measurements, [])],
     State#state { timer_refs = TRefs }.

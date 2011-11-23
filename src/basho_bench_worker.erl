@@ -178,7 +178,7 @@ ops_tuple() ->
            ({Label, OpTag, Count}) ->
                 lists:duplicate(Count, {Label, OpTag})
         end,
-    Ops = [F(X) || X <- basho_bench_config:get(operations)],
+    Ops = [F(X) || X <- basho_bench_config:get(operations, [])],
     list_to_tuple(lists:flatten(Ops)).
 
 
