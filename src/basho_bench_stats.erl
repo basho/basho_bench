@@ -180,6 +180,8 @@ normalize_label(Label) when is_list(Label) ->
     replace_special_chars(Label);
 normalize_label(Label) when is_binary(Label) ->
     normalize_label(binary_to_list(Label));
+normalize_label(Label) when is_integer(Label) ->
+    normalize_label(integer_to_list(Label));
 normalize_label(Label) when is_atom(Label) ->
     normalize_label(atom_to_list(Label));
 normalize_label(Label) when is_tuple(Label) ->
