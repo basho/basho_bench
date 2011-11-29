@@ -223,7 +223,7 @@ worker_next_op(State) ->
     Start = now(),
     Result = (catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
                                              State#state.driver_state)),
-    ElapsedUs = timer:now_diff(now(), Start) / 1000,
+    ElapsedUs = timer:now_diff(now(), Start),
     case Result of
         {ok, DriverState} ->
             %% Success
