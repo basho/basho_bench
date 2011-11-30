@@ -117,7 +117,7 @@ run({query_http, N}, KeyGen, _ValueGen, State) ->
                 Results when length(Results) == N ->
                     {ok, State};
                 Results ->
-                    io:format("Not enough results for query_http: ~p~n", [Results]),
+                    io:format("Not enough results for query_http: ~p/~p/~p~n", [StartKey, EndKey, Results]),
                     {ok, State}
             end;
         {error, Reason} ->
@@ -155,7 +155,7 @@ run({query_mr, 1}, KeyGen, _ValueGen, State) ->
         {ok, Results} when length(Results) == 1 ->
             {ok, State};
         {ok, Results} ->
-            io:format("Not enough results for query_mr: ~p~n", [Results]),
+            io:format("Not enough results for query_mr: ~p/~p~n", [Key, Results]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
@@ -193,7 +193,7 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
         {ok, Results} when length(Results) == N ->
             {ok, State};
         {ok, Results} ->
-            io:format("Not enough results for query_mr: ~p~n", [Results]),
+            io:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
@@ -211,7 +211,7 @@ run({query_pb, N}, KeyGen, _ValueGen, State) ->
         {ok, Results} when length(Results) == N ->
             {ok, State};
         {ok, Results} ->
-            io:format("Not enough results for query_pb: ~p~n", [Results]),
+            io:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
