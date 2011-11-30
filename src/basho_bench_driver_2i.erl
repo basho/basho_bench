@@ -118,7 +118,7 @@ run({query_http, N}, KeyGen, _ValueGen, State) ->
                     {ok, State};
                 Results ->
                     io:format("Not enough results for query_http: ~p~n", [Results]),
-                    {error, "Not enough results.", State}
+                    {ok, State}
             end;
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
@@ -126,6 +126,42 @@ run({query_http, N}, KeyGen, _ValueGen, State) ->
     end;
 
 %% Query results via the M/R interface.
+run({query_mr, 1}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"key\":\"", to_list(Key), "\"
+         },
+         \"query\":[
+            {
+               \"reduce\":{
+                  \"language\":\"erlang\",
+                  \"module\":\"riak_kv_mapreduce\",
+                  \"function\":\"reduce_identity\",
+                  \"keep\":true
+               }
+            }
+         ]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == 1 ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p~n", [Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+
 run({query_mr, N}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
     Port = State#state.http_port,
@@ -158,7 +194,7 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
             {ok, State};
         {ok, Results} ->
             io:format("Not enough results for query_mr: ~p~n", [Results]),
-            {error, "Not enough results.", State};
+            {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
@@ -176,7 +212,7 @@ run({query_pb, N}, KeyGen, _ValueGen, State) ->
             {ok, State};
         {ok, Results} ->
             io:format("Not enough results for query_pb: ~p~n", [Results]),
-            {error, "Not enough results.", State};
+            {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
