@@ -39,8 +39,8 @@
 %% ====================================================================
 
 new(Id) ->
-    %% Ensure that inets is started...
-    application:start(inets),
+    %% Ensure that ibrowse is started...
+    application:start(ibrowse),
 
     %% Ensure that riakc library is in the path...
     ensure_module(riakc_pb_socket),
@@ -256,18 +256,20 @@ choose(N, L) ->
     lists:nth((N rem length(L) + 1), L).
 
 json_get(Url) ->
-    Request = {lists:flatten(Url), []},
-    case httpc:request(get, Request, [], []) of
-        {ok, {{_, 200, _}, _, Body}} ->
+    Response = ibrowse:send_req(lists:flatten(Url), [], get),
+    case Response of
+        {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
         Other ->
             {error, Other}
     end.
 
 json_post(Url, Payload) ->
-    Request = {lists:flatten(Url), [], "application/json", lists:flatten(Payload)},
-    case catch httpc:request(post, Request, [], []) of
-        {ok, {{_, 200, _}, _, Body}} ->
+    Headers = [{"Content-Type", "application/json"}],
+    Response = ibrowse:send_req(lists:flatten(Url), Headers,
+                                post, lists:flatten(Payload)),
+    case Response of
+        {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
         Other ->
             {error, Other}
