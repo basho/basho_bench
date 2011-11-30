@@ -266,7 +266,7 @@ json_get(Url) ->
 
 json_post(Url, Payload) ->
     Request = {lists:flatten(Url), [], "application/json", lists:flatten(Payload)},
-    case httpc:request(post, Request, [], []) of
+    case catch httpc:request(post, Request, [], []) of
         {ok, {{_, 200, _}, _, Body}} ->
             {ok, mochijson2:decode(Body)};
         Other ->
