@@ -161,7 +161,6 @@ run({query_mr, 1}, KeyGen, _ValueGen, State) ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-
 run({query_mr, N}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
     Port = State#state.http_port,
@@ -187,6 +186,61 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
                }
             }
          ]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == N ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+
+run({query_mr2, 1}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"key\":\"", to_list(Key), "\"
+         },
+         \"query\":[]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == 1 ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p/~p~n", [Key, Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+run({query_mr2, N}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    StartKey = to_integer(KeyGen()),
+    EndKey = StartKey + N - 1,
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"start\":\"",to_list(StartKey), "\",
+             \"end\":\"", to_list(EndKey), "\"
+         },
+         \"query\":[]
       }
     "],
     case json_post(URL, Body) of
