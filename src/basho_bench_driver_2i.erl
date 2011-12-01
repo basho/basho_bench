@@ -201,6 +201,20 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
     end;
 
 %% Query results via the PB interface.
+run({query_pb, 1}, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>, to_binary(Key)) of
+        {ok, Results} when length(Results) == 1 ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_pb: ~p/~p~n", [Key, Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
 run({query_pb, N}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
