@@ -44,7 +44,7 @@ start() ->
 
     %% Make sure crypto is available
     ok = application:start(crypto),
-    
+
     %% Start up our application -- mark it as permanent so that the node
     %% will be killed if we go down
     application:start(basho_bench, permanent).
@@ -54,7 +54,7 @@ stop() ->
 
 is_running() ->
     application:get_env(basho_bench_app, is_running) == {ok, true}.
-    
+
 
 %% ===================================================================
 %% Application callbacks
@@ -64,9 +64,10 @@ start(_StartType, _StartArgs) ->
     {ok, Pid} = basho_bench_sup:start_link(),
     application:set_env(basho_bench_app, is_running, true),
     ok = basho_bench_stats:run(),
+    ok = basho_bench_measurement:run(),
     ok = basho_bench_worker:run(basho_bench_sup:workers()),
     {ok, Pid}.
-    
+
 
 stop(_State) ->
     ok.

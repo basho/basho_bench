@@ -26,16 +26,12 @@
 
 -include("basho_bench.hrl").
 
--record(state, { pid,
-                 bucket,
-                 r,
-                 w,
-                 dw,
-                 rw,
-                 num_integer_indexes,
-                 num_binary_indexes,
-                 binary_index_size
-               }).
+-record(state, {
+          pb_pid,
+          http_host,
+          http_port,
+          bucket
+         }).
 
 
 %% ====================================================================
@@ -43,57 +39,39 @@
 %% ====================================================================
 
 new(Id) ->
-    %% Make sure the path is setup such that we can get at riak_client
-    case code:which(riakc_pb_socket) of
-        non_existing ->
-            ?FAIL_MSG("~s requires riakc_pb_socket module to be available on code path.\n",
-                      [?MODULE]);
-        _ ->
-            ok
-    end,
+    %% Ensure that ibrowse is started...
+    application:start(ibrowse),
 
-    Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
-    Port  = basho_bench_config:get(riakc_pb_port, 8087),
+    %% Ensure that riakc library is in the path...
+    ensure_module(riakc_pb_socket),
+    ensure_module(mochijson2),
 
-    %% riakc_pb_replies sets defaults for R, W, DW and RW.
-    %% Each can be overridden separately
-    Replies = basho_bench_config:get(riakc_pb_replies, 2),
-    R = basho_bench_config:get(riakc_pb_r, Replies),
-    W = basho_bench_config:get(riakc_pb_w, Replies),
-    DW = basho_bench_config:get(riakc_pb_dw, Replies),
-    RW = basho_bench_config:get(riakc_pb_rw, Replies),
-    Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
+    %% Read config settings...
+    PBIPs  = basho_bench_config:get(pb_ips, [{127,0,0,1}]),
+    PBPort  = basho_bench_config:get(pb_port, 8087),
+    HTTPHosts = basho_bench_config:get(http_hosts, ["127.0.0.1"]),
+    HTTPPort =  basho_bench_config:get(http_port, 8098),
+    Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"mybucket">>),
 
-    %% How many indexes should we make?
-    NumIntegerIndexes = basho_bench_config:get(num_integer_indexes, 3),
-    NumBinaryIndexes = basho_bench_config:get(num_binary_indexes, 3),
-    BinaryIndexSize = basho_bench_config:get(binary_index_size, 20),
-
-    %% Choose the node using our ID as a modulus
-    TargetIp = lists:nth((Id rem length(Ips)+1), Ips),
-    ?INFO("Using target ip ~p for worker ~p\n", [TargetIp, Id]),
-
-    case riakc_pb_socket:start_link(TargetIp, Port) of
+    PBIP = choose(Id, PBIPs),
+    case riakc_pb_socket:start_link(PBIP, PBPort) of
         {ok, Pid} ->
-            {ok, #state { pid = Pid,
-                          bucket = Bucket,
-                          r = R,
-                          w = W,
-                          dw = DW,
-                          rw = RW,
-                          num_integer_indexes = NumIntegerIndexes,
-                          num_binary_indexes = NumBinaryIndexes,
-                          binary_index_size = BinaryIndexSize
-                         }};
+            {ok, #state {
+               pb_pid = Pid,
+               http_host = choose(Id, HTTPHosts),
+               http_port = HTTPPort,
+               bucket = Bucket }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
-                      [TargetIp, Port, Reason2])
+                      [PBIP, PBPort, Reason2])
     end.
 
-run(get, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
-                             [{r, State#state.r}]) of
+%% Get a single object.
+run(get_pb, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    Key = to_binary(KeyGen()),
+    case riakc_pb_socket:get(Pid, Bucket, Key) of
         {ok, _Obj} ->
             {ok, State};
         {error, notfound} ->
@@ -101,90 +79,213 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(put, KeyGen, ValueGen, State) ->
-    %% Generate key, value, and metadata...
-    Key = KeyGen(),
+
+%% Put an object with N indices.
+run({put_pb, N}, KeyGen, ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
     Value = ValueGen(),
-    Indexes =
-        generate_integer_indexes(Key, State#state.num_integer_indexes) ++
-        generate_binary_indexes(Key, State#state.num_binary_indexes, State#state.binary_index_size),
+    Indexes = generate_integer_indexes_for_key(Key, N),
     MetaData = dict:from_list([{<<"index">>, Indexes}]),
 
     %% Create the object...
-    Robj0 = riakc_obj:new(State#state.bucket, Key),
+    Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MetaData),
 
     %% Write the object...
-    case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                     {dw, State#state.dw}]) of
+    case riakc_pb_socket:put(Pid, Robj2) of
         ok ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(int_eq_query, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
-    [{Field,Term}|_] =
-        generate_integer_indexes(Key,
-                                 State#state.num_integer_indexes),
-    case riakc_pb_socket:get_index(State#state.pid,
-                                   State#state.bucket,
-                                   Field,
-                                   Term) of
-        {ok, _Results} ->
-            {ok, State};
+
+%% Query results via the HTTP interface.
+run({query_http, N}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    StartKey = to_integer(KeyGen()),
+    EndKey = StartKey + N - 1,
+    URL = io_lib:format("http://~s:~p/buckets/~s/index/field1_int/~p/~p", 
+                    [Host, Port, Bucket, StartKey, EndKey]),
+    case json_get(URL) of
+        {ok, {struct, Proplist}} ->
+            case proplists:get_value(<<"keys">>, Proplist) of
+                Results when length(Results) == N ->
+                    {ok, State};
+                Results ->
+                    io:format("Not enough results for query_http: ~p/~p/~p~n", [StartKey, EndKey, Results]),
+                    {ok, State}
+            end;
         {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-run(int_range_query, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
-    [{Field, StartTerm},{_, EndTerm}|_] =
-        generate_integer_indexes(Key,
-                                 State#state.num_integer_indexes),
-    case riakc_pb_socket:get_index(State#state.pid,
-                                   State#state.bucket,
-                                   Field,
-                                   lists:min([StartTerm, EndTerm]),
-                                   lists:max([StartTerm, EndTerm])) of
-        {ok, _Results} ->
+
+%% Query results via the M/R interface.
+run({query_mr, 1}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"key\":\"", to_list(Key), "\"
+         },
+         \"query\":[
+            {
+               \"reduce\":{
+                  \"language\":\"erlang\",
+                  \"module\":\"riak_kv_mapreduce\",
+                  \"function\":\"reduce_identity\",
+                  \"keep\":true
+               }
+            }
+         ]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == 1 ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p/~p~n", [Key, Results]),
             {ok, State};
         {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-run(bin_eq_query, KeyGen, ValueGen, State) ->
-    Key = KeyGen(),
-    _Value = ValueGen(),
-    [{Field, Term}|_] =
-        generate_binary_indexes(Key,
-                                State#state.num_binary_indexes,
-                                State#state.binary_index_size),
-    case riakc_pb_socket:get_index(State#state.pid,
-                                   State#state.bucket,
-                                   Field,
-                                   Term) of
-        {ok, _Results} ->
+run({query_mr, N}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    StartKey = to_integer(KeyGen()),
+    EndKey = StartKey + N - 1,
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"start\":\"",to_list(StartKey), "\",
+             \"end\":\"", to_list(EndKey), "\"
+         },
+         \"query\":[
+            {
+               \"reduce\":{
+                  \"language\":\"erlang\",
+                  \"module\":\"riak_kv_mapreduce\",
+                  \"function\":\"reduce_identity\",
+                  \"keep\":true
+               }
+            }
+         ]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == N ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]),
             {ok, State};
         {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-run(bin_range_query, KeyGen, ValueGen, State) ->
-    Key = KeyGen(),
-    _Value = ValueGen(),
-    [{Field, StartTerm},{_, EndTerm}|_] =
-        generate_binary_indexes(Key,
-                                State#state.num_binary_indexes,
-                                State#state.binary_index_size),
-    case riakc_pb_socket:get_index(State#state.pid,
-                                   State#state.bucket,
-                                   Field,
-                                   lists:min([StartTerm, EndTerm]),
-                                   lists:max([StartTerm, EndTerm])) of
-        {ok, _Results} ->
+
+run({query_mr2, 1}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"key\":\"", to_list(Key), "\"
+         },
+         \"query\":[]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == 1 ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p/~p~n", [Key, Results]),
             {ok, State};
         {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
+run({query_mr2, N}, KeyGen, _ValueGen, State) ->
+    Host = State#state.http_host,
+    Port = State#state.http_port,
+    Bucket = State#state.bucket,
+    StartKey = to_integer(KeyGen()),
+    EndKey = StartKey + N - 1,
+    URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
+    Body = ["
+      {
+         \"inputs\":{
+             \"bucket\":\"", to_list(Bucket), "\",
+             \"index\":\"field1_int\",
+             \"start\":\"",to_list(StartKey), "\",
+             \"end\":\"", to_list(EndKey), "\"
+         },
+         \"query\":[]
+      }
+    "],
+    case json_post(URL, Body) of
+        {ok, Results} when length(Results) == N ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+
+%% Query results via the PB interface.
+run({query_pb, 1}, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>, to_binary(Key)) of
+        {ok, Results} when length(Results) == 1 ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_pb: ~p/~p~n", [Key, Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+run({query_pb, N}, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    StartKey = to_integer(KeyGen()),
+    EndKey = StartKey + N - 1,
+    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
+                                   to_binary(StartKey), to_binary(EndKey)) of
+        {ok, Results} when length(Results) == N ->
+            {ok, State};
+        {ok, Results} ->
+            io:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+
 run(Other, _, _, _) ->
     throw({unknown_operation, Other}).
 
@@ -192,58 +293,60 @@ run(Other, _, _, _) ->
 %% Internal functions
 %% ====================================================================
 
-generate_integer_indexes(_, 0) ->
-    [];
-generate_integer_indexes(Seed, N) when is_binary(Seed) ->
-    %% Pull a field value out of the binary. In this case, a 32-bit integer...
-    <<V:32/integer, _/binary>> = Seed,
+generate_integer_indexes_for_key(Key, N) ->
+    F = fun(X) ->
+                {"field" ++ to_list(X) ++ "_int", Key}
+        end,
+    [F(X) || X <- lists:seq(1, N)].
 
-    %% Create the field name...
-    K = list_to_binary("field" ++ integer_to_list(N) ++ "_int"),
+to_binary(B) when is_binary(B) ->
+    B;
+to_binary(I) when is_integer(I) ->
+    list_to_binary(integer_to_list(I));
+to_binary(L) when is_list(L) ->
+    list_to_binary(L).
 
-    %% Loop.
-    [{K,V}|generate_integer_indexes(erlang:md5(Seed), N - 1)];
-generate_integer_indexes(Seed, _) when is_binary(Seed) ->
-    throw({invalid_value, "Seed value must be a binary."}).
+to_integer(I) when is_integer(I) ->
+    I;
+to_integer(B) when is_binary(B) ->
+    list_to_integer(binary_to_list(B));
+to_integer(L) when is_list(L) ->
+    list_to_integer(L).
 
+to_list(L) when is_list(L) ->
+    L;
+to_list(B) when is_binary(B) ->
+    binary_to_list(B);
+to_list(I) when is_integer(I) ->
+    integer_to_list(I).
 
-generate_binary_indexes(_, 0, _) ->
-    [];
-generate_binary_indexes(Seed, N, Size) when is_binary(Seed) ->
-    %% Pull a field value out of the binary...
-    V1 = generate_binary_index(Seed, Size),
+choose(N, L) ->
+    lists:nth((N rem length(L) + 1), L).
 
-    %% Create the field name and normalize the value...
-    K = list_to_binary("field" ++ integer_to_list(N) ++ "_bin"),
-    V2 = normalize_binary_index(V1),
+json_get(Url) ->
+    Response = ibrowse:send_req(lists:flatten(Url), [], get),
+    case Response of
+        {ok, "200", _, Body} ->
+            {ok, mochijson2:decode(Body)};
+        Other ->
+            {error, Other}
+    end.
 
-    %% Loop.
-    [{K,V2}|generate_binary_indexes(erlang:md5(Seed), N - 1, Size)];
-generate_binary_indexes(Seed, _N, _Size) when is_binary(Seed) ->
-    throw({invalid_value, "Seed value must be a binary."}).
+json_post(Url, Payload) ->
+    Headers = [{"Content-Type", "application/json"}],
+    Response = ibrowse:send_req(lists:flatten(Url), Headers,
+                                post, lists:flatten(Payload)),
+    case Response of
+        {ok, "200", _, Body} ->
+            {ok, mochijson2:decode(Body)};
+        Other ->
+            {error, Other}
+    end.
 
-generate_binary_index(Seed, Size) ->
-    iolist_to_binary(generate_binary_index_1(Seed, Size)).
-generate_binary_index_1(_Seed, 0) ->
-    [];
-generate_binary_index_1(Seed, Size) when Size >= 16 ->
-    NewSeed = erlang:md5(Seed),
-    [NewSeed|generate_binary_index_1(NewSeed, Size - 16)];
-generate_binary_index_1(Seed, Size) ->
-    NewSeed = erlang:md5(Seed),
-    <<V:Size/binary, _/binary>> = NewSeed,
-    [V].
-
-
-
-normalize_binary_index(Value) ->
-    normalize_binary_index(Value, <<>>).
-normalize_binary_index(<<C, Rest/binary>>, Acc)
-  when C >= $a andalso C =< $z;
-       C >= $A andalso C =< $Z;
-       C >= $0 andalso C =< $9 ->
-    normalize_binary_index(Rest, <<Acc/binary, <<C>>/binary>>);
-normalize_binary_index(<<_, Rest/binary>>, Acc) ->
-    normalize_binary_index(Rest, <<Acc/binary, <<$_>>/binary>>);
-normalize_binary_index(<<>>, Acc) ->
-    Acc.
+ensure_module(Module) ->
+    case code:which(Module) of
+        non_existing ->
+            ?FAIL_MSG("~s requires " ++ atom_to_list(Module) ++ " module to be available on code path.\n", [?MODULE]);
+        _ ->
+            ok
+    end.
