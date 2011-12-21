@@ -28,6 +28,7 @@
 
 -record(state, { file,
                  filename,
+                 flags,
                  sync_interval,
                  last_sync }).
 
@@ -63,8 +64,11 @@ new(_Id) ->
         {error, Reason} ->
             ?FAIL_MSG("Failed to open bitcask in ~s: ~p\n", [Filename, Reason]);
         File ->
+            %% Try to start the merge worker
+            bitcask_merge_worker:start_link(),
             {ok, #state { file = File,
                           filename = Filename,
+                          flags = Flags,
                           sync_interval = SyncInterval,
                           last_sync = os:timestamp() }}
     end.
@@ -91,10 +95,14 @@ run(put, KeyGen, ValueGen, State) ->
     end;
 run(merge, _KeyGen, _ValueGen, State) ->
     case bitcask:needs_merge(State#state.file) of
-        {true, _} ->
-            {ElapsedUs, ok} = timer:tc(bitcask, merge, [State#state.filename]),
-            io:format(user, "Merged in ~p seconds\n", [ElapsedUs / 1000000]),
-            {ok, State};
+        {true, Files} ->
+            case bitcask_merge_worker:merge(State#state.filename, State#state.flags,
+                                            Files) of
+                ok ->
+                    {ok, State};
+                Other ->
+                    {error, {merge_failed, Other}}
+            end;
         false ->
             {ok, State}
     end.
