@@ -27,6 +27,7 @@
 -include("basho_bench.hrl").
 
 -record(state, { file,
+                 filename,
                  sync_interval,
                  last_sync }).
 
@@ -62,7 +63,9 @@ new(_Id) ->
         {error, Reason} ->
             ?FAIL_MSG("Failed to open bitcask in ~s: ~p\n", [Filename, Reason]);
         File ->
-            {ok, #state { file = File, sync_interval = SyncInterval,
+            {ok, #state { file = File,
+                          filename = Filename,
+                          sync_interval = SyncInterval,
                           last_sync = os:timestamp() }}
     end.
 
@@ -85,6 +88,15 @@ run(put, KeyGen, ValueGen, State) ->
             {ok, State1};
         {error, Reason} ->
             {error, Reason}
+    end;
+run(merge, _KeyGen, _ValueGen, State) ->
+    case bitcask:needs_merge(State#state.file) of
+        {true, _} ->
+            {ElapsedUs, ok} = timer:tc(bitcask, merge, [State#state.filename]),
+            io:format(user, "Merged in ~p seconds\n", [ElapsedUs / 1000000]),
+            {ok, State};
+        false ->
+            {ok, State}
     end.
 
 
@@ -100,3 +112,4 @@ maybe_sync(#state { sync_interval = SyncInterval } = State) ->
         _ ->
             State
     end.
+
