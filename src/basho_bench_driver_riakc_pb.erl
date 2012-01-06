@@ -75,8 +75,8 @@ new(Id) ->
     %% Enables sibling resolution
     ResolveOnGet = basho_bench_config:get(riakc_pb_res_on_get, false),
     ResolveAfterPut = basho_bench_config:get(riakc_pb_res_after_put, false),
-    ResolveDuringUpdate = basho_bench_config:get(riakc_pb_res_during_update, false),
-    MaxResolveAttempts = basho_bench_config:get(riakc_pb_max_res_attemps, 1),
+    ResolveDuringUpdate = basho_bench_config:get(riakc_pb_res_during_update, true),
+    MaxResolveAttempts = basho_bench_config:get(riakc_pb_max_res_attempts, 3),
     ResolveTimeout = basho_bench_config:get(riakc_pb_res_timeout, 0),
 
     %% Choose the target node using our ID as a modulus
@@ -197,10 +197,10 @@ run(update, KeyGen, ValueGen, State) ->
             case riakc_pb_socket:put(State#state.pid, Robj, PutOptions) of
                 ok ->
                     {ok, State};
-                {ok, RObj} ->
-                    case riakc_obj:value_count(RObj) > 1 of
-                        true -> resolve_siblings(RObj, State);
-                        false -> {ok, State}
+                {ok, ReturnedRobj} ->
+                    case riakc_obj:value_count(ReturnedRobj) of
+                        1 -> {ok, State};
+                        _ -> resolve_siblings(ReturnedRobj, State)
                     end;
                 {error, Reason} ->
                     {error, Reason, State}
@@ -228,10 +228,10 @@ run(update_existing, KeyGen, ValueGen, State) ->
             case riakc_pb_socket:put(State#state.pid, Robj3, PutOptions) of
                 ok ->
                     {ok, State};
-                {ok, RObj} ->
-                    case riakc_obj:value_count(RObj) > 1 of
-                        true -> resolve_siblings(RObj, State);
-                        false -> {ok, State}
+                {ok, ReturnedRobj} ->
+                    case riakc_obj:value_count(ReturnedRobj) of
+                        1 -> {ok, State};
+                        _ -> resolve_siblings(ReturnedRobj, State)
                     end;
                 {error, Reason} ->
                     {error, Reason, State}
@@ -310,14 +310,16 @@ resolve_siblings(_, 0, State) -> {error, max_res_attempts, State};
 resolve_siblings(RObj, AttemptsLeft, State) ->
     timer:sleep(State#state.res_timeout),
 
-    ResolvedRObj = riakc_robj:select_sibling(1, RObj),
+    ?INFO("~p; Resolving sibling (attempt ~p)~n", [self(), State#state.max_res_attempts - AttemptsLeft + 1]),
+
+    ResolvedRObj = riakc_obj:select_sibling(1, RObj),
     case riakc_pb_socket:put(State#state.pid, ResolvedRObj, [{w, State#state.w},
                                                              {dw, State#state.dw},
                                                              return_body]) of
         {ok, ReturnedRObj} ->
-            case riakc_obj:value_count(ReturnedRObj) > 1 of
-                true -> resolve_siblings(ReturnedRObj, AttemptsLeft-1, State);
-                false -> {ok, State}
+            case riakc_obj:value_count(ReturnedRObj) of
+                1 -> {ok, State};
+                _ -> resolve_siblings(ReturnedRObj, AttemptsLeft-1, State)
             end;
         {error, Reason} ->
             {error, Reason, State}
