@@ -33,7 +33,12 @@
                  w,
                  dw,
                  rw,
-                 keylist_length}).
+                 keylist_length,
+                 res_on_get,
+                 res_after_put,
+                 res_during_update,
+                 max_res_attempts,
+                 res_timeout}).
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -67,6 +72,12 @@ new(Id) ->
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
+    %% Enables sibling resolution
+    ResolveOnGet = basho_bench_config:get(riakc_pb_res_on_get, false),
+    ResolveAfterPut = basho_bench_config:get(riakc_pb_res_after_put, false),
+    ResolveDuringUpdate = basho_bench_config:get(riakc_pb_res_during_update, false),
+    MaxResolveAttempts = basho_bench_config:get(riakc_pb_max_res_attemps, 1),
+    ResolveTimeout = basho_bench_config:get(riakc_pb_res_timeout, 0),
 
     %% Choose the target node using our ID as a modulus
     Targets = expand_ips(Ips, Port),
@@ -80,7 +91,12 @@ new(Id) ->
                           w = W,
                           dw = DW,
                           rw = RW,
-                          keylist_length = KeylistLength
+                          keylist_length = KeylistLength,
+                          res_on_get = ResolveOnGet,
+                          res_after_put = ResolveAfterPut,
+                          res_during_update = ResolveDuringUpdate,
+                          max_res_attempts = MaxResolveAttempts,
+                          res_timeout = ResolveTimeout
                          }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -91,8 +107,11 @@ run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
                              [{r, State#state.r}]) of
-        {ok, _} ->
-            {ok, State};
+        {ok, RObj} ->
+            case State#state.res_on_get andalso riakc_obj:value_count(RObj) > 1 of
+                true -> resolve_siblings(RObj, State);
+                false -> {ok, State}
+            end;
         {error, notfound} ->
             {ok, State};
         {error, Reason} ->
@@ -112,10 +131,22 @@ run(get_existing, KeyGen, _ValueGen, State) ->
 run(put, KeyGen, ValueGen, State) ->
     Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
     Robj = riakc_obj:update_value(Robj0, ValueGen()),
-    case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
-                                                     {dw, State#state.dw}]) of
+
+    PutOptions = [{w, State#state.w},
+                  {dw, State#state.dw}|
+                  case State#state.res_after_put of
+                      true -> [return_body];
+                      false -> []
+                  end],
+
+    case riakc_pb_socket:put(State#state.pid, Robj, PutOptions) of
         ok ->
             {ok, State};
+        {ok, RObj} ->
+            case riakc_obj:value_count(RObj) > 1 of
+                true -> resolve_siblings(RObj, State);
+                false -> {ok, State}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -221,4 +252,24 @@ make_keylist(Bucket, KeyGen, Count) ->
 mapred_valgen(_Id, MaxRand) ->
     fun() ->
             list_to_binary(integer_to_list(random:uniform(MaxRand)))
+    end.
+
+resolve_siblings(RObj, State) ->
+    resolve_siblings(RObj, State#state.max_res_attempts, State).
+
+resolve_siblings(_, 0, State) -> {error, max_res_attempts, State};
+resolve_siblings(RObj, AttemptsLeft, State) ->
+    timer:sleep(State#state.res_timeout),
+
+    ResolvedRObj = riakc_robj:select_sibling(1, RObj),
+    case riakc_pb_socket:put(State#state.pid, ResolvedRObj, [{w, State#state.w},
+                                                             {dw, State#state.dw},
+                                                             return_body]) of
+        {ok, ReturnedRObj} ->
+            case riakc_obj:value_count(ReturnedRObj) of
+                1 -> {ok, State};
+                _ -> resolve_siblings(ReturnedRObj, AttemptsLeft-1, State)
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
     end.
