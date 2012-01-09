@@ -105,139 +105,59 @@ new(Id) ->
 
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
-                             [{r, State#state.r}]) of
-        {ok, RObj} ->
-            case State#state.res_on_get andalso riakc_obj:value_count(RObj) > 1 of
-                true -> resolve_siblings(RObj, State);
-                false -> {ok, State}
-            end;
-        {error, notfound} ->
+    case do_get(Key, State) of
+        {ok, _Robj, State} ->
             {ok, State};
-        {error, Reason} ->
+        {error, notfound, State} ->
+            {ok, State};
+        {error, Reason, State} ->
             {error, Reason, State}
     end;
 run(get_existing, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
-                             [{r, State#state.r}]) of
-        {ok, RObj} ->
-            case State#state.res_on_get andalso riakc_obj:value_count(RObj) > 1 of
-                true -> resolve_siblings(RObj, State);
-                false -> {ok, State}
-            end;
+    case do_get(Key, State) of
+        {ok, _Robj, State} ->
+            {ok, State};
         {error, notfound} ->
             {error, {not_found, Key}, State};
-        {error, Reason} ->
+        {error, Reason, State} ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
     Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
     Robj = riakc_obj:update_value(Robj0, ValueGen()),
 
-    PutOptions = [{w, State#state.w},
-                  {dw, State#state.dw}|
-                  case State#state.res_after_put of
-                      true -> [return_body];
-                      false -> []
-                  end],
-
-    case riakc_pb_socket:put(State#state.pid, Robj, PutOptions) of
-        ok ->
-            {ok, State};
-        {ok, RObj} ->
-            case riakc_obj:value_count(RObj) > 1 of
-                true -> resolve_siblings(RObj, State);
-                false -> {ok, State}
-            end;
-        {error, Reason} ->
-            {error, Reason, State}
-    end;
+    do_put(Robj, State);
 run(update, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
-                             Key, [{r, State#state.r}]) of
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                             [{r, State#state.r}]) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
-            Robj3 = case State#state.res_during_update 
-                     andalso riakc_obj:value_count(Robj2) > 1 of
-                true -> riakc_obj:select_sibling(1, Robj2);
-                false -> Robj2
-            end,
+            Robj2 = maybe_select_sibling(Robj, State),
+            Robj3 = riakc_obj:update_value(Robj2, ValueGen()),
 
-            PutOptions = [{w, State#state.w},
-                          {dw, State#state.dw}|
-                          case State#state.res_after_put of
-                              true -> [return_body];
-                              false -> []
-                          end],
-
-            case riakc_pb_socket:put(State#state.pid, Robj3, PutOptions) of
-                ok ->
-                    {ok, State};
-                {ok, RObj} ->
-                    case riakc_obj:value_count(RObj) > 1 of
-                        true -> resolve_siblings(RObj, State);
-                        false -> {ok, State}
-                    end;
-                {error, Reason} ->
-                    {error, Reason, State}
-            end;
+            do_put(Robj3, State);
         {error, notfound} ->
             Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
             Robj = riakc_obj:update_value(Robj0, ValueGen()),
 
-            PutOptions = [{w, State#state.w},
-                          {dw, State#state.dw}|
-                          case State#state.res_after_put of
-                              true -> [return_body];
-                              false -> []
-                          end],
-
-            case riakc_pb_socket:put(State#state.pid, Robj, PutOptions) of
-                ok ->
-                    {ok, State};
-                {ok, ReturnedRobj} ->
-                    case riakc_obj:value_count(ReturnedRobj) of
-                        1 -> {ok, State};
-                        _ -> resolve_siblings(ReturnedRobj, State)
-                    end;
-                {error, Reason} ->
-                    {error, Reason, State}
-            end
+            do_put(Robj, State);
+        {error, Reason} ->
+            {error, Reason}
     end;
 run(update_existing, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
-                             Key, [{r, State#state.r}]) of
-        {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
-            Robj3 = case State#state.res_during_update
-                     andalso riakc_obj:value_count(Robj2) > 1 of
-                true -> riakc_obj:select_sibling(1, Robj2);
-                false -> Robj2
-            end,
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                             [{r, State#state.r}]) of
+        {ok, Robj, State} ->
+            Robj2 = maybe_select_sibling(Robj, State),
+            Robj3 = riakc_obj:update_value(Robj2, ValueGen()),
 
-            PutOptions = [{w, State#state.w},
-                          {dw, State#state.dw}|
-                          case State#state.res_after_put of
-                              true -> [return_body];
-                              false -> []
-                          end],
-
-            case riakc_pb_socket:put(State#state.pid, Robj3, PutOptions) of
-                ok ->
-                    {ok, State};
-                {ok, ReturnedRobj} ->
-                    case riakc_obj:value_count(ReturnedRobj) of
-                        1 -> {ok, State};
-                        _ -> resolve_siblings(ReturnedRobj, State)
-                    end;
-                {error, Reason} ->
-                    {error, Reason, State}
-            end;
-        {error, notfound} ->
-            {error, {not_found, Key}, State}
+            do_put(Robj3, State);
+        {error, notfound, State} ->
+            {error, {not_found, Key}, State};
+        {error, Reason} ->
+            {error, Reason}
     end;
 run(delete, KeyGen, _ValueGen, State) ->
     %% Pass on rw
@@ -292,6 +212,47 @@ mapred(State, Input, Query) ->
             {error, Reason, State}
     end.
 
+
+do_get(Key, State) ->
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                             [{r, State#state.r}]) of
+        {ok, Robj} ->
+            case State#state.res_on_get andalso riakc_obj:value_count(Robj) > 1 of
+                false -> {ok, Robj, State};
+                true -> resolve_siblings(Robj, State)
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+get_put_options(State) ->
+    [{w, State#state.w},
+     {dw, State#state.dw}|
+     case State#state.res_after_put of
+         true -> [return_body];
+         false -> []
+     end].
+
+do_put(Robj, State) ->
+    case riakc_pb_socket:put(State#state.pid, Robj, get_put_options(State)) of
+        ok ->
+            {ok, State};
+        {ok, ReturnedRobj} ->
+            case riakc_obj:value_count(ReturnedRobj) of
+                1 ->
+                    {ok, State};
+                _ ->
+                    case resolve_siblings(ReturnedRobj, State) of
+                        {ok, _, State} ->
+                            {ok, State};
+                        {error, Reason, State} ->
+                            {error, Reason, State}
+                end
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
 make_keylist(_Bucket, _KeyGen, 0) ->
     [];
 make_keylist(Bucket, KeyGen, Count) ->
@@ -300,7 +261,14 @@ make_keylist(Bucket, KeyGen, Count) ->
 
 mapred_valgen(_Id, MaxRand) ->
     fun() ->
-            list_to_binary(integer_to_list(random:uniform(MaxRand)))
+        list_to_binary(integer_to_list(random:uniform(MaxRand)))
+    end.
+
+maybe_select_sibling(Robj, State) ->
+    case State#state.res_during_update
+           andalso riakc_obj:value_count(Robj) > 1 of
+        true -> riakc_obj:select_sibling(1, Robj);
+        false -> Robj
     end.
 
 resolve_siblings(RObj, State) ->
@@ -308,9 +276,11 @@ resolve_siblings(RObj, State) ->
 
 resolve_siblings(_, 0, State) -> {error, max_res_attempts, State};
 resolve_siblings(RObj, AttemptsLeft, State) ->
-    timer:sleep(State#state.res_timeout),
-
-    ?INFO("~p; Resolving sibling (attempt ~p)~n", [self(), State#state.max_res_attempts - AttemptsLeft + 1]),
+    Timeout = case State#state.res_timeout of
+        {Min, Max} -> random:uniform(Max - Min + 1) - 1 + Min;
+        Val -> Val
+    end,
+    timer:sleep(Timeout),
 
     ResolvedRObj = riakc_obj:select_sibling(1, RObj),
     case riakc_pb_socket:put(State#state.pid, ResolvedRObj, [{w, State#state.w},
@@ -318,7 +288,7 @@ resolve_siblings(RObj, AttemptsLeft, State) ->
                                                              return_body]) of
         {ok, ReturnedRObj} ->
             case riakc_obj:value_count(ReturnedRObj) of
-                1 -> {ok, State};
+                1 -> {ok, ReturnedRObj, State};
                 _ -> resolve_siblings(ReturnedRObj, AttemptsLeft-1, State)
             end;
         {error, Reason} ->
