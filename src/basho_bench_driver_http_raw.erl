@@ -183,7 +183,14 @@ run(insert, KeyGen, ValueGen, State) ->
             {error, Reason, S2}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    run(insert, KeyGen, ValueGen, State);
+    {NextUrl, S2} = next_url(State),
+    Url = url(NextUrl, KeyGen, State#state.path_params),
+    case do_put(Url, [State#state.client_id], ValueGen) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 
 run(search, _KeyGen, _ValueGen, State) when State#state.searchgen == undefined ->
     {_NextUrl, S2} = next_url(State),
