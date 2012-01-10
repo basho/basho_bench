@@ -274,7 +274,11 @@ maybe_select_sibling(Robj, State) ->
 resolve_siblings(RObj, State) ->
     resolve_siblings(RObj, State#state.max_res_attempts, State).
 
-resolve_siblings(_, 0, State) -> {error, max_res_attempts, State};
+resolve_siblings(_, 0, State) ->
+    {error, max_res_attempts, State};
+resolve_siblings(RObj, {Min, Max}, State) ->
+    MaxAttempts = random:uniform(Max - Min + 1) - 1 + Min,
+    resolve_siblings(RObj, MaxAttempts, State);
 resolve_siblings(RObj, AttemptsLeft, State) ->
     Timeout = case State#state.res_timeout of
         {Min, Max} -> random:uniform(Max - Min + 1) - 1 + Min;
