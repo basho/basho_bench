@@ -38,7 +38,8 @@
                  res_after_put,
                  res_during_update,
                  max_res_attempts,
-                 res_timeout}).
+                 res_timeout,
+                 get_before_resolve}).
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -78,6 +79,7 @@ new(Id) ->
     ResolveDuringUpdate = basho_bench_config:get(riakc_pb_res_during_update, true),
     MaxResolveAttempts = basho_bench_config:get(riakc_pb_max_res_attempts, 3),
     ResolveTimeout = basho_bench_config:get(riakc_pb_res_timeout, 0),
+    GetBeforeResolve = basho_bench_config:get(riakc_pb_get_before_res, false),
 
     %% Choose the target node using our ID as a modulus
     Targets = expand_ips(Ips, Port),
@@ -96,7 +98,8 @@ new(Id) ->
                           res_after_put = ResolveAfterPut,
                           res_during_update = ResolveDuringUpdate,
                           max_res_attempts = MaxResolveAttempts,
-                          res_timeout = ResolveTimeout
+                          res_timeout = ResolveTimeout,
+                          get_before_resolve = GetBeforeResolve
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -286,15 +289,35 @@ resolve_siblings(RObj, AttemptsLeft, State) ->
     end,
     timer:sleep(Timeout),
 
-    ResolvedRObj = riakc_obj:select_sibling(1, RObj),
-    case riakc_pb_socket:put(State#state.pid, ResolvedRObj, [{w, State#state.w},
-                                                             {dw, State#state.dw},
-                                                             return_body]) of
-        {ok, ReturnedRObj} ->
-            case riakc_obj:value_count(ReturnedRObj) of
-                1 -> {ok, ReturnedRObj, State};
-                _ -> resolve_siblings(ReturnedRObj, AttemptsLeft-1, State)
-            end;
-        {error, Reason} ->
-            {error, Reason, State}
+    RObj1 = case State#state.get_before_resolve of
+        false ->
+            RObj;
+        true ->
+            case riakc_pb_socket:get(State#state.pid,
+                                     State#state.bucket,
+                                     riakc_obj:key(RObj),
+                                     [{r, State#state.r}]) of
+                {ok, Robj2} ->
+                    Robj2;
+                {error, Reason1} ->
+                    throw({error, Reason1})
+            end
+    end,
+
+    case riakc_obj:value_count(RObj1) of
+        1 ->
+            {ok, RObj1, State};
+        _ ->
+            ResolvedRObj = riakc_obj:select_sibling(1, RObj1),
+            case riakc_pb_socket:put(State#state.pid, ResolvedRObj, [{w, State#state.w},
+                                                                     {dw, State#state.dw},
+                                                                     return_body]) of
+                {ok, ReturnedRObj} ->
+                    case riakc_obj:value_count(ReturnedRObj) of
+                        1 -> {ok, ReturnedRObj, State};
+                        _ -> resolve_siblings(ReturnedRObj, AttemptsLeft-1, State)
+                    end;
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
     end.
