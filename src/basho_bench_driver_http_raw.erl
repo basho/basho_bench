@@ -182,6 +182,8 @@ run(insert, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
+run(put, KeyGen, ValueGen, State) ->
+    run(insert, KeyGen, ValueGen, State);
 
 run(search, _KeyGen, _ValueGen, State) when State#state.searchgen == undefined ->
     {_NextUrl, S2} = next_url(State),
