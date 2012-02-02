@@ -37,6 +37,7 @@
                  valgen,
                  driver,
                  driver_state,
+                 shutdown_on_error,
                  ops,
                  ops_len,
                  rng_seed,
@@ -78,6 +79,7 @@ init([SupChild, Id]) ->
     %% Pull all config settings from environment
     Driver  = basho_bench_config:get(driver),
     Ops     = ops_tuple(),
+    ShutdownOnError = basho_bench_config:get(shutdown_on_error, false),
 
     %% Finally, initialize key and value generation. We pass in our ID to the
     %% initialization to enable (optional) key/value space partitioning
@@ -86,6 +88,7 @@ init([SupChild, Id]) ->
 
     State = #state { id = Id, keygen = KeyGen, valgen = ValGen,
                      driver = Driver,
+                     shutdown_on_error = ShutdownOnError,
                      ops = Ops, ops_len = size(Ops),
                      rng_seed = RngSeed,
                      parent_pid = self(),
@@ -235,6 +238,9 @@ worker_next_op(State) ->
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+            State#state.shutdown_on_error andalso
+                erlang:send_after(500, basho_bench,
+                                  {shutdown, "Shutdown on errors requested", 1}),
             {ok, State#state { driver_state = DriverState}};
 
         {'EXIT', Reason} ->

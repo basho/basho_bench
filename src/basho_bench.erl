@@ -35,6 +35,7 @@ main([]) ->
 main(Configs) ->
     %% Load baseline configs
     ok = application:load(basho_bench),
+    register(basho_bench, self()),
 
     %% Load the config files
     basho_bench_config:load(Configs),
@@ -98,7 +99,11 @@ wait_for_stop(Mref, DurationMins) ->
     Duration = timer:minutes(DurationMins) + timer:seconds(1),
     receive
         {'DOWN', Mref, _, _, Info} ->
-            ?CONSOLE("Test stopped: ~p\n", [Info])
+            ?CONSOLE("Test stopped: ~p\n", [Info]);
+        {shutdown, Reason, Exit} ->
+            basho_bench_app:stop(),
+            ?CONSOLE("Test shutdown: ~s~n", [Reason]),
+            halt(Exit)
 
     after Duration ->
             basho_bench_app:stop(),
