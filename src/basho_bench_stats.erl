@@ -43,7 +43,7 @@
                  errors_file}).
 
 %% Tracks latencies up to 5 secs w/ 250 us resolution
--define(NEW_HIST, stats_histogram:new(0, 5000000, 20000)).
+-define(NEW_HIST, basho_stats_histogram:new(0, 5000000, 20000)).
 
 %% ====================================================================
 %% API
@@ -126,7 +126,7 @@ handle_call(run, _From, State) ->
 
 handle_call({op, Op, ok, ElapsedUs}, _From, State) ->
     %% Update the histogram for the op in question
-    Hist = stats_histogram:update(ElapsedUs, erlang:get({latencies, Op})),
+    Hist = basho_stats_histogram:update(ElapsedUs, erlang:get({latencies, Op})),
     erlang:put({latencies, Op}, Hist),
     {reply, ok, State};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
@@ -267,19 +267,19 @@ process_stats(Now, State) ->
 report_latency(Elapsed, Window, Op) ->
     Hist = erlang:get({latencies, Op}),
     Errors = error_counter(Op),
-    case stats_histogram:observations(Hist) > 0 of
+    case basho_stats_histogram:observations(Hist) > 0 of
         true ->
-            {Min, Mean, Max, _, _} = stats_histogram:summary_stats(Hist),
+            {Min, Mean, Max, _, _} = basho_stats_histogram:summary_stats(Hist),
             Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~.1f, ~.1f, ~.1f, ~.1f, ~w, ~w\n",
                                  [Elapsed,
                                   Window,
-                                  stats_histogram:observations(Hist),
+                                  basho_stats_histogram:observations(Hist),
                                   Min,
                                   Mean,
-                                  stats_histogram:quantile(0.500, Hist),
-                                  stats_histogram:quantile(0.950, Hist),
-                                  stats_histogram:quantile(0.990, Hist),
-                                  stats_histogram:quantile(0.999, Hist),
+                                  basho_stats_histogram:quantile(0.500, Hist),
+                                  basho_stats_histogram:quantile(0.950, Hist),
+                                  basho_stats_histogram:quantile(0.990, Hist),
+                                  basho_stats_histogram:quantile(0.999, Hist),
                                   Max,
                                   Errors]);
         false ->
@@ -290,7 +290,7 @@ report_latency(Elapsed, Window, Op) ->
                                   Errors])
     end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
-    {stats_histogram:observations(Hist), Errors}.
+    {basho_basho_stats_histogram:observations(Hist), Errors}.
 
 report_total_errors(State) ->                          
     case ets:tab2list(basho_bench_total_errors) of
