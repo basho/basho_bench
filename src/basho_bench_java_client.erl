@@ -23,16 +23,19 @@
 
 -export([new/5, get/4, put/6, create_update/7, update/7, delete/4]).
 
+-define(TIMEOUT, 60*1000).
+
 %%% Ask the java node to create a new process, and link to it
 new(Node, Ip, Port, PBBuffer, Transport) ->
     erlang:send({factory, Node}, {self(), {Ip, Port, PBBuffer, Transport}}),
 
     receive
         Pid when is_pid(Pid) ->
-            ok
-    end,
-    link(Pid),
-    {ok, Pid}.
+            link(Pid),
+            {ok, Pid}
+    after ?TIMEOUT ->
+            {error, timeout}
+    end.
 
 get(Pid, Bucket, Key, R) ->
     Pid ! {self(), {get, [{bucket, Bucket}, {key, Key}, {r, R}]}},
