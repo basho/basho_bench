@@ -290,7 +290,7 @@ report_latency(Elapsed, Window, Op) ->
                                   Errors])
     end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
-    {basho_basho_stats_histogram:observations(Hist), Errors}.
+    {basho_stats_histogram:observations(Hist), Errors}.
 
 report_total_errors(State) ->                          
     case ets:tab2list(basho_bench_total_errors) of
