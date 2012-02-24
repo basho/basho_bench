@@ -119,13 +119,18 @@ add_code_paths([]) ->
     ok;
 add_code_paths([Path | Rest]) ->
     Absname = filename:absname(Path),
-    case filename:basename(Absname) of
-        "ebin" ->
-            true = code:add_path(Absname);
-        _ ->
-            true = code:add_path(filename:join(Absname, "ebin"))
-    end,
-    add_code_paths(Rest).
+    CodePath = case filename:basename(Absname) of
+                   "ebin" ->
+                       Absname;
+                   _ ->
+                       filename:join(Absname, "ebin")
+               end,
+    case code:add_path(CodePath) of
+        true ->
+            add_code_paths(Rest);
+        Error ->
+            ?FAIL_MSG("Failed to add ~p to code_path: ~p\n", [CodePath, Error])
+    end.
 
 
 %%
