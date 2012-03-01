@@ -1,11 +1,11 @@
+# Load all the necessary packages, installing missing ones when necessary
+packages.to.install <- c("plyr", "grid", "getopt", "proto", "ggplot2")
 
-# Load a library, or attempt to install it if it's not available
-load_library <- function(Name)
+for(p in packages.to.install)
   {
-    if (!library(Name, character.only = TRUE, logical.return = TRUE))
-      {
-        install.packages(Name, repos = "http://lib.stat.cmu.edu/R/CRAN")
-      }
+        print(p)
+        if (suppressWarnings(!require(p, character.only = TRUE))) install.packages(p, repos = "http://lib.stat.cmu.edu/R/CRAN")
+        if (p == "ggplot2") suppressWarnings(library(ggplot2))
   }
 
 # Load a latency file and ensure that it is appropriately tagged
@@ -43,6 +43,3 @@ load_benchmark <- function(Dir, Tstart, Tend)
                  latencies = latencies[latencies$elapsed >= Tstart & latencies$elapsed <= Tend,]))
   }
 
-load_library("getopt")
-load_library("grid")
-load_library("ggplot2")
