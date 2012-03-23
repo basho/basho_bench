@@ -225,9 +225,9 @@ worker_next_op(State) ->
                                              State#state.driver_state)),
     ElapsedUs = timer:now_diff(now(), Start),
     case Result of
-        {ok, DriverState} ->
+        {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
             %% Success
-            basho_bench_stats:op_complete(Next, ok, ElapsedUs),
+            basho_bench_stats:op_complete(Next, Res, ElapsedUs),
             {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->

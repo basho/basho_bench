@@ -15,7 +15,8 @@ params = matrix(c(
   'outfile', 'o', 2, "character",
   'indir',   'i', 2, "character",
   'tstart',  '1',  2, "integer",
-  'tend',    '2',  2, "integer"
+  'tend',    '2',  2, "integer",
+  'ylabel1stgraph', 'Y',  2, "character"
   ), ncol=4, byrow=TRUE)
 
 # Parse the parameters
@@ -32,6 +33,7 @@ if (is.null(opt$width))   { opt$width   = 1024 }
 if (is.null(opt$height))  { opt$height  = 768 }
 if (is.null(opt$indir))   { opt$indir  = "current"}
 if (is.null(opt$outfile)) { opt$outfile = file.path(opt$indir, "summary.png") }
+if (is.null(opt$ylabel1stgraph)) { opt$ylabel1stgraph = "Op/sec" }
 
 # Load the benchmark data, passing the time-index range we're interested in
 b = load_benchmark(opt$indir, opt$tstart, opt$tend)
@@ -47,7 +49,7 @@ png(file = opt$outfile, width = opt$width, height = opt$height)
 # First plot req/sec from summary
 plot1 <- qplot(elapsed, successful / window, data = b$summary,
                 geom = c("smooth", "point"),
-                xlab = "Elapsed Secs", ylab = "Op/sec",
+                xlab = "Elapsed Secs", ylab = opt$ylabel1stgraph,
                 main = "Throughput") +
                 geom_smooth(aes(y = failed / window, colour = "Errors")) +
                 scale_colour_manual(name = "", values = c("red"))
