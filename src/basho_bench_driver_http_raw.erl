@@ -26,7 +26,7 @@
 
 -include("basho_bench.hrl").
 
--record(url, {abspath, host, port, username, password, path, protocol}).
+-record(url, {abspath, host, port, username, password, path, protocol, host_type}).
 
 -record(state, { client_id,          % Tuple client ID for HTTP requests
                  base_urls,          % Tuple of #url -- one for each IP
