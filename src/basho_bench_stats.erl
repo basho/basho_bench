@@ -74,6 +74,9 @@ init([]) ->
     %% the start of the run
     ets:new(basho_bench_total_errors, [protected, named_table]),
 
+    %% Initialize an ETS table to track custom units
+    ets:new(basho_bench_units, [protected, named_table]),
+
     %% Get the list of operations we'll be using for this test
     F1 =
         fun({OpTag, _Count}) -> {OpTag, OpTag};
@@ -124,10 +127,13 @@ handle_call(run, _From, State) ->
     erlang:send_after(State#state.report_interval, self(), report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 
-handle_call({op, Op, ok, ElapsedUs}, _From, State) ->
+handle_call({op, Op, ok, ElapsedUs}, From, State) ->
+    handle_call({op, Op, {ok, 1}, ElapsedUs}, From, State);
+handle_call({op, Op, {ok, Units}, ElapsedUs}, _From, State) ->
     %% Update the histogram for the op in question
     Hist = basho_stats_histogram:update(ElapsedUs, erlang:get({latencies, Op})),
     erlang:put({latencies, Op}, Hist),
+    ets_increment(basho_bench_units, Op, Units),
     {reply, ok, State};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
@@ -201,7 +207,7 @@ replace_special_chars([]) ->
 increment_error_counter(Key) ->
     ets_increment(basho_bench_errors, Key, 1).
 
-ets_increment(Tab, Key, Incr) ->
+ets_increment(Tab, Key, Incr) when is_integer(Incr) ->
     %% Increment the counter for this specific key. We have to deal with
     %% missing keys, so catch the update if it fails and init as necessary
     case catch(ets:update_counter(Tab, Key, Incr)) of
@@ -210,16 +216,27 @@ ets_increment(Tab, Key, Incr) ->
         {'EXIT', _} ->
             true = ets:insert_new(Tab, {Key, Incr}),
             ok
-    end.
+    end;
+ets_increment(Tab, Key, Incr) when is_float(Incr) ->
+    Old = case ets:lookup(Tab, Key) of
+              [{_, Val}] -> Val;
+              []         -> 0
+          end,
+    true = ets:insert(Tab, {Key, Old + Incr}).
 
 error_counter(Key) ->
-    case catch(ets:lookup_element(basho_bench_errors, Key, 2)) of
+    lookup_or_zero(basho_bench_errors, Key).
+
+units_counter(Key) ->
+    lookup_or_zero(basho_bench_units, Key).
+
+lookup_or_zero(Tab, Key) ->
+    case catch(ets:lookup_element(Tab, Key, 2)) of
         {'EXIT', _} ->
             0;
         Value ->
             Value
     end.
-
 
         
 process_stats(Now, State) ->
@@ -237,6 +254,8 @@ process_stats(Now, State) ->
 
     %% Reset latency histograms
     [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],
+    %% Reset units
+    [ets:insert(basho_bench_units, {Op, 0}) || Op <- State#state.ops],
 
     %% Write summary
     file:write(State#state.summary_file,
@@ -267,13 +286,14 @@ process_stats(Now, State) ->
 report_latency(Elapsed, Window, Op) ->
     Hist = erlang:get({latencies, Op}),
     Errors = error_counter(Op),
+    Units = units_counter(Op),
     case basho_stats_histogram:observations(Hist) > 0 of
         true ->
             {Min, Mean, Max, _, _} = basho_stats_histogram:summary_stats(Hist),
             Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~.1f, ~.1f, ~.1f, ~.1f, ~w, ~w\n",
                                  [Elapsed,
                                   Window,
-                                  basho_stats_histogram:observations(Hist),
+                                  Units,
                                   Min,
                                   Mean,
                                   basho_stats_histogram:quantile(0.500, Hist),
@@ -290,7 +310,7 @@ report_latency(Elapsed, Window, Op) ->
                                   Errors])
     end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
-    {basho_stats_histogram:observations(Hist), Errors}.
+    {Units, Errors}.
 
 report_total_errors(State) ->                          
     case ets:tab2list(basho_bench_total_errors) of
