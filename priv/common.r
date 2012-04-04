@@ -1,5 +1,5 @@
 # Load all the necessary packages, installing missing ones when necessary
-packages.to.install <- c("plyr", "grid", "getopt", "proto", "ggplot2")
+packages.to.install <- c("plyr", "grid", "getopt", "proto", "ggplot2", "getopt")
 
 for(p in packages.to.install)
   {
