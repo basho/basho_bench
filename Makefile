@@ -17,3 +17,12 @@ distclean: clean
 
 results:
 	priv/summary.r -i tests/current
+
+byte_sec-results:
+	priv/summary.r --ylabel1stgraph byte/sec -i tests/current
+
+kbyte_sec-results:
+	priv/summary.r --ylabel1stgraph Kbyte/sec -i tests/current
+
+mbyte_sec-results:
+	priv/summary.r --ylabel1stgraph Mbyte/sec -i tests/current
