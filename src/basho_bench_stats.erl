@@ -214,8 +214,13 @@ ets_increment(Tab, Key, Incr) when is_integer(Incr) ->
         Value when is_integer(Value) ->
             ok;
         {'EXIT', _} ->
-            true = ets:insert_new(Tab, {Key, Incr}),
-            ok
+            case ets:insert_new(Tab, {Key, Incr}) of
+                true ->
+                    ok;
+                _ ->
+                    %% Race with another load gen proc, so retry
+                    ets_increment(Tab, Key, Incr)
+            end
     end;
 ets_increment(Tab, Key, Incr) when is_float(Incr) ->
     Old = case ets:lookup(Tab, Key) of
