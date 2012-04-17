@@ -51,7 +51,7 @@ plot1 <- qplot(elapsed, successful / window, data = b$summary,
                 geom = c("smooth", "point"),
                 xlab = "Elapsed Secs", ylab = opt$ylabel1stgraph,
                 main = "Throughput") +
-                geom_smooth(aes(y = failed / window, colour = "Errors")) +
+                geom_smooth(aes(y = failed / window, colour = "Errors"), method="loess") +
                 scale_colour_manual(name = "", values = c("red"))
 
 # Setup common elements of the latency plots
@@ -61,8 +61,8 @@ latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
 
 # Plot 99 and 99.9th percentiles
 plot2 <- latency_plot +
-            geom_smooth(aes(y = X99th, color = "X99th")) +
-            geom_smooth(aes(y = X99_9th, color = "X99_9th")) +
+            geom_smooth(aes(y = X99th, color = "X99th"), method="loess") +
+            geom_smooth(aes(y = X99_9th, color = "X99_9th"), method="loess") +
             scale_color_hue("Percentile",
                             breaks = c("X99th", "X99_9th"),
                             labels = c("99th", "99.9th"))
@@ -70,9 +70,9 @@ plot2 <- latency_plot +
 
 # Plot median, mean and 95th percentiles
 plot3 <- latency_plot +
-            geom_smooth(aes(y = median, color = "median")) +
-            geom_smooth(aes(y = mean, color = "mean")) +
-            geom_smooth(aes(y = X95th, color = "X95th")) +
+            geom_smooth(aes(y = median, color = "median"), method="loess") +
+            geom_smooth(aes(y = mean, color = "mean"), method="loess") +
+            geom_smooth(aes(y = X95th, color = "X95th"), method="loess") +
             scale_color_hue("Percentile",
                             breaks = c("median", "mean", "X95th"),
                             labels = c("Median", "Mean", "95th"))
