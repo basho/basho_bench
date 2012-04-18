@@ -23,7 +23,8 @@
 
 -export([new/1,
          run/4,
-         mapred_valgen/2]).
+         mapred_valgen/2,
+         mapred_ordered_valgen/1]).
 
 -include("basho_bench.hrl").
 
@@ -33,7 +34,8 @@
                  w,
                  dw,
                  rw,
-                 keylist_length}).
+                 keylist_length,
+                 preloaded_keys}).
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -67,6 +69,9 @@ new(Id) ->
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
+    PreloadedKeys = basho_bench_config:get(
+                      riakc_pb_preloaded_keys, undefined),
+    warn_bucket_mr_correctness(PreloadedKeys),
 
     %% Choose the target node using our ID as a modulus
     Targets = expand_ips(Ips, Port),
@@ -80,12 +85,36 @@ new(Id) ->
                           w = W,
                           dw = DW,
                           rw = RW,
-                          keylist_length = KeylistLength
+                          keylist_length = KeylistLength,
+                          preloaded_keys = PreloadedKeys
                          }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
                       [TargetIp, TargetPort, Reason2])
     end.
+
+%% @doc For bucket-wide MapReduce, we can only check the result for
+%% correctness if we know how many keys are stored.  This will print a
+%% warning if that information is not available (it's expected as
+%% `riakc_pb_preloaded_keys' in the config).
+warn_bucket_mr_correctness(undefined) ->
+    Operations = basho_bench_config:get(operations),
+    BucketMR = [ Op || {Op, _} <- Operations,
+                       Op == mr_bucket_js orelse
+                           Op == mr_bucket_erlang ],
+    case BucketMR of
+        [] ->
+            %% no need to warn - no bucket-wide MR
+            ok;
+        _ ->
+            ?WARN("Bucket-wide MapReduce operations are specified,"
+                  " but riakc_pb_preloaded_keys is not."
+                  " Results will not be checked for correctness.~n",
+                  [])
+    end;
+warn_bucket_mr_correctness(_) ->
+    %% preload is specified, so no warning necessary
+    ok.
 
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
@@ -206,10 +235,61 @@ expand_ips(Ips, Port) ->
 
 mapred(State, Input, Query) ->
     case riakc_pb_socket:mapred(State#state.pid, Input, Query) of
-        {ok, _Result} ->
-            {ok, State};
+        {ok, Result} ->
+            case check_result(State, Input, Query, Result) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
         {error, Reason} ->
             {error, Reason, State}
+    end.
+
+check_result(#state{preloaded_keys=Preload},
+             Input, ?ERLANG_MR, Result) when is_binary(Input) ->
+    case Preload of
+        undefined -> %% can't check if we don't know
+            ok;
+        _ ->
+            case [{1, [Preload]}] of
+                Result -> %% ERLANG_MR counts inputs,
+                    ok;   %% should equal # preloaded keys
+                Expected ->
+                    {error, {Expected, Result}}
+            end
+    end;
+check_result(_State, Input, ?ERLANG_MR, Result) ->
+    case [{1, [length(Input)]}] of
+        Result ->
+            ok;
+        Expected ->
+            {error, {Expected, Result}}
+    end;
+check_result(#state{preloaded_keys=Preload},
+             Input, ?JS_MR, Result) when is_binary(Input) ->
+    case Preload of
+        undefined -> %% can't check if we don't know
+            ok;
+        _ ->
+            %% NOTE: this is Preload-1 instead of Preload+1, as
+            %% expected, because keys are 0 to (Preload-1),
+            %% not 1 to Preload
+            case [{1, [(Preload*(Preload-1)) div 2]}] of
+                Result -> %% JS_MR sums inputs,
+                    ok;
+                Expected ->
+                    {error, {Expected, Result}}
+            end
+    end;
+check_result(_State, Input, ?JS_MR, Result) ->
+    Sum = lists:sum([ list_to_integer(binary_to_list(I))
+                      || {_, I} <- Input ]),
+    case [{1, [Sum]}] of
+        Result ->
+            ok;
+        Expected ->
+            {error, {Expected, Result}}
     end.
 
 make_keylist(_Bucket, _KeyGen, 0) ->
@@ -221,4 +301,17 @@ make_keylist(Bucket, KeyGen, Count) ->
 mapred_valgen(_Id, MaxRand) ->
     fun() ->
             list_to_binary(integer_to_list(random:uniform(MaxRand)))
+    end.
+
+%% to be used along with sequential_int keygen to populate known
+%% mapreduce set
+mapred_ordered_valgen(Id) ->
+    Save = list_to_atom("mapred_ordered_valgen"++integer_to_list(Id)),
+    fun() ->
+            Next = case get(Save) of
+                       undefined -> 0;
+                       Value     -> Value
+                   end,
+            put(Save, Next+1),
+            list_to_binary(integer_to_list(Next))
     end.
