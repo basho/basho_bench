@@ -26,7 +26,7 @@
 
 -include("basho_bench.hrl").
 
--record(url, {abspath, host, port, username, password, path, protocol}).
+-record(url, {abspath, host, port, username, password, path, protocol, host_type}).
 
 -record(state, { client_id,          % Tuple client ID for HTTP requests
                  base_urls,          % Tuple of #url -- one for each IP
@@ -177,6 +177,15 @@ run(insert, KeyGen, ValueGen, State) ->
     KeyGen(),
     {NextUrl, S2} = next_url(State),
     case do_post(url(NextUrl, State#state.path_params), [], ValueGen) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
+run(put, KeyGen, ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    Url = url(NextUrl, KeyGen, State#state.path_params),
+    case do_put(Url, [State#state.client_id], ValueGen) of
         ok ->
             {ok, S2};
         {error, Reason} ->

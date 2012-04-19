@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(basho_bench_sup).
@@ -59,9 +59,18 @@ init([]) ->
     %% Get the number concurrent workers we're expecting and generate child
     %% specs for each
     Workers = worker_specs(basho_bench_config:get(concurrent), []),
-    {ok, {{one_for_one, 5, 10}, [?CHILD(basho_bench_log, worker),
-                                 ?CHILD(basho_bench_stats, worker)] ++ Workers}}.
+    MeasurementDriver =
+        case basho_bench_config:get(measurement_driver, undefined) of
+            undefined -> [];
+            _Driver -> [?CHILD(basho_bench_measurement, worker)]
+        end,
 
+    {ok, {{one_for_one, 5, 10},
+        [?CHILD(basho_bench_log, worker)] ++
+        [?CHILD(basho_bench_stats, worker)] ++
+        Workers ++
+        MeasurementDriver
+    }}.
 
 %% ===================================================================
 %% Internal functions

@@ -172,7 +172,13 @@ stop_worker(SupChild) ->
 %% Expand operations list into tuple suitable for weighted, random draw
 %%
 ops_tuple() ->
-    Ops = [lists:duplicate(Count, Op) || {Op, Count} <- basho_bench_config:get(operations)],
+    F =
+        fun({OpTag, Count}) ->
+                lists:duplicate(Count, {OpTag, OpTag});
+           ({Label, OpTag, Count}) ->
+                lists:duplicate(Count, {Label, OpTag})
+        end,
+    Ops = [F(X) || X <- basho_bench_config:get(operations, [])],
     list_to_tuple(lists:flatten(Ops)).
 
 
@@ -213,14 +219,15 @@ worker_idle_loop(State) ->
 
 worker_next_op(State) ->
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
+    {_Label, OpTag} = Next,
     Start = now(),
-    Result = (catch (State#state.driver):run(Next, State#state.keygen, State#state.valgen,
+    Result = (catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
                                              State#state.driver_state)),
     ElapsedUs = timer:now_diff(now(), Start),
     case Result of
-        {ok, DriverState} ->
+        {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
             %% Success
-            basho_bench_stats:op_complete(Next, ok, ElapsedUs),
+            basho_bench_stats:op_complete(Next, Res, ElapsedUs),
             {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->
@@ -278,7 +285,7 @@ max_worker_run_loop(State) ->
 rate_worker_run_loop(State, Lambda) ->
     %% Delay between runs using exponentially distributed delays to mimic
     %% queue.
-    timer:sleep(trunc(stats_rv:exponential(Lambda))),
+    timer:sleep(trunc(basho_stats_rv:exponential(Lambda))),
     case worker_next_op(State) of
         {ok, State2} ->
             case needs_shutdown(State2) of

@@ -62,7 +62,7 @@ new(Id) ->
     Port  = basho_bench_config:get(riakc_pb_port, 8087),
     %% riakc_pb_replies sets defaults for R, W, DW and RW.
     %% Each can be overridden separately
-    Replies = basho_bench_config:get(riakc_pb_replies, 2),
+    Replies = basho_bench_config:get(riakc_pb_replies, quorum),
     R = basho_bench_config:get(riakc_pb_r, Replies),
     W = basho_bench_config:get(riakc_pb_w, Replies),
     DW = basho_bench_config:get(riakc_pb_dw, Replies),
