@@ -36,6 +36,8 @@ new({fixed_bin, Size}, _Id) ->
 new({fixed_bin, Size, Val}, _Id) ->
     Data = list_to_binary(lists:duplicate(Size, Val)),
     fun() -> Data end;
+new({fixed_char, Size}, _Id) ->
+    fun() -> list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,Size))) end;
 new({exponential_bin, MinSize, Mean}, _Id) ->
     Source = init_source(),
     fun() -> data_block(Source, MinSize + trunc(basho_stats_rv:exponential(1 / Mean))) end;
