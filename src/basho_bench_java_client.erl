@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(basho_bench_java_client).
 
--export([new/5, get/4, put/6, create_update/7, update/7, delete/4]).
+-export([new/4, new/5, get/4, put/6, create_update/7, update/7, delete/4]).
 
 -define(TIMEOUT, 60*1000).
 
@@ -36,6 +36,17 @@ new(Node, Ip, Port, PBBuffer, Transport) ->
     after ?TIMEOUT ->
             {error, timeout}
     end.
+
+%%% Ask the java node to create a new process, and link to it
+new(Node, ClientNodes, PBBuffer, Transport) ->
+    erlang:send({factory, Node}, {self(), {ClientNodes, PBBuffer, Transport}}),
+
+    receive
+        Pid when is_pid(Pid) ->
+            ok
+    end,
+    link(Pid),
+    {ok, Pid}.
 
 get(Pid, Bucket, Key, R) ->
     Pid ! {self(), {get, [{bucket, Bucket}, {key, Key}, {r, R}]}},
