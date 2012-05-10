@@ -68,7 +68,7 @@ $ open tests/current/summary.png
 ** Benchmarking with riak-java-client
    The [[https://github.com/basho/riak-java-client][riak-java-client]] can be used to benchmark a Riak cluster. There
    is an example configuration in =examples/riakc_java.config=. You
-   will need the [[https://github.com/russelldb/bench_shim][bench_shim]] project. You will also need to uncomment
+   will need the [[https://github.com/basho/bench_shim][bench_shim]] project. You will also need to uncomment
    and edit the following line in basho_bench's =rebar.config=, adding
    your own erlang cookie value:
 
