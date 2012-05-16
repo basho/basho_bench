@@ -1,6 +1,6 @@
 
 
--define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), exit(whereis(basho_bench_sup),kill)).
+-define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), basho_bench_app:halt_or_kill()).
 
 -define(CONSOLE(Str, Args), basho_bench_log:log(console, Str, Args)).
 
