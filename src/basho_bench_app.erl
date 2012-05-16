@@ -38,16 +38,26 @@
 
 start() ->
     %% Redirect all SASL logging into a text file
-    application:load(sasl),
-    application:set_env(sasl, sasl_error_logger, {file, "log.sasl.txt"}),
-    ok = application:start(sasl),
+    case application:get_env(basho_bench,app_run_mode) of
+       {ok, included} ->
+          %%Make sure sasl and crypto is available
+          true=lists:keymember(sasl,1,application:which_applications()),
+          true=lists:keymember(crypto,1,application:which_applications()),
+          
+          %% Start up our application
+          application:start(basho_bench);
+       NotInc when NotInc == {ok, standalone} orelse NotInc == undefined ->
+          application:load(sasl),
+          application:set_env(sasl, sasl_error_logger, {file, "log.sasl.txt"}),
+          ok = application:start(sasl),
 
-    %% Make sure crypto is available
-    ok = application:start(crypto),
+          %% Make sure crypto is available
+          ok = application:start(crypto),
 
-    %% Start up our application -- mark it as permanent so that the node
-    %% will be killed if we go down
-    application:start(basho_bench, permanent).
+          %% Start up our application -- mark it as permanent so that the node
+          %% will be killed if we go down
+          application:start(basho_bench, permanent)
+    end.
 
 stop() ->
     application:stop(basho_bench).
