@@ -34,7 +34,10 @@ main([]) ->
 
 main(Configs) ->
     %% Load baseline configs
-    ok = application:load(basho_bench),
+    case application:load(basho_bench) of
+        ok -> ok;
+	{error, {already_loaded, basho_bench}} -> ok
+    end,
 
     %% Load the config files
     basho_bench_config:load(Configs),
