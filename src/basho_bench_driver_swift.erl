@@ -119,6 +119,19 @@ run(update, KeyGen, ValueGen, State) ->
                     {error, Reason, S2}
             end
     end;
+run(insert, KeyGen, ValueGen, State) ->
+    %% Go ahead and evaluate the keygen so that we can use the
+    %% sequential_int_gen to do a controlled # of inserts (if we desire). Note
+    %% that the actual insert randomly generates a key (server-side), so the
+    %% output of the keygen is ignored.
+    KeyGen(),
+    {NextUrl, S2} = next_url(State),
+    case do_post(url(NextUrl, State#state.path_params), [State#state.custom_headers], ValueGen) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 run(put, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     Url = url(NextUrl, KeyGen, State#state.path_params),
@@ -171,6 +184,8 @@ next_url(State) ->
     { element(State#state.base_urls_index, State#state.base_urls),
       State#state { base_urls_index = State#state.base_urls_index + 1 }}.
 
+url(BaseUrl, Params) ->
+    BaseUrl#url { path = lists:concat([BaseUrl#url.path, Params]) }.
 url(BaseUrl, KeyGen, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
 
@@ -192,6 +207,19 @@ do_put(Url, CustomHeaders, ValueGen) ->
     case send_request(Url, CustomHeaders ++ [{'Content-Type', 'application/junk'}],
                       put, ValueGen(), [{response_format, binary}]) of
         {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+do_post(Url, CustomHeaders, ValueGen) ->
+    case send_request(Url, CustomHeaders ++ [{'Content-Type', 'application/octet-stream'}],
+                      post, ValueGen(), [{response_format, binary}]) of
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
