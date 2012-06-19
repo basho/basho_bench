@@ -112,6 +112,7 @@ run(stat, _, _, State) ->
     end;
 
 run(plain_get, _KeyGen, _ValueGen, State) ->
+    Keygen(),
     {NextUrl, S2} = next_url(State),
     case do_get(url(NextUrl, State#state.path_params), State#state.get_headers) of
         {not_found, _Url} ->
