@@ -28,7 +28,7 @@
 -include("basho_bench.hrl").
 
 -record(state, { id :: integer(),
-                 backend :: atom(),
+                 backend :: 'bitcask' | 'eleveldb' | 'hanoidb',
                  backend_flags :: list(),
                  data_dir :: string(),
                  n_val :: integer(),
@@ -143,10 +143,13 @@ start_idx(eleveldb, Flags0, DataDir, Idx) ->
     Handle;
 start_idx(bitcask, Flags0, DataDir, Idx) ->
     Flags = [read_write|Flags0],
-    bitcask:open(DataDir ++ "/" ++ integer_to_list(Idx), Flags).
+    bitcask:open(DataDir ++ "/" ++ integer_to_list(Idx), Flags);
+start_idx(hanoidb, Flags, DataDir, Idx) ->
+    {ok, Handle} = hanoidb:open(DataDir ++ "/" ++ integer_to_list(Idx), Flags),
+    Handle.
 
 do_put(Key0, Value0, #state{backend = eleveldb, handle = Handle,
-                           bucket = Bucket} = S) ->
+                            bucket = Bucket} = S) ->
     {Key, Value} = make_riak_object_maybe(Bucket, Key0, Value0, S),
     %% TODO: add an option for put options?
     case eleveldb:put(Handle, Key, Value, []) of
@@ -156,10 +159,18 @@ do_put(Key0, Value0, #state{backend = eleveldb, handle = Handle,
             {error, Reason, S}
     end;
 do_put(Key0, Value0, #state{backend = bitcask, handle = Handle,
-                           bucket = Bucket} = S) ->
+                            bucket = Bucket} = S) ->
     {Key, Value} = make_riak_object_maybe(Bucket, Key0, Value0, S),
-    %% TODO: add an option for put options?
     case bitcask:put(Handle, Key, Value) of
+        ok ->
+            {ok, S};
+        {error, Reason} ->
+            {error, Reason, S}
+    end;
+do_put(Key0, Value0, #state{backend = hanoidb, handle = Handle,
+                            bucket = Bucket} = S) ->
+    {Key, Value} = make_riak_object_maybe(Bucket, Key0, Value0, S),
+    case hanoidb:put(Handle, Key, Value) of
         ok ->
             {ok, S};
         {error, Reason} ->
@@ -174,7 +185,9 @@ stop_backend(eleveldb, _Handle) ->
     %% ok = eleveldb:delete(Handle, Key, [{sync, true}]),
     ok;
 stop_backend(bitcask, Handle) ->
-    ok = bitcask:close(Handle).
+    ok = bitcask:close(Handle);
+stop_backend(hanoidb, Handle) ->
+    ok = hanoidb:close(Handle).
 
 count_eleveldb_keys(Dir) ->
     [{File, begin
@@ -189,7 +202,10 @@ make_riak_object_maybe(Bucket, Key, Value, #state{store_riak_obj = true,
     new_object(sext:encode({o, Bucket, Key}), Bucket, Key, Value);
 make_riak_object_maybe(Bucket, Key, Value, #state{store_riak_obj = true,
                                                   backend = bitcask}) ->
-    new_object(term_to_binary({Bucket, Key}), Bucket, Key, Value).
+    new_object(term_to_binary({Bucket, Key}), Bucket, Key, Value);
+make_riak_object_maybe(Bucket, Key, Value, #state{store_riak_obj = true,
+                                                  backend = hanoidb}) ->
+    new_object(sext:encode({o, Bucket, Key}), Bucket, Key, Value).
 
 new_object(EncodedKey, Bucket, Key, Value) ->
     %% MD stuff stolen from riak_kv_put_fsm.erl
