@@ -69,47 +69,10 @@ new(Id) ->
                            store_riak_obj = StoreObj,
                            idxes_to_do = MyIdxes})}.
 
-    %% %% Make sure bitcask is available
-    %% case code:which(bitcask) of
-    %%     non_existing ->
-    %%         ?FAIL_MSG("~s requires bitcask to be available on code path.\n",
-    %%                   [?MODULE]);
-    %%     _ ->
-    %%         ok
-    %% end,
-
-    %% %% Get the target directory
-    %% Dir = basho_bench_config:get(bitcask_dir, "."),
-    %% Filename = filename:join(Dir, "test.bitcask"),
-
-    %% %% Look for sync interval config
-    %% case basho_bench_config:get(bitcask_sync_interval, infinity) of
-    %%     Value when is_integer(Value) ->
-    %%         SyncInterval = Value;
-    %%     infinity ->
-    %%         SyncInterval = infinity
-    %% end,
-
-    %% %% Get any bitcask flags
-    %% Flags = basho_bench_config:get(bitcask_flags, []),
-    %% case bitcask:open(Filename, [read_write] ++ Flags) of
-    %%     {error, Reason} ->
-    %%         ?FAIL_MSG("Failed to open bitcask in ~s: ~p\n", [Filename, Reason]);
-    %%     File ->
-    %%         %% Try to start the merge worker
-    %%         bitcask_merge_worker:start_link(),
-    %%         {ok, #state { file = File,
-    %%                       filename = Filename,
-    %%                       flags = Flags,
-    %%                       sync_interval = SyncInterval,
-    %%                       last_sync = os:timestamp() }}
-    %% end.
-
 run(put, KeyGen, ValueGen, S) ->
     try
         Key = filter_key_gen(KeyGen, S),
         Value = ValueGen(),
-        if Key == <<3:32/native>> -> io:format("run: Idx ~p for key ~p (~p)\n", [S#state.idx, Key, self()]); true -> ok end,
         do_put(Key, Value, S)
     catch
         throw:{stop, empty_keygen} ->
@@ -141,10 +104,8 @@ filter_key_gen(KeyGen, #state{ring = Ring, n_val = N, bucket = Bucket,
     DocIdx = riak_core_util:chash_std_keyfun({Bucket, Key}),
     Preflist = lists:sublist(riak_core_ring:preflist(DocIdx, Ring), N),
     PrefIdxes = [I || {I, _} <- Preflist],
-    if Key == <<3:32/native>> -> io:format("PrefIdxes for ~p (~p)\n\t~p\n", [Key, self(), PrefIdxes]); true -> ok end,
     case lists:member(Idx, PrefIdxes) of
         true  ->
-            if Key == <<3:32/native>> -> io:format("filter_key_gen: Idx ~p for key ~p (~p)\n", [Idx, Key, self()]); true -> ok end,
             Key;
         false ->
             filter_key_gen(KeyGen, S)
@@ -179,14 +140,26 @@ stop_idx(#state{backend = Backend, handle = Handle} = S) ->
 start_idx(eleveldb, Flags0, DataDir, Idx) ->
     Flags = [{create_if_missing, true}|Flags0],
     {ok, Handle} = eleveldb:open(DataDir ++ "/" ++ integer_to_list(Idx), Flags),
-    Handle.
+    Handle;
+start_idx(bitcask, Flags0, DataDir, Idx) ->
+    Flags = [read_write|Flags0],
+    bitcask:open(DataDir ++ "/" ++ integer_to_list(Idx), Flags).
 
 do_put(Key0, Value0, #state{backend = eleveldb, handle = Handle,
                            bucket = Bucket} = S) ->
-    if Key0 == <<3:32/native>> -> io:format("do_put ~p: ~p into ~p\n", [self(), Key0, S#state.idx]); true -> ok end,
     {Key, Value} = make_riak_object_maybe(Bucket, Key0, Value0, S),
     %% TODO: add an option for put options?
     case eleveldb:put(Handle, Key, Value, []) of
+        ok ->
+            {ok, S};
+        {error, Reason} ->
+            {error, Reason, S}
+    end;
+do_put(Key0, Value0, #state{backend = bitcask, handle = Handle,
+                           bucket = Bucket} = S) ->
+    {Key, Value} = make_riak_object_maybe(Bucket, Key0, Value0, S),
+    %% TODO: add an option for put options?
+    case bitcask:put(Handle, Key, Value) of
         ok ->
             {ok, S};
         {error, Reason} ->
@@ -199,7 +172,9 @@ stop_backend(eleveldb, _Handle) ->
     %% Key = <<66:2048>>,
     %% ok = eleveldb:put(Handle, Key, <<>>, []),
     %% ok = eleveldb:delete(Handle, Key, [{sync, true}]),
-    ok.
+    ok;
+stop_backend(bitcask, Handle) ->
+    ok = bitcask:close(Handle).
 
 count_eleveldb_keys(Dir) ->
     [{File, begin
@@ -211,14 +186,21 @@ make_riak_object_maybe(_Bucket, Key, Value, #state{store_riak_obj = false}) ->
     {Key, Value};
 make_riak_object_maybe(Bucket, Key, Value, #state{store_riak_obj = true,
                                                   backend = eleveldb}) ->
+    new_object(sext:encode({o, Bucket, Key}), Bucket, Key, Value);
+make_riak_object_maybe(Bucket, Key, Value, #state{store_riak_obj = true,
+                                                  backend = bitcask}) ->
+    new_object(term_to_binary({Bucket, Key}), Bucket, Key, Value).
+
+new_object(EncodedKey, Bucket, Key, Value) ->
     %% MD stuff stolen from riak_kv_put_fsm.erl
     Now = erlang:now(),
     <<HashAsNum:128/integer>> = crypto:md5(term_to_binary({node(), Now})),
     VT = riak_core_util:integer_to_list(HashAsNum,62),
     NewMD = dict:store(<<"X-Riak-VTag">>, VT,
                        dict:store(<<"X-Riak-Last-Modified">>, Now, dict:new())),
-    {sext:encode({o, Bucket, Key}),
+    {EncodedKey,
      term_to_binary(
        riak_object:increment_vclock(riak_object:new(Bucket, Key, Value,
                                                     NewMD),
                                     <<42:32/big>>))}.
+
