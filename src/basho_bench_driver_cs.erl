@@ -50,6 +50,12 @@ new(_Id) ->
 	{ok, #state {bucket=Bucket}}.
 
 
+run(put, KeyGen, ValueGen, State) ->
+	Key = KeyGen(),
+	Value = ValueGen(),
+	erlcloud_s3:put_object(State#state.bucket, integer_to_list(Key), Value),
+	{ok, State};
+
 run(get, KeyGen, _ValueGen, State) ->
 	try
 		Key = KeyGen(),
@@ -60,12 +66,13 @@ run(get, KeyGen, _ValueGen, State) ->
 		{ok, State}
 	end;
 
-run(put, KeyGen, ValueGen, State) ->
-	Key = KeyGen(),
-	Value = ValueGen(),
-	erlcloud_s3:put_object(State#state.bucket, integer_to_list(Key), Value),
-	{ok, State};
 run(delete, KeyGen, _ValueGen, State) ->
-	_Key = KeyGen(),
-	{ok, State}.
+	try
+		Key = KeyGen(),
+		erlcloud_s3:delete_object(State#state.bucket, integer_to_list(Key)),
+		{ok, State}
+	catch _X:_Y ->
+%%        ?ERROR("Error on ~p: ~p ~p\n", [Key, _X, _Y]),
+		{ok, State}
+	end.
 
