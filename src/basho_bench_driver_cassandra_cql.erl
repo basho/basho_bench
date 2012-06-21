@@ -95,7 +95,7 @@ run(insert, KeyGen, ValueGen,
     #state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
     Key = KeyGen(),
     Val = ValueGen(),
-    Query = lists:concat(["INSERT INTO ", ColumnFamily , " (KEY, ", Column, ") VALUES ('", Key ,"', ", binary_to_list(Val) ,");"]),
+    Query = lists:concat(["INSERT INTO ", ColumnFamily , " (KEY, ", Column, ") VALUES ('", Key ,"', ", bin_to_hexstr(Val) ,");"]),
 	case erlcassa_client:cql_execute(C, Query) of
         {result, ok} ->
 			add_new_key(Key, State#state.keyfile),
@@ -111,9 +111,9 @@ run(put, _KeyGen, ValueGen,
 			{error, "No key found in filelist.txt", State};
 		false ->
 			Val = ValueGen(),
-			Query = lists:concat(["UPDATE ", ColumnFamily, " SET '", Column, "' = '", binary_to_list(Val), "' WHERE KEY = '", Key, "';"]),
+			Query = lists:concat(["UPDATE ", ColumnFamily, " SET '", Column, "' = ", bin_to_hexstr(Val), " WHERE KEY = '", Key, "';"]),
 			case erlcassa_client:cql_execute(C, Query, proplist) of
-		        {result, {rows, _Rows}} ->
+				{result,ok} ->
 		            {ok, State};
 		        Error ->
 		            {error, Error, State}
@@ -159,3 +159,19 @@ remove_existing_key(Key, KeyFile) ->
 
 trim_whitespace(Input) -> 
 	re:replace(Input, "\\s+", "", [global]).
+
+hex(N) when N < 10 ->
+    $0+N;
+hex(N) when N >= 10, N < 16 ->
+    $a+(N-10).
+    
+to_hex(N) when N < 256 ->
+    [hex(N div 16), hex(N rem 16)].
+ 
+list_to_hexstr([]) -> 
+    [];
+list_to_hexstr([H|T]) ->
+    to_hex(H) ++ list_to_hexstr(T).
+
+bin_to_hexstr(Bin) ->
+    lists:concat(["abcdef0123",list_to_hexstr(binary_to_list(Bin))]).
