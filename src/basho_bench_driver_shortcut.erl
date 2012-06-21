@@ -23,7 +23,7 @@
 
 -export([new/1,
          run/4]).
--export([count_eleveldb_keys/1]).
+-export([count_eleveldb_keys/1, calc_bkey_to_prefidxes/4]).
 
 -include("basho_bench.hrl").
 
@@ -50,7 +50,7 @@ new(Id) ->
     os:cmd("mkdir -p " ++ DataDir),
     RingSize = basho_bench_config:get(shortcut_ring_creation_size),
     N = basho_bench_config:get(shortcut_n_val),
-    Ring = Ring = riak_core_ring:fresh(RingSize, nonode),
+    Ring = riak_core_ring:fresh(RingSize, nonode),
     Bucket = basho_bench_config:get(shortcut_bucket),
     StoreObj = basho_bench_config:get(shortcut_store_riak_object, false),
     Idxes = [Idx || {Idx, _} <- riak_core_ring:all_owners(Ring)],
@@ -76,7 +76,7 @@ run(put, KeyGen, ValueGen, S) ->
         do_put(Key, Value, S)
     catch
         throw:{stop, empty_keygen} ->
-            ?DEBUG("Empty keygen @ ~P\n", [S, 13]),
+            ?DEBUG("Empty keygen\n", []),
             NewS = rotate_idx(S),
             do_put(filter_key_gen(KeyGen, NewS), ValueGen(), NewS)
    end.
@@ -101,9 +101,7 @@ filter_key_gen(KeyGen, #state{ring = Ring, n_val = N, bucket = Bucket,
     %%     Plain ->
     %%         HashKey = Key = Plain
     %% end,
-    DocIdx = riak_core_util:chash_std_keyfun({Bucket, Key}),
-    Preflist = lists:sublist(riak_core_ring:preflist(DocIdx, Ring), N),
-    PrefIdxes = [I || {I, _} <- Preflist],
+    PrefIdxes = calc_bkey_to_prefidxes(Bucket, Key, Ring, N),
     case lists:member(Idx, PrefIdxes) of
         true  ->
             Key;
@@ -119,7 +117,6 @@ rotate_idx(#state{backend = Backend,
                   backend_flags = BackendFlags,
                   data_dir = DataDir,
                   idxes_to_do = [Idx|Idxes]} = S0) ->
-    ?DEBUG("rotate_idx: Id ~p self() ~p old_idx ~p\n", [S0#state.id, self(), S0#state.idx]),
     S1 = stop_idx(S0),
     basho_bench_keygen:reset_sequential_int_state(),
     Handle = start_idx(Backend, BackendFlags, DataDir, Idx),
@@ -220,3 +217,10 @@ new_object(EncodedKey, Bucket, Key, Value) ->
                                                     NewMD),
                                     <<42:32/big>>))}.
 
+calc_bkey_to_prefidxes(Bucket, Key, RingSize, N) when is_integer(RingSize) ->
+    calc_bkey_to_prefidxes(Bucket, Key, riak_core_ring:fresh(RingSize, nonode),
+                           N);
+calc_bkey_to_prefidxes(Bucket, Key, Ring, N) ->
+    DocIdx = riak_core_util:chash_std_keyfun({Bucket, Key}),
+    Preflist = lists:sublist(riak_core_ring:preflist(DocIdx, Ring), N),
+    [I || {I, _} <- Preflist].
