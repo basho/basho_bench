@@ -2,7 +2,7 @@
 %%
 %% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009-2010 Basho Techonologies
+%% Copyright (c) 2009-2012 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -23,8 +23,6 @@
 
 -export([new/1,
          run/4]).
-
-%% -compile(export_all).
 
 -include("basho_bench.hrl").
 -include_lib("erlcassa/include/erlcassa.hrl").
