@@ -2,7 +2,7 @@
 %%
 %% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009-2010 Basho Techonologies
+%% Copyright (c) 2009-2012 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -53,8 +53,8 @@ new(Id) ->
 
     %% The IPs, port and path we'll be testing
     Ips  = basho_bench_config:get(swift_ips, ["127.0.0.1"]),
-    Port = basho_bench_config:get(swift_port, 8098),
-    Path = basho_bench_config:get(swift_path, "/riak/test"),
+    Port = basho_bench_config:get(swift_port, 8080),
+    Path = basho_bench_config:get(swift_path, "/v1/AUTH_system/testdemo"),
     Params = basho_bench_config:get(swift_params, ""),
 	CustomHeaders = basho_bench_config:get(swift_headers, ""),
     Disconnect = basho_bench_config:get(swift_disconnect_frequency, infinity),
@@ -97,41 +97,6 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
-run(update, KeyGen, ValueGen, State) ->
-    {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params), [State#state.custom_headers]) of
-        {error, Reason} ->
-            {error, Reason, S2};
-
-        {not_found, Url} ->
-            case do_put(Url, [], ValueGen) of
-                ok ->
-                    {ok, S2};
-                {error, Reason} ->
-                    {error, Reason, S2}
-            end;
-
-        {ok, Url} ->
-            case do_put(Url, [State#state.custom_headers], ValueGen) of
-                ok ->
-                    {ok, S2};
-                {error, Reason} ->
-                    {error, Reason, S2}
-            end
-    end;
-run(insert, KeyGen, ValueGen, State) ->
-    %% Go ahead and evaluate the keygen so that we can use the
-    %% sequential_int_gen to do a controlled # of inserts (if we desire). Note
-    %% that the actual insert randomly generates a key (server-side), so the
-    %% output of the keygen is ignored.
-    KeyGen(),
-    {NextUrl, S2} = next_url(State),
-    case do_post(url(NextUrl, State#state.path_params), [State#state.custom_headers], ValueGen) of
-        ok ->
-            {ok, S2};
-        {error, Reason} ->
-            {error, Reason, S2}
-    end;
 run(put, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     Url = url(NextUrl, KeyGen, State#state.path_params),
@@ -141,35 +106,17 @@ run(put, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
-run(delete, KeyGen, ValueGen, State) ->
+run(delete, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params), [State#state.custom_headers]) of
+    Url = url(NextUrl, KeyGen, State#state.path_params),
+    case do_delete(Url, [State#state.custom_headers]) of
+        ok ->
+            {ok, S2};
+		{not_found, _Url} ->
+            {ok, S2};
         {error, Reason} ->
-            {error, Reason, S2};
-
-        {not_found, Url} ->
-            case do_put(Url, [], ValueGen) of
-                ok ->
-                    {ok, S2};
-                {error, Reason} ->
-                    {error, Reason, S2}
-            end;
-
-        {ok, Url} ->
-            case do_delete(Url, [State#state.custom_headers]) of
-                ok ->
-                    {ok, S2};
-                {error, Reason} ->
-                    {error, Reason, S2}
-            end
+            {error, Reason, S2}
     end.
-%% run(mix, KeyGen, ValueGen, State) ->
-	%% Create a random number here
-	%% run(get, KeyGen, _ValueGen, State),
-	%% run(update, KeyGen, _ValueGen, State)
-	%% run(put, KeyGen, _ValueGen, State)
-	%% run(delete, KeyGen, _ValueGen, State)
-    %% end.
 
 %% ====================================================================
 %% Internal functions
@@ -184,8 +131,6 @@ next_url(State) ->
     { element(State#state.base_urls_index, State#state.base_urls),
       State#state { base_urls_index = State#state.base_urls_index + 1 }}.
 
-url(BaseUrl, Params) ->
-    BaseUrl#url { path = lists:concat([BaseUrl#url.path, Params]) }.
 url(BaseUrl, KeyGen, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
 
@@ -214,30 +159,18 @@ do_put(Url, CustomHeaders, ValueGen) ->
             {error, Reason}
     end.
 
-do_post(Url, CustomHeaders, ValueGen) ->
-    case send_request(Url, CustomHeaders ++ [{'Content-Type', 'application/octet-stream'}],
-                      post, ValueGen(), [{response_format, binary}]) of
-        {ok, "201", _Header, _Body} ->
-            ok;
-        {ok, "204", _Header, _Body} ->
-            ok;
-        {ok, Code, _Header, _Body} ->
-            {error, {http_error, Code}};
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
 do_delete(Url, CustomHeaders) ->
 	case send_request(Url, CustomHeaders,
                       delete, [], []) of
-        {ok, "201", _Header, _Body} ->
+        {ok, "204", _Header, _Body} ->
             ok;
+		{ok, "404", _Headers, _Body} ->
+            {not_found, Url};
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
             {error, Reason}
     end.
-
 
 connect(Url) ->
     case erlang:get({ibrowse_pid, Url#url.host}) of
@@ -254,7 +187,6 @@ connect(Url) ->
                     connect(Url)
             end
     end.
-
 
 disconnect(Url) ->
     case erlang:get({ibrowse_pid, Url#url.host}) of
@@ -333,7 +265,6 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
                     normalize_error(Method, Error)
             end
     end.
-
 
 should_retry({error, send_failed})       -> true;
 should_retry({error, connection_closed}) -> true;
