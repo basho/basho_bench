@@ -57,13 +57,13 @@ run(put, KeyGen, ValueGen, State) ->
 	{ok, State};
 
 run(get, KeyGen, _ValueGen, State) ->
+	Key = KeyGen(),
 	try
-		Key = KeyGen(),
 		erlcloud_s3:get_object(State#state.bucket, integer_to_list(Key)),
     	{ok, State}
 	catch _X:_Y ->
-%%        ?ERROR("Error on ~p: ~p ~p\n", [Key, _X, _Y]),
-		{ok, State}
+        ?ERROR("Error on ~p: ~p ~p\n", [Key, _X, _Y]),
+		{error, object_not_found, State}
 	end;
 
 run(delete, KeyGen, _ValueGen, State) ->
