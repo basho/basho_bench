@@ -1,5 +1,7 @@
 * basho_bench
 ** Overview
+   [[http://travis-ci.org/basho/basho_bench][Travis-CI]] :: [[https://secure.travis-ci.org/basho/basho_bench.png]]
+
    Basho Bench is a benchmarking tool created to conduct accurate and
    repeatable performance tests and stress tests, and produce
    performance graphs.
