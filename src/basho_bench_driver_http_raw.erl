@@ -64,7 +64,7 @@ new(Id) ->
 
     %% The IPs, port and path we'll be testing
     Ips  = basho_bench_config:get(http_raw_ips, ["127.0.0.1"]),
-    Port = basho_bench_config:get(http_raw_port, 8098),
+    DefaultPort = basho_bench_config:get(http_raw_port, 8098),
     Path = basho_bench_config:get(http_raw_path, "/riak/test"),
     Params = basho_bench_config:get(http_raw_params, ""),
     Disconnect = basho_bench_config:get(http_raw_disconnect_frequency, infinity),
@@ -91,18 +91,12 @@ new(Id) ->
     %% Uses pdict to avoid threading state record through lots of functions
     erlang:put(disconnect_freq, Disconnect),
 
-    %% If there are multiple URLs, convert the list to a tuple so we can efficiently
-    %% round-robin through them.
-    case length(Ips) of
-        1 ->
-            [Ip] = Ips,
-            BaseUrls = #url { host = Ip, port = Port, path = Path },
-            BaseUrlsIndex = 1;
-        _ ->
-            BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path }
-                                       || Ip <- Ips]),
-            BaseUrlsIndex = random:uniform(tuple_size(BaseUrls))
-    end,
+    %% Convert the list to a tuple so we can efficiently round-robin
+    %% through them.
+    Targets = basho_bench_config:normalize_ips(Ips, DefaultPort),
+    BaseUrls = list_to_tuple([#url{host=IP, port=Port, path=Path}
+                              || {IP, Port} <- Targets]),
+    BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
 
     {ok, #state { client_id = ClientId,
                   base_urls = BaseUrls,
@@ -225,7 +219,6 @@ run({search, {Qry, Expected}}, _, _, State) ->
     SolrPath = State#state.solr_path,
     Encoded = mochiweb_util:urlencode([{q, Qry}, {wt, "json"}, {fl, "id"}]),
     SearchUrl = search_url(NextUrl, SolrPath, Encoded),
-    %% ?INFO("URL: ~p~n", [SearchUrl]),
     Res = do_get(SearchUrl, [{body_on_success, true}]),
     case Res of
         {ok, _, _, Body} ->

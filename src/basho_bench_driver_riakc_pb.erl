@@ -74,7 +74,7 @@ new(Id) ->
     warn_bucket_mr_correctness(PreloadedKeys),
 
     %% Choose the target node using our ID as a modulus
-    Targets = expand_ips(Ips, Port),
+    Targets = basho_bench_config:normalize_ips(Ips, Port),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
@@ -223,15 +223,6 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-
-expand_ips(Ips, Port) ->
-    lists:foldl(fun({Ip,Ports}, Acc) when is_list(Ports) ->
-                        Acc ++ lists:map(fun(P) -> {Ip, P} end, Ports);
-                   (T={_,_}, Acc) ->
-                        [T|Acc];
-                   (Ip, Acc) ->
-                        [{Ip,Port}|Acc]
-                end, [], Ips).
 
 mapred(State, Input, Query) ->
     case riakc_pb_socket:mapred(State#state.pid, Input, Query) of
