@@ -33,7 +33,8 @@
                  base_urls_index,    % #url to use for next request
                  path_params,        % Params to append on the path
                  solr_path,          % SOLR path for searches
-                 searchgen }).       % Search generator
+                 searchgen,          % Search generator
+                 get_headers}).      % Headers for GET requests
 
 
 %% ====================================================================
@@ -62,6 +63,7 @@ new(Id) ->
     Params = basho_bench_config:get(http_raw_params, ""),
     Disconnect = basho_bench_config:get(http_raw_disconnect_frequency, infinity),
     SolrPath = basho_bench_config:get(http_solr_path, "/solr/test"),
+    GetHeaders = basho_bench_config:get(http_get_headers,[]),
     SearchGen = case basho_bench_config:get(http_search_generator, undefined) of
                     undefined ->
                         undefined;
@@ -97,6 +99,7 @@ new(Id) ->
                   base_urls_index = BaseUrlsIndex,
                   path_params = Params,
                   solr_path = SolrPath,
+                  get_headers = GetHeaders,
                   searchgen = SearchGen }}.
 
 run(stat, _, _, State) ->
@@ -108,9 +111,20 @@ run(stat, _, _, State) ->
             {error, Reason, S2}
     end;
 
+run(plain_get, KeyGen, _ValueGen, State) ->
+    KeyGen(),
+    {NextUrl, S2} = next_url(State),
+    case do_get(url(NextUrl, State#state.path_params), State#state.get_headers) of
+        {not_found, _Url} ->
+            {ok, S2};
+        {ok, _Url, _Headers} ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 run(get, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State#state.get_headers) of
         {not_found, _Url} ->
             {ok, S2};
         {ok, _Url, _Headers} ->
@@ -120,7 +134,7 @@ run(get, KeyGen, _ValueGen, State) ->
     end;
 run(get_existing, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State#state.get_headers) of
         {not_found, Url} ->
             {error, {not_found, Url}, S2};
         {ok, _Url, _Headers} ->
@@ -130,7 +144,7 @@ run(get_existing, KeyGen, _ValueGen, State) ->
     end;
 run(update, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State#state.get_headers) of
         {error, Reason} ->
             {error, Reason, S2};
 
@@ -153,7 +167,7 @@ run(update, KeyGen, ValueGen, State) ->
     end;
 run(update_existing, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State#state.get_headers) of
         {error, Reason} ->
             {error, Reason, S2};
 
@@ -199,7 +213,7 @@ run(search, _KeyGen, _ValueGen, State) ->
     %% Handle missing searchgen
     {NextUrl, S2} = next_url(State),
     SearchUrl = search_url(NextUrl, State#state.solr_path, State#state.searchgen),
-    SearchRes = do_get(SearchUrl),
+    SearchRes = do_get(SearchUrl, State#state.get_headers),
     case SearchRes of
         {ok, _Url, _Headers} ->
             {ok, S2};
@@ -253,8 +267,8 @@ do_stat(Url) ->
             {error, Reason}
     end.
 
-do_get(Url) ->
-    case send_request(Url, [], get, [], [{response_format, binary}]) of
+do_get(Url, ReqHeaders) ->
+    case send_request(Url, ReqHeaders, get, [], [{response_format, binary}]) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
         {ok, "300", Headers, _Body} ->
