@@ -67,8 +67,16 @@ dimension(_Other, _) ->
 %% ====================================================================
 
 init_source() ->
+    init_source(basho_bench_config:get(value_generator_blob_file, undefined)).
+
+init_source(undefined) ->
+    io:format("DEBUG: random source\n"),
     SourceSz = basho_bench_config:get(value_generator_source_size, 1048576),
-    {SourceSz, crypto:rand_bytes(SourceSz)}.
+    {SourceSz, crypto:rand_bytes(SourceSz)};
+init_source(Path) ->
+    {Path, {ok, Bin}} = {Path, file:read_file(Path)},
+    io:format("DEBUG: path source ~p ~p\n", [size(Bin), Path]),
+    {size(Bin), Bin}.
 
 data_block({SourceSz, Source}, BlockSize) ->
     case SourceSz - BlockSize > 0 of
