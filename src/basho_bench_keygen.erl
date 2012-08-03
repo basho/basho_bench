@@ -25,6 +25,7 @@
          dimension/1]).
 
 -include("basho_bench.hrl").
+-include_lib("kernel/include/file.hrl").
 
 %% Use a fixed shape for Pareto that will yield the desired 80/20
 %% ratio of generated values.
@@ -166,9 +167,23 @@ seq_gen_read_resume_value(Id) ->
 
 seq_gen_state_dir() ->
     Key = sequential_int_state_dir,
-    case basho_bench_config:get(Key, "") of
-        [$/|_] = Dir ->
+    DirValid = get(seq_dir_test_res),
+    case {basho_bench_config:get(Key, "") , DirValid} of
+        {_Dir, false} ->
+            "";
+        {[$/|_] = Dir, true} ->
             Dir;
+        {[$/|_] = Dir, undefined} ->
+            case filelib:ensure_dir(filename:join(Dir, "touch")) of
+                ok ->
+                    put(seq_dir_test_res, true),
+                    Dir;
+                MkDirErr ->
+                    ?WARN("Could not ensure ~p -> ~p was a writable dir: ~p", [Key, Dir, MkDirErr]),
+                    put(seq_dir_test_res, false),
+                    put(you_have_been_warned, true),
+                    ""
+            end;
         Else ->
             case get(you_have_been_warned) of
                 undefined ->
