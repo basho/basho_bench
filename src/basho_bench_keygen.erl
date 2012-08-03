@@ -25,7 +25,6 @@
          dimension/1]).
 
 -include("basho_bench.hrl").
--include_lib("kernel/include/file.hrl").
 
 %% Use a fixed shape for Pareto that will yield the desired 80/20
 %% ratio of generated values.
