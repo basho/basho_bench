@@ -107,8 +107,8 @@ run({query_http, N}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
     Port = State#state.http_port,
     Bucket = State#state.bucket,
-    StartKey = to_integer(KeyGen()),
-    EndKey = StartKey + N - 1,
+    StartKey = 10 * to_integer(KeyGen()),
+    EndKey = StartKey + 10 * N - 1,
     URL = io_lib:format("http://~s:~p/buckets/~s/index/field1_int/~p/~p", 
                     [Host, Port, Bucket, StartKey, EndKey]),
     case json_get(URL) of
@@ -258,7 +258,7 @@ run({query_mr2, N}, KeyGen, _ValueGen, State) ->
 run({query_pb, 1}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
-    Key = to_integer(KeyGen()),
+    Key = 10 * to_integer(KeyGen()),
     case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>, to_binary(Key)) of
         {ok, Results} when length(Results) == 1 ->
             {ok, State};
@@ -272,8 +272,8 @@ run({query_pb, 1}, KeyGen, _ValueGen, State) ->
 run({query_pb, N}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
-    StartKey = to_integer(KeyGen()),
-    EndKey = StartKey + N - 1,
+    StartKey = 10 * to_integer(KeyGen()),
+    EndKey = StartKey + 10 * N - 1,
     case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
                                    to_binary(StartKey), to_binary(EndKey)) of
         {ok, Results} when length(Results) == N ->
@@ -295,7 +295,7 @@ run(Other, _, _, _) ->
 
 generate_integer_indexes_for_key(Key, N) ->
     F = fun(X) ->
-                {"field" ++ to_list(X) ++ "_int", Key}
+                {"field" ++ to_list(X) ++ "_int", Key * 10}
         end,
     [F(X) || X <- lists:seq(1, N)].
 
