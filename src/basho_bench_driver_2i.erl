@@ -22,7 +22,9 @@
 -module(basho_bench_driver_2i).
 
 -export([new/1,
-         run/4]).
+         run/4,
+         generate_integer_indexes_for_key/2,
+         to_integer/1]).
 
 -include("basho_bench.hrl").
 
@@ -293,6 +295,8 @@ run(Other, _, _, _) ->
 %% Internal functions
 %% ====================================================================
 
+generate_integer_indexes_for_key(_Key, 0) ->
+    [];
 generate_integer_indexes_for_key(Key, N) ->
     F = fun(X) ->
                 {"field" ++ to_list(X) ++ "_int", Key}
