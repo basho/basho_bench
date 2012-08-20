@@ -31,9 +31,15 @@
 -record(state, { client_id,          % Tuple client ID for HTTP requests
                  base_urls,          % Tuple of #url -- one for each IP
                  base_urls_index,    % #url to use for next request
+                 files,              % List of files to put
                  path_params,        % Params to append on the path
                  solr_path,          % SOLR path for searches
                  searchgen }).       % Search generator
+
+
+-define(NOT_EXPECTED(Qry, Expected, Actual),
+        lists:flatten(io_lib:format("Query ~p expected ~p but got ~p",
+                                    [Qry, Expected, Actual]))).
 
 
 %% ====================================================================
@@ -52,12 +58,13 @@ new(Id) ->
     %% Setup client ID by base-64 encoding the ID
     ClientId = {'X-Riak-ClientId', base64:encode(<<Id:32/unsigned>>)},
     ?DEBUG("Client ID: ~p\n", [ClientId]),
+    ?INFO("CWD: ~p~n", [file:get_cwd()]),
 
     application:start(ibrowse),
 
     %% The IPs, port and path we'll be testing
     Ips  = basho_bench_config:get(http_raw_ips, ["127.0.0.1"]),
-    Port = basho_bench_config:get(http_raw_port, 8098),
+    DefaultPort = basho_bench_config:get(http_raw_port, 8098),
     Path = basho_bench_config:get(http_raw_path, "/riak/test"),
     Params = basho_bench_config:get(http_raw_params, ""),
     Disconnect = basho_bench_config:get(http_raw_disconnect_frequency, infinity),
@@ -68,6 +75,11 @@ new(Id) ->
                     V ->
                         searchgen(V, ClientId)
                 end,
+    FileDir = basho_bench_config:get(file_dir, undefined),
+    Files = case FileDir of
+                undefined -> undefined;
+                _ -> filelib:wildcard(FileDir ++ "/*")
+            end,
 
     case Disconnect of
         infinity -> ok;
@@ -79,22 +91,17 @@ new(Id) ->
     %% Uses pdict to avoid threading state record through lots of functions
     erlang:put(disconnect_freq, Disconnect),
 
-    %% If there are multiple URLs, convert the list to a tuple so we can efficiently
-    %% round-robin through them.
-    case length(Ips) of
-        1 ->
-            [Ip] = Ips,
-            BaseUrls = #url { host = Ip, port = Port, path = Path },
-            BaseUrlsIndex = 1;
-        _ ->
-            BaseUrls = list_to_tuple([ #url { host = Ip, port = Port, path = Path }
-                                       || Ip <- Ips]),
-            BaseUrlsIndex = random:uniform(tuple_size(BaseUrls))
-    end,
+    %% Convert the list to a tuple so we can efficiently round-robin
+    %% through them.
+    Targets = basho_bench_config:normalize_ips(Ips, DefaultPort),
+    BaseUrls = list_to_tuple([#url{host=IP, port=Port, path=Path}
+                              || {IP, Port} <- Targets]),
+    BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
 
     {ok, #state { client_id = ClientId,
                   base_urls = BaseUrls,
                   base_urls_index = BaseUrlsIndex,
+                  files = Files,
                   path_params = Params,
                   solr_path = SolrPath,
                   searchgen = SearchGen }}.
@@ -192,9 +199,44 @@ run(put, KeyGen, ValueGen, State) ->
             {error, Reason, S2}
     end;
 
+run(put_file, _, _, #state{files=[]}) ->
+    throw({stop, empty_keygen});
+
+run(put_file, _, _, State) ->
+    {NextUrl, S2} = next_url(State),
+    [File|RemainingFiles] = State#state.files,
+    S3 = S2#state{files=RemainingFiles},
+    Key = filename:basename(File),
+    {ok, Val} = file:read_file(File),
+    Url = url(NextUrl, Key, State#state.path_params),
+    case do_put(Url, [State#state.client_id], Val) of
+        ok -> {ok, S3};
+        {error, Reason} -> {error, Reason, S3}
+    end;
+
+run({search, {Qry, Expected}}, _, _, State) ->
+    {NextUrl, S2} = next_url(State),
+    SolrPath = State#state.solr_path,
+    Encoded = mochiweb_util:urlencode([{q, Qry}, {wt, "json"}, {fl, "id"}]),
+    SearchUrl = search_url(NextUrl, SolrPath, Encoded),
+    Res = do_get(SearchUrl, [{body_on_success, true}]),
+    case Res of
+        {ok, _, _, Body} ->
+            Struct = mochijson2:decode(Body),
+            case check_numfound(Struct, Expected) of
+                true ->
+                    {ok, S2};
+                {false, Actual} ->
+                    {error, ?NOT_EXPECTED(Qry, Expected, Actual), S2}
+            end;
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
+
 run(search, _KeyGen, _ValueGen, State) when State#state.searchgen == undefined ->
     {_NextUrl, S2} = next_url(State),
     {error, {badarg, "http_search_generator needed for search operation"}, S2};
+
 run(search, _KeyGen, _ValueGen, State) ->
     %% Handle missing searchgen
     {NextUrl, S2} = next_url(State),
@@ -206,6 +248,7 @@ run(search, _KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end.
+
 
 %% ====================================================================
 %% Search Generator API
@@ -223,6 +266,24 @@ searchgen({function, Module, Function, Args}, Id) ->
 %% Internal functions
 %% ====================================================================
 
+check_numfound(Struct, Expected) ->
+    NumFound = get_path(Struct, [<<"response">>, <<"numFound">>]),
+    if Expected == NumFound ->
+            true;
+       true ->
+            {false, NumFound}
+    end.
+
+get_path({struct, PL}, Path) ->
+    get_path(PL, Path);
+get_path(PL, [Name]) ->
+    case proplists:get_value(Name, PL) of
+        {struct, Obj} -> Obj;
+        Val -> Val
+    end;
+get_path(PL, [Name|Path]) ->
+    get_path(proplists:get_value(Name, PL), Path).
+
 next_url(State) when is_record(State#state.base_urls, url) ->
     {State#state.base_urls, State};
 next_url(State) when State#state.base_urls_index > tuple_size(State#state.base_urls) ->
@@ -234,11 +295,18 @@ next_url(State) ->
 
 url(BaseUrl, Params) ->
     BaseUrl#url { path = lists:concat([BaseUrl#url.path, Params]) }.
-url(BaseUrl, KeyGen, Params) ->
-    BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) }.
+url(BaseUrl, KeyGen, Params) when is_function(KeyGen) ->
+    BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', KeyGen(), Params]) };
+url(BaseUrl, Key, Params) ->
+    BaseUrl#url { path = lists:concat([BaseUrl#url.path, '/', Key, Params]) }.
 
 search_url(BaseUrl, SolrPath, SearchGen) ->
-    BaseUrl#url { path = lists:concat([SolrPath, '/select?', SearchGen()]) }.
+    Params = if is_function(SearchGen) ->
+                     SearchGen();
+                true ->
+                     SearchGen
+             end,
+    BaseUrl#url { path = lists:concat([SolrPath, '/select?', Params]) }.
 
 stat_url(BaseUrl) ->
     BaseUrl#url{path="/stats"}.
@@ -254,13 +322,19 @@ do_stat(Url) ->
     end.
 
 do_get(Url) ->
+    do_get(Url, []).
+
+do_get(Url, Opts) ->
     case send_request(Url, [], get, [], [{response_format, binary}]) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
         {ok, "300", Headers, _Body} ->
             {ok, Url, Headers};
-        {ok, "200", Headers, _Body} ->
-            {ok, Url, Headers};
+        {ok, "200", Headers, Body} ->
+            case proplists:get_bool(body_on_success, Opts) of
+                true -> {ok, Url, Headers, Body};
+                false -> {ok, Url, Headers}
+            end;
         {ok, Code, _Headers, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
@@ -268,8 +342,13 @@ do_get(Url) ->
     end.
 
 do_put(Url, Headers, ValueGen) ->
+    Val = if is_function(ValueGen) ->
+                  ValueGen();
+             true ->
+                  ValueGen
+          end,
     case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      put, ValueGen(), [{response_format, binary}]) of
+                      put, Val, [{response_format, binary}]) of
         {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
