@@ -87,7 +87,7 @@ new(Id) ->
     end.
 
 run(get, KeyGen, _ValueGen, State) ->
-    Key = KeyGen(),
+    Key = to_binary(KeyGen()),
     case (State#state.client):get(State#state.bucket, Key, State#state.replies) of
         {ok, _} ->
             {ok, State};
@@ -106,7 +106,7 @@ run(put, KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 run(update, KeyGen, ValueGen, State) ->
-    Key = KeyGen(),
+    Key = to_binary(KeyGen()),
     case (State#state.client):get(State#state.bucket, Key, State#state.replies) of
         {ok, Robj} ->
             RObj1 = riak_object:update_value(Robj, ValueGen()),
@@ -128,7 +128,7 @@ run(update, KeyGen, ValueGen, State) ->
             end
     end;
 run(delete, KeyGen, _ValueGen, State) ->
-    case (State#state.client):delete(State#state.bucket, KeyGen(), State#state.replies) of
+    case (State#state.client):delete(State#state.bucket, to_binary(KeyGen()), State#state.replies) of
         ok ->
             {ok, State};
         {error, notfound} ->
@@ -145,6 +145,9 @@ run({query_2i, N}, KeyGen, _ValueGen, #state{client=Client,bucket=Bucket}=State)
         {ok, KL} ->
             io:format("Not enough results for query_2i == ~p :: ~p~n", [Query, KL]),
             {ok, State};
+        {error, Reason, _} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
@@ -161,9 +164,12 @@ add_indexes(RObj, Count) ->
     riak_object:update_metadata(RObj, dict:from_list([{<<"index">>, Indexes}])).
 
 create_query(Key, 1) ->
-    {eq, <<"field1_int">>, Key};
-create_query(Key, N) ->
-    {range, <<"field1_int">>, Key, Key + N - 1}.
+    create_query(<<"field1_int">>, [Key]);
+create_query(Key, N) when is_integer(N) ->
+    create_query(<<"field1_int">>, [Key, Key + N - 1]);
+create_query(Field, Args) when is_list(Args) ->
+    {ok, Query} = riak_index:to_index_query(Field, Args),
+    Query.
 
 ping_each([]) ->
     ok;
