@@ -24,7 +24,9 @@
 -export([new/1,
          run/4,
          generate_integer_indexes_for_key/2,
-         to_integer/1]).
+         to_integer/1,
+         to_binary/1,
+         to_list/1]).
 
 -include("basho_bench.hrl").
 
@@ -112,7 +114,7 @@ run({query_http, N}, KeyGen, _ValueGen, State) ->
     StartKey = to_integer(KeyGen()),
     EndKey = StartKey + N - 1,
     URL = io_lib:format("http://~s:~p/buckets/~s/index/field1_int/~p/~p", 
-                    [Host, Port, Bucket, StartKey, EndKey]),
+                        [Host, Port, Bucket, StartKey, EndKey]),
     case json_get(URL) of
         {ok, {struct, Proplist}} ->
             case proplists:get_value(<<"keys">>, Proplist) of
@@ -136,12 +138,12 @@ run({query_mr, 1}, KeyGen, _ValueGen, State) ->
     URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
     Body = ["
       {
-         \"inputs\":{
+                                              \"inputs\":{
              \"bucket\":\"", to_list(Bucket), "\",
              \"index\":\"field1_int\",
              \"key\":\"", to_list(Key), "\"
          },
-         \"query\":[
+            \"query\":[
             {
                \"reduce\":{
                   \"language\":\"erlang\",
