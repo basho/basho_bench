@@ -42,9 +42,6 @@
                  summary_file,
                  errors_file}).
 
-%% Tracks latencies up to 5 secs w/ 250 us resolution
--define(NEW_HIST, basho_stats_histogram:new(0, 5000000, 20000)).
-
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -55,6 +52,13 @@ start_link() ->
 run() ->
     gen_server:call(?MODULE, run).
 
+op_complete(Op, ok, ElapsedUs) ->
+    op_complete(Op, {ok, 1}, ElapsedUs);
+op_complete(Op, {ok, Units}, ElapsedUs) ->
+    %% Update the histogram and units counter for the op in question
+    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+    folsom_metrics:notify({units, Op}, {inc, Units}),
+    ok;
 op_complete(Op, Result, ElapsedUs) ->
     gen_server:call(?MODULE, {op, Op, Result, ElapsedUs}).
 
@@ -66,6 +70,9 @@ init([]) ->
     %% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
 
+    %% Spin up folsom
+    folsom:start(),
+
     %% Initialize an ETS table to track error and crash counters during
     %% reporting interval
     ets:new(basho_bench_errors, [protected, named_table]),
@@ -73,9 +80,6 @@ init([]) ->
     %% Initialize an ETS table to track error and crash counters since
     %% the start of the run
     ets:new(basho_bench_total_errors, [protected, named_table]),
-
-    %% Initialize an ETS table to track custom units
-    ets:new(basho_bench_units, [protected, named_table]),
 
     %% Get the list of operations we'll be using for this test
     F1 =
@@ -91,12 +95,12 @@ init([]) ->
         end,
     Measurements = [F2(X) || X <- basho_bench_config:get(measurements, [])],
 
-    %% Setup stats instance for each operation -- we only track latencies on
+    %% Setup a histogram and counter for each operation -- we only track latencies on
     %% successful operations
-    %%
-    %% NOTE: Store the histograms in the process dictionary to avoid painful
-    %%       copying on state updates.
-    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- Ops ++ Measurements],
+    [fun() ->
+             folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
+             folsom_metrics:new_counter({units, Op})
+     end() || Op <- Ops ++ Measurements],
 
     %% Setup output file handles for dumping periodic CSV of histogram results.
     [erlang:put({csv_file, X}, op_csv_file(X)) || X <- Ops],
@@ -126,15 +130,6 @@ handle_call(run, _From, State) ->
     Now = now(),
     erlang:send_after(State#state.report_interval, self(), report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
-
-handle_call({op, Op, ok, ElapsedUs}, From, State) ->
-    handle_call({op, Op, {ok, 1}, ElapsedUs}, From, State);
-handle_call({op, Op, {ok, Units}, ElapsedUs}, _From, State) ->
-    %% Update the histogram for the op in question
-    Hist = basho_stats_histogram:update(ElapsedUs, erlang:get({latencies, Op})),
-    erlang:put({latencies, Op}, Hist),
-    ets_increment(basho_bench_units, Op, Units),
-    {reply, ok, State};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
@@ -232,9 +227,6 @@ ets_increment(Tab, Key, Incr) when is_float(Incr) ->
 error_counter(Key) ->
     lookup_or_zero(basho_bench_errors, Key).
 
-units_counter(Key) ->
-    lookup_or_zero(basho_bench_units, Key).
-
 lookup_or_zero(Tab, Key) ->
     case catch(ets:lookup_element(Tab, Key, 2)) of
         {'EXIT', _} ->
@@ -243,7 +235,7 @@ lookup_or_zero(Tab, Key) ->
             Value
     end.
 
-        
+
 process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
@@ -257,10 +249,8 @@ process_stats(Now, State) ->
                                         {TotalOks + Oks, TotalErrors + Errors}
                                 end, {0,0}, State#state.ops),
 
-    %% Reset latency histograms
-    [erlang:put({latencies, Op}, ?NEW_HIST) || Op <- State#state.ops],
     %% Reset units
-    [ets:insert(basho_bench_units, {Op, 0}) || Op <- State#state.ops],
+    [folsom_metrics_counter:clear({units, Op}) || Op <- State#state.ops],
 
     %% Write summary
     file:write(State#state.summary_file,
@@ -289,23 +279,23 @@ process_stats(Now, State) ->
 %% number of successful and failed ops in this window of time.
 %%
 report_latency(Elapsed, Window, Op) ->
-    Hist = erlang:get({latencies, Op}),
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
-    Units = units_counter(Op),
-    case basho_stats_histogram:observations(Hist) > 0 of
+    Units = folsom_metrics:get_metric_value({units, Op}),
+    case proplists:get_value(n, Stats) > 0 of
         true ->
-            {Min, Mean, Max, _, _} = basho_stats_histogram:summary_stats(Hist),
-            Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~.1f, ~.1f, ~.1f, ~.1f, ~w, ~w\n",
+            P = proplists:get_value(percentile, Stats),
+            Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~w, ~w, ~w, ~w, ~w, ~w\n",
                                  [Elapsed,
                                   Window,
                                   Units,
-                                  Min,
-                                  Mean,
-                                  basho_stats_histogram:quantile(0.500, Hist),
-                                  basho_stats_histogram:quantile(0.950, Hist),
-                                  basho_stats_histogram:quantile(0.990, Hist),
-                                  basho_stats_histogram:quantile(0.999, Hist),
-                                  Max,
+                                  proplists:get_value(min, Stats),
+                                  proplists:get_value(arithmetic_mean, Stats),
+                                  proplists:get_value(median, Stats),
+                                  proplists:get_value(95, P),
+                                  proplists:get_value(99, P),
+                                  proplists:get_value(999, P),
+                                  proplists:get_value(max, Stats),
                                   Errors]);
         false ->
             ?WARN("No data for op: ~p\n", [Op]),
