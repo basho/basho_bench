@@ -97,10 +97,10 @@ init([]) ->
 
     %% Setup a histogram and counter for each operation -- we only track latencies on
     %% successful operations
-    [fun() ->
-             folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
-             folsom_metrics:new_counter({units, Op})
-     end() || Op <- Ops ++ Measurements],
+    [begin
+         folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
+         folsom_metrics:new_counter({units, Op})
+     end || Op <- Ops ++ Measurements],
 
     %% Setup output file handles for dumping periodic CSV of histogram results.
     [erlang:put({csv_file, X}, op_csv_file(X)) || X <- Ops],
