@@ -40,6 +40,32 @@ main(Configs) ->
     %% Load the config files
     basho_bench_config:load(Configs),
 
+    %% Setup working directory for this test. All logs, stats, and config
+    %% info will be placed here
+    %% Define these dirs before Lager starts
+    {ok, Cwd} = file:get_cwd(),
+    TestId = id(),
+    TestDir = filename:join([Cwd, basho_bench_config:get(test_dir), TestId]),
+    TestLogDir = filename:join([TestDir, "log"]),
+    ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
+
+    basho_bench_config:set(test_id, TestId),
+
+    %% Start Lager
+    application:load(lager),
+
+    %% Fileoutput
+    ConsoleLagerLevel = basho_bench_config:get(lager_level, debug),
+    filelib:ensure_dir(TestLogDir),
+    ErrorLog = filename:join([TestLogDir, "error.log"]),
+    ConsoleLog = filename:join([TestLogDir, "console.log"]),
+    application:set_env(lager, handlers,
+                        [{lager_console_backend, ConsoleLagerLevel},
+                         {lager_file_backend,
+                          [ {ErrorLog, error, 10485760, "$D0", 5},
+                            {ConsoleLog, debug, 10485760, "$D0", 5} ]} ]),
+    lager:start(),
+
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
 
@@ -51,14 +77,6 @@ main(Configs) ->
         SourceDir ->
             load_source_files(SourceDir)
     end,
-
-    %% Setup working directory for this test. All logs, stats, and config
-    %% info will be placed here
-    {ok, Cwd} = file:get_cwd(),
-    TestId = id(),
-    TestDir = filename:join([Cwd, basho_bench_config:get(test_dir), TestId]),
-    ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
-    basho_bench_config:set(test_id, TestId),
 
     %% Create a link to the test dir for convenience
     TestLink = filename:join([Cwd, basho_bench_config:get(test_dir), "current"]),
