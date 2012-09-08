@@ -129,7 +129,7 @@ handle_cast(run, State) ->
     State#state.worker_pid ! run,
     {noreply, State}.
 
-handle_info({'EXIT', _Pid, Reason}, State) ->
+handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
         normal ->
             %% Clean shutdown of the worker; spawn a process to terminate this
@@ -138,6 +138,7 @@ handle_info({'EXIT', _Pid, Reason}, State) ->
             {noreply, State};
 
         _ ->
+            ?ERROR("Worker ~p exited with ~p~n", [Pid, Reason]),
             %% Worker process exited for some other reason; stop this process
             %% as well so that everything gets restarted by the sup
             {stop, normal, State}
@@ -293,7 +294,7 @@ max_worker_run_loop(State) ->
 rate_worker_run_loop(State, Lambda) ->
     %% Delay between runs using exponentially distributed delays to mimic
     %% queue.
-    timer:sleep(trunc(basho_stats_rv:exponential(Lambda))),
+    timer:sleep(trunc(basho_bench_stats:exponential(Lambda))),
     case worker_next_op(State) of
         {ok, State2} ->
             case needs_shutdown(State2) of

@@ -40,7 +40,7 @@ new({fixed_char, Size}, _Id) ->
     fun() -> list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,Size))) end;
 new({exponential_bin, MinSize, Mean}, _Id) ->
     Source = init_source(),
-    fun() -> data_block(Source, MinSize + trunc(basho_stats_rv:exponential(1 / Mean))) end;
+    fun() -> data_block(Source, MinSize + trunc(basho_bench_stats:exponential(1 / Mean))) end;
 new({uniform_bin, MinSize, MaxSize}, _Id) ->
     Source = init_source(),
     Diff = MaxSize - MinSize,
