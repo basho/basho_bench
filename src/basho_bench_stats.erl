@@ -25,6 +25,7 @@
 
 %% API
 -export([start_link/0,
+         exponential/1,
          run/0,
          op_complete/3]).
 
@@ -48,6 +49,9 @@
 
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+exponential(Lambda) ->
+    -math:log(random:uniform()) / Lambda.
 
 run() ->
     gen_server:call(?MODULE, run).
