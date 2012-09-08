@@ -129,7 +129,7 @@ handle_cast(run, State) ->
     State#state.worker_pid ! run,
     {noreply, State}.
 
-handle_info({'EXIT', _Pid, Reason}, State) ->
+handle_info({'EXIT', Pid, Reason}, State) ->
     case Reason of
         normal ->
             %% Clean shutdown of the worker; spawn a process to terminate this
@@ -138,6 +138,7 @@ handle_info({'EXIT', _Pid, Reason}, State) ->
             {noreply, State};
 
         _ ->
+            ?ERROR("Worker ~p exited with ~p~n", [Pid, Reason]),
             %% Worker process exited for some other reason; stop this process
             %% as well so that everything gets restarted by the sup
             {stop, normal, State}
