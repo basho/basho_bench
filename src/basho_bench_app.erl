@@ -39,7 +39,7 @@
 start() ->
     %% Redirect all SASL logging into a text file
     application:load(sasl),
-    application:set_env(sasl, sasl_error_logger, {file, "log.sasl.txt"}),
+    application:set_env(sasl, sasl_error_logger, false),
     ok = application:start(sasl),
 
     %% Make sure crypto is available
