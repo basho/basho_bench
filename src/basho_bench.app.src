@@ -5,6 +5,7 @@
   {registered, [ basho_bench_sup ]},
   {applications, [kernel,
                   stdlib,
+                  lager,
                   sasl]},
   {mod, {basho_bench_app, []}},
   {env, [
