@@ -46,7 +46,6 @@ main(Configs) ->
     {ok, Cwd} = file:get_cwd(),
     TestId = id(),
     TestDir = filename:join([Cwd, basho_bench_config:get(test_dir), TestId]),
-    TestLogDir = filename:join([TestDir, "log"]),
     ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
 
     basho_bench_config:set(test_id, TestId),
@@ -56,14 +55,18 @@ main(Configs) ->
 
     %% Fileoutput
     ConsoleLagerLevel = basho_bench_config:get(lager_level, debug),
-    filelib:ensure_dir(TestLogDir),
-    ErrorLog = filename:join([TestLogDir, "error.log"]),
-    ConsoleLog = filename:join([TestLogDir, "console.log"]),
-    application:set_env(lager, handlers,
+    filelib:ensure_dir(TestDir),
+    ErrorLog = filename:join([TestDir, "error.log"]),
+    ConsoleLog = filename:join([TestDir, "console.log"]),
+    CrashLog = filename:join([TestDir, "crash.log"]),
+    application:set_env(lager,
+                        handlers,
                         [{lager_console_backend, ConsoleLagerLevel},
                          {lager_file_backend,
                           [ {ErrorLog, error, 10485760, "$D0", 5},
                             {ConsoleLog, debug, 10485760, "$D0", 5} ]} ]),
+    application:set_env(lager, crash_log, CrashLog),
+
     lager:start(),
 
     %% Init code path
