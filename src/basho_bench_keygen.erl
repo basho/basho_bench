@@ -43,6 +43,15 @@ new({int_to_str, InputGen}, Id) ->
 new({to_binstr, FmtStr, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> list_to_binary(io_lib:format(FmtStr, [Gen()])) end;
+new({base64, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> base64:encode(Gen()) end;
+new({concat_binary, OneGen, TwoGen}, Id) ->
+    Gen1 = new(OneGen, Id),
+    Gen2 = new(TwoGen, Id),
+    fun() ->
+            <<(Gen1())/binary, (Gen2())/binary>>
+    end;
 new({sequential_int, MaxKey}, Id) ->
     Ref = make_ref(),
     fun() -> sequential_int_generator(Ref, MaxKey, Id) end;
@@ -72,17 +81,31 @@ new({function, Module, Function, Args}, Id) ->
         _Error ->
             ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
     end;
+new(Bin, _Id) when is_binary(Bin) ->
+    fun() -> Bin end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
-dimension({Converter, InputGen}) when Converter == int_to_str orelse Converter == int_to_bin ->
+dimension({int_to_str, InputGen}) ->
     dimension(InputGen);
+dimension({int_to_bin, InputGen}) ->
+    dimension(InputGen);
+dimension({to_binstr, _FmtStr, InputGen}) ->
+    dimension(InputGen);
+dimension({base64, InputGen}) ->
+    dimension(InputGen);
+dimension({concat_binary, OneGen, TwoGen}) ->
+    erlang:min(dimension(OneGen), dimension(TwoGen));
 dimension({sequential_int, MaxKey}) ->
     MaxKey;
 dimension({partitioned_sequential_int, MaxKey}) ->
     MaxKey;
 dimension({uniform_int, MaxKey}) ->
     MaxKey;
+dimension({truncated_pareto_int, MaxKey}) ->
+    MaxKey;
+dimension(Bin) when is_binary(Bin) ->
+    undefined;
 dimension(Other) ->
     ?INFO("No dimension available for key generator: ~p\n", [Other]),
     undefined.
