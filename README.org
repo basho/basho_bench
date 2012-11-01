@@ -65,7 +65,7 @@ $ open tests/current/summary.png
    your benchmark. It is also straightforward -- with less than 200
    lines of Erlang code -- to create custom drivers that can exercise
    other systems or perform custom operations. These are covered more
-   in detail on the [[http://docs.basho.com/riak/latest/cookbooks/Benchmarking/][Basho documentation]].
+   in detail in the [[http://docs.basho.com/riak/latest/cookbooks/Benchmarking/][documentation]].
 
 ** Benchmarking with riak-java-client
    The [[https://github.com/basho/riak-java-client][riak-java-client]] can be used to benchmark a Riak cluster. There
