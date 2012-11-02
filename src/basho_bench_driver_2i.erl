@@ -30,7 +30,8 @@
           pb_pid,
           http_host,
           http_port,
-          bucket
+          bucket,
+          max_key
          }).
 
 
@@ -47,23 +48,35 @@ new(Id) ->
     ensure_module(mochijson2),
 
     %% Read config settings...
-    PBIPs  = basho_bench_config:get(pb_ips, [{127,0,0,1}]),
+    PBIPs  = basho_bench_config:get(pb_ips, ["127.0.0.1"]),
     PBPort  = basho_bench_config:get(pb_port, 8087),
-    HTTPHosts = basho_bench_config:get(http_hosts, ["127.0.0.1"]),
+    HTTPIPs = basho_bench_config:get(http_ips, ["127.0.0.1"]),
     HTTPPort =  basho_bench_config:get(http_port, 8098),
-    Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"mybucket">>),
 
-    PBIP = choose(Id, PBIPs),
-    case riakc_pb_socket:start_link(PBIP, PBPort) of
+    Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"mybucket">>),
+    MaxKey  = basho_bench_config:get(enforce_keyrange, undefined),
+
+    %% Choose the target node using our ID as a modulus
+    HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
+    {HTTPTargetIp, HTTPTargetPort} = lists:nth((Id rem length(HTTPTargets)+1), HTTPTargets),
+    ?INFO("Using http target ~p:~p for worker ~p\n", [HTTPTargetIp, HTTPTargetPort, Id]),
+
+
+    %% Choose the target node using our ID as a modulus
+    PBTargets = basho_bench_config:normalize_ips(PBIPs, PBPort),
+    {PBTargetIp, PBTargetPort} = lists:nth((Id rem length(PBTargets)+1), PBTargets),
+    ?INFO("Using pb target ~p:~p for worker ~p\n", [PBTargetIp, PBTargetPort, Id]),
+    case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
             {ok, #state {
                pb_pid = Pid,
-               http_host = choose(Id, HTTPHosts),
-               http_port = HTTPPort,
-               bucket = Bucket }};
+               http_host = HTTPTargetIp,
+               http_port = HTTPTargetPort,
+               bucket = Bucket,
+               max_key = MaxKey }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
-                      [PBIP, PBPort, Reason2])
+                      [PBTargetIp, PBTargetPort, Reason2])
     end.
 
 %% Get a single object.
@@ -103,22 +116,28 @@ run({put_pb, N}, KeyGen, ValueGen, State) ->
     end;
 
 %% Query results via the HTTP interface.
-run({query_http, N}, KeyGen, _ValueGen, State) ->
+run({query_http, MaxN}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
     Port = State#state.http_port,
     Bucket = State#state.bucket,
-    StartKey = to_integer(KeyGen()),
-    EndKey = StartKey + N - 1,
+    {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
     URL = io_lib:format("http://~s:~p/buckets/~s/index/field1_int/~p/~p", 
                     [Host, Port, Bucket, StartKey, EndKey]),
+
     case json_get(URL) of
         {ok, {struct, Proplist}} ->
-            case proplists:get_value(<<"keys">>, Proplist) of
-                Results when length(Results) == N ->
+            case {proplists:get_value(<<"keys">>, Proplist), MaxKey} of
+                {Results, _} when length(Results) == N ->
                     {ok, State};
-                Results ->
+                {Results, undefined} ->
                     io:format("Not enough results for query_http: ~p/~p/~p~n", [StartKey, EndKey, Results]),
-                    {ok, State}
+                    {ok, State};
+                {Results, _} ->
+                    %% MaxKey was set, so we're assuming sequential_int from 0-MaxKey, so all values should be there.
+                    {error, 
+                     binary_to_list(iolist_to_binary(
+                        io_lib:format("Not enough results for query_http: ~p/~p/~p~n", [StartKey, EndKey, Results]))), 
+                     State}
             end;
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
@@ -161,12 +180,11 @@ run({query_mr, 1}, KeyGen, _ValueGen, State) ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-run({query_mr, N}, KeyGen, _ValueGen, State) ->
+run({query_mr, MaxN}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
     Port = State#state.http_port,
     Bucket = State#state.bucket,
-    StartKey = to_integer(KeyGen()),
-    EndKey = StartKey + N - 1,
+    {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
     URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
     Body = ["
       {
@@ -188,12 +206,17 @@ run({query_mr, N}, KeyGen, _ValueGen, State) ->
          ]
       }
     "],
-    case json_post(URL, Body) of
-        {ok, Results} when length(Results) == N ->
+    case {json_post(URL, Body), MaxKey} of
+        {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
-        {ok, Results} ->
+        {{ok, Results}, undefined} ->
             io:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]),
             {ok, State};
+        {{ok, Results}, _} ->
+            {error, 
+             binary_to_list(iolist_to_binary(
+                io_lib:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]))),
+             State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
@@ -225,12 +248,11 @@ run({query_mr2, 1}, KeyGen, _ValueGen, State) ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-run({query_mr2, N}, KeyGen, _ValueGen, State) ->
+run({query_mr2, MaxN}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
     Port = State#state.http_port,
     Bucket = State#state.bucket,
-    StartKey = to_integer(KeyGen()),
-    EndKey = StartKey + N - 1,
+    {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
     URL = io_lib:format("http://~s:~p/mapred", [Host, Port]),
     Body = ["
       {
@@ -243,12 +265,17 @@ run({query_mr2, N}, KeyGen, _ValueGen, State) ->
          \"query\":[]
       }
     "],
-    case json_post(URL, Body) of
-        {ok, Results} when length(Results) == N ->
+    case {json_post(URL, Body), MaxKey} of
+        {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
-        {ok, Results} ->
+        {{ok, Results}, undefined} ->
             io:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]),
             {ok, State};
+        {{ok, Results}, _} ->
+            {error,
+             binary_to_list(iolist_to_binary(
+                io_lib:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]))),
+             State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
@@ -269,18 +296,22 @@ run({query_pb, 1}, KeyGen, _ValueGen, State) ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
-run({query_pb, N}, KeyGen, _ValueGen, State) ->
+run({query_pb, MaxN}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
-    StartKey = to_integer(KeyGen()),
-    EndKey = StartKey + N - 1,
-    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
-                                   to_binary(StartKey), to_binary(EndKey)) of
-        {ok, Results} when length(Results) == N ->
+    {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
+    case {riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
+                                   to_binary(StartKey), to_binary(EndKey)), MaxKey} of
+        {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
-        {ok, Results} ->
+        {{ok, Results}, undefined} ->
             io:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]),
             {ok, State};
+        {{ok, Results}, _} ->
+            {ok,
+             binary_to_list(iolist_to_binary(
+                io_lib:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]))),
+             State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
@@ -350,3 +381,13 @@ ensure_module(Module) ->
         _ ->
             ok
     end.
+
+expected_n(StartKey, undefined, N) ->
+    {StartKey, StartKey + N - 1, undefined, N};
+expected_n(StartKey, MaxKey, N) ->
+    EndKey = StartKey + N - 1,
+    NewN = case EndKey > MaxKey of
+        true -> MaxKey - StartKey + 1;
+        _ -> N
+    end,
+    {StartKey, EndKey, MaxKey, NewN}.
