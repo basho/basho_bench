@@ -29,7 +29,7 @@ STATS_KINDS="99th,mean"
 TERMINAL_COMMAND=
 PLOT_STYLE="linespoints pointsize 2 linewidth 1"
 PRE_COMMAD=
-EXEC_COMMAND="gnuplot -p"
+EXEC_COMMAND="gnuplot -persist"
 
 while getopts ":d:o:k:t:s:p:Ph" opt; do
     case $opt in

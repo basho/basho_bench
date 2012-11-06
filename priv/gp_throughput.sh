@@ -25,7 +25,7 @@ SUMMARY_KINDS="total,failed"
 TERMINAL_COMMAND=
 PLOT_STYLE="linespoints pointsize 2 linewidth 1"
 PRE_COMMAD=
-EXEC_COMMAND="gnuplot -p"
+EXEC_COMMAND="gnuplot -persist"
 
 while getopts ":d:k:t:s:p:Ph" opt; do
     case $opt in
