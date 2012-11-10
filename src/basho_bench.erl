@@ -2,7 +2,7 @@
 %%
 %% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009-2010 Basho Techonologies
+%% Copyright (c) 2009-2012 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -29,33 +29,25 @@
 %% API
 %% ====================================================================
 
-main([]) ->
-    io:format("Usage: basho_bench CONFIG_FILE ..~n");
+cli_options() ->
+    [
+     {help, $h, "help", undefined, "Print usage"},
+     {results_dir, $d, "results-dir", string, "Base directory to store test results, defaults to ./tests"},
+     {bench_name, $n, "bench-name", string, "Name to identify the run, defaults to timestamp"}
+    ].
 
-main(Configs) ->
-    %% Load baseline configs
+main(Args) ->
+    {Opts, Configs} = check_args(getopt:parse(cli_options(), Args)),
+    ok = maybe_show_usage(Opts),
+    BenchName = bench_name(Opts),
+    TestDir = test_dir(Opts, BenchName),
+
     ok = application:load(basho_bench),
     register(basho_bench, self()),
+    basho_bench_config:set(test_id, BenchName),
 
-    %% Load the config files
-    basho_bench_config:load(Configs),
-
-    %% Setup working directory for this test. All logs, stats, and config
-    %% info will be placed here
-    %% Define these dirs before Lager starts
-    {ok, Cwd} = file:get_cwd(),
-    TestId = id(),
-    TestDir = filename:join([Cwd, basho_bench_config:get(test_dir), TestId]),
-    ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
-
-    basho_bench_config:set(test_id, TestId),
-
-    %% Start Lager
     application:load(lager),
-
-    %% Fileoutput
     ConsoleLagerLevel = basho_bench_config:get(lager_level, debug),
-    filelib:ensure_dir(TestDir),
     ErrorLog = filename:join([TestDir, "error.log"]),
     ConsoleLog = filename:join([TestDir, "console.log"]),
     CrashLog = filename:join([TestDir, "crash.log"]),
@@ -66,8 +58,11 @@ main(Configs) ->
                           [ {ErrorLog, error, 10485760, "$D0", 5},
                             {ConsoleLog, debug, 10485760, "$D0", 5} ]} ]),
     application:set_env(lager, crash_log, CrashLog),
-
     lager:start(),
+
+    %% Make sure this happens after starting lager or failures wont
+    %% show.
+    basho_bench_config:load(Configs),
 
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
@@ -80,10 +75,6 @@ main(Configs) ->
         SourceDir ->
             load_source_files(SourceDir)
     end,
-
-    %% Create a link to the test dir for convenience
-    TestLink = filename:join([Cwd, basho_bench_config:get(test_dir), "current"]),
-    [] = os:cmd(?FMT("rm -f ~s; ln -sf ~s ~s", [TestLink, TestDir, TestLink])),
 
     %% Copy the config into the test dir for posterity
     [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
@@ -104,12 +95,48 @@ main(Configs) ->
     wait_for_stop(Mref, DurationMins).
 
 
-
-
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+print_usage() ->
+    getopt:usage(cli_options(), escript:script_name(), "CONFIG_FILE").
+
+check_args({ok, {Opts, Args}}) ->
+    {Opts, Args};
+check_args({error, {Reason, _Data}}) ->
+    ?STD_ERR("Failed to parse arguments: ~p~n", [Reason]),
+    print_usage(),
+    halt(1).
+
+maybe_show_usage(Opts) ->
+    case lists:member(help, Opts) of
+        true ->
+            print_usage(),
+            halt(0);
+        false ->
+            ok
+    end.
+
+bench_name(Opts) ->
+    case proplists:get_value(bench_name, Opts, id()) of
+        "current" ->
+            ?STD_ERR("Cannot use name 'current'~n", []),
+            halt(1);
+        Name ->
+            Name
+    end.
+
+test_dir(Opts, Name) ->
+    {ok, CWD} = file:get_cwd(),
+    DefaultResultsDir = filename:join([CWD, "tests"]),
+    ResultsDir = proplists:get_value(results_dir, Opts, DefaultResultsDir),
+    ResultsDirAbs = filename:absname(ResultsDir),
+    TestDir = filename:join([ResultsDirAbs, Name]),
+    ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
+    Link = filename:join([ResultsDir, "current"]),
+    [] = os:cmd(?FMT("rm -f ~s; ln -sf ~s ~s", [Link, TestDir, Link])),
+    TestDir.
 
 wait_for_stop(Mref, infinity) ->
     receive
@@ -131,15 +158,12 @@ wait_for_stop(Mref, DurationMins) ->
             ?CONSOLE("Test completed after ~p mins.\n", [DurationMins])
     end.
 
-
-
 %%
 %% Construct a string suitable for use as a unique ID for this test run
 %%
 id() ->
     {{Y, M, D}, {H, Min, S}} = calendar:local_time(),
     ?FMT("~w~2..0w~2..0w_~2..0w~2..0w~2..0w", [Y, M, D, H, Min, S]).
-
 
 add_code_paths([]) ->
     ok;
