@@ -1,5 +1,6 @@
 
 -define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), halt(1)).
+-define(STD_ERR(Str, Args), io:format(standard_error, Str, Args)).
 
 -define(CONSOLE(Str, Args), lager:info(Str, Args)).
 
