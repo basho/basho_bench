@@ -35,8 +35,17 @@
 %% API
 %% ====================================================================
 new({int_to_bin, InputGen}, Id) ->
+    ?WARN("The int_to_bin key generator wrapper is deprecated, please use the "
+          "int_to_bin_bigendian or int_to_bin_littleendian wrapper instead\n",
+          []),
     Gen = new(InputGen, Id),
     fun() -> <<(Gen()):32/native>> end;
+new({int_to_bin_bigendian, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> <<(Gen()):32/big>> end;
+new({int_to_bin_littleendian, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> <<(Gen()):32/little>> end;
 new({int_to_str, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> integer_to_list(Gen()) end;
