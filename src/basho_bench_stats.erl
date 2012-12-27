@@ -73,6 +73,7 @@ op_complete(Op, Result, ElapsedUs) ->
 init([]) ->
     %% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
+    process_flag(priority, high),
 
     %% Spin up folsom
     folsom:start(),
