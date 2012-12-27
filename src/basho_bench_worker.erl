@@ -221,13 +221,15 @@ worker_idle_loop(State) ->
             end
     end.
 
+worker_next_op2(State, OpTag) ->
+   catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
+                                  State#state.driver_state).
 worker_next_op(State) ->
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
     {_Label, OpTag} = Next,
-    Start = now(),
-    Result = (catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
-                                             State#state.driver_state)),
-    ElapsedUs = timer:now_diff(now(), Start),
+    Start = os:timestamp(),
+    Result = worker_next_op2(State, OpTag),
+    ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Result of
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
             basho_bench_stats:op_complete(Next, Res, ElapsedUs),
