@@ -133,7 +133,7 @@ init([]) ->
 handle_call(run, _From, State) ->
     %% Schedule next report
     Now = os:timestamp(),
-    erlang:send_after(State#state.report_interval, self(), report),
+    timer:send_interval(State#state.report_interval, report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
@@ -144,11 +144,9 @@ handle_cast(_, State) ->
     {noreply, State}.
 
 handle_info(report, State) ->
+    consume_report_msgs(),
     Now = os:timestamp(),
     process_stats(Now, State),
-
-    %% Schedule next report
-    erlang:send_after(State#state.report_interval, self(), report),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
@@ -245,7 +243,7 @@ process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-    Elapsed = erlang:max(trunc(timer:now_diff(Now, State#state.start_time) / 1000000), 1),
+    Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
     Window  = timer:now_diff(Now, State#state.last_write_time) / 1000000,
 
     %% Time to report latency data to our CSV files
@@ -333,4 +331,12 @@ report_total_errors(State) ->
                         end
                 end,
             lists:foreach(F, ErrCounts)
+    end.
+
+consume_report_msgs() ->
+    receive
+        report ->
+            consume_report_msgs()
+    after 0 ->
+            ok
     end.
