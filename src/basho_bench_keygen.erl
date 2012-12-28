@@ -141,7 +141,7 @@ seq_gen_put(Ref, Value) ->
     erlang:put({sigen, Ref}, Value).
 
 seq_gen_write_resume_value(Id, Value) ->
-    case seq_gen_state_dir() of
+    case seq_gen_state_dir(Id) of
         "" ->
             ok;
         Path ->
@@ -154,7 +154,7 @@ seq_gen_write_resume_value(Id, Value) ->
     end.
 
 seq_gen_read_resume_value(Id) ->
-    case seq_gen_state_dir() of
+    case seq_gen_state_dir(Id) of
         "" ->
             0;
         Path ->
@@ -174,7 +174,7 @@ seq_gen_read_resume_value(Id) ->
             end
     end.
 
-seq_gen_state_dir() ->
+seq_gen_state_dir(Id) ->
     Key = sequential_int_state_dir,
     DirValid = get(seq_dir_test_res),
     case {basho_bench_config:get(Key, "") , DirValid} of
@@ -193,13 +193,14 @@ seq_gen_state_dir() ->
                     put(you_have_been_warned, true),
                     ""
             end;
-        Else ->
-            case get(you_have_been_warned) of
-                undefined ->
+        {Else, _} ->
+            case Else /= "" andalso
+                 get(you_have_been_warned) == true andalso Id == 1 of
+                true ->
                     ?WARN("Config value ~p -> ~p is not an absolute "
                           "path, ignoring!\n", [Key, Else]),
                     put(you_have_been_warned, true);
-                _ ->
+                false ->
                     ok
             end,
             ""
