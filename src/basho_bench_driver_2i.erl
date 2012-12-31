@@ -317,6 +317,38 @@ run({query_pb, MaxN}, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 
+run({query_pb_phaseless_mr, Bucket, Index, Key}, _, _, State) ->
+    Pid = State#state.pb_pid,
+    Input = {index, Bucket, Index, Key},
+    Query = [],
+    case riakc_pb_socket:mapred(Pid, Input, Query) of
+        {ok, Result} ->
+            case Result of
+                [{0, _}] ->
+                    {ok, State};
+                _ ->
+                    {error, Result, State}
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run({query_pb_phaseless_mr, Bucket, Index, StartKey, EndKey}, _, _, State) ->
+    Pid = State#state.pb_pid,
+    Input = {index, Bucket, Index, StartKey, EndKey},
+    Query = [],
+    case riakc_pb_socket:mapred(Pid, Input, Query) of
+        {ok, Result} ->
+            case Result of
+                [{0, _}] ->
+                    {ok, State};
+                _ ->
+                    {error, Result, State}
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
 run(Other, _, _, _) ->
     throw({unknown_operation, Other}).
 
