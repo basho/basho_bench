@@ -200,7 +200,7 @@ seq_gen_state_dir(Id) ->
             end;
         {Else, _} ->
             case Else /= "" andalso
-                 get(you_have_been_warned) == false andalso Id == 1 of
+                 get(you_have_been_warned) == undefined andalso Id == 1 of
                 true ->
                     ?WARN("Config value ~p -> ~p is not an absolute "
                           "path, ignoring!\n", [Key, Else]),
