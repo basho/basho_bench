@@ -23,7 +23,7 @@
 
 -export([new/2,
          dimension/1,
-         sequential_int_generator/3]).
+         sequential_int_generator/4]).
 
 -include("basho_bench.hrl").
 
@@ -54,7 +54,9 @@ new({to_binstr, FmtStr, InputGen}, Id) ->
     fun() -> list_to_binary(io_lib:format(FmtStr, [Gen()])) end;
 new({sequential_int, MaxKey}, Id) ->
     Ref = make_ref(),
-    fun() -> sequential_int_generator(Ref, MaxKey, Id) end;
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    fun() -> sequential_int_generator(Ref, MaxKey, Id, DisableProgress) end;
 new({partitioned_sequential_int, MaxKey}, Id) ->
     new({partitioned_sequential_int, 0, MaxKey}, Id);
 new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
@@ -63,8 +65,10 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     MinValue = StartKey + Range * (Id - 1),
     MaxValue = StartKey + Range * Id,
     Ref = make_ref(),
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
-    fun() -> sequential_int_generator(Ref, Range, Id) + MinValue end;
+    fun() -> sequential_int_generator(Ref, Range, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id) ->
     fun() -> random:uniform(MaxKey) end;
 new({pareto_int, MaxKey}, _Id) ->
@@ -112,25 +116,26 @@ pareto(Mean, Shape) ->
     end.
 
 
-sequential_int_generator(Ref, MaxValue, Id) ->
+sequential_int_generator(Ref, MaxValue, Id, DisableProgress) ->
    %% A bit of evil here. We want to generate numbers in sequence and stop
    %% at MaxKey. This means we need state in our anonymous function. Use the process
    %% dictionary to keep track of where we are.
    case erlang:get({sigen, Ref}) of
        undefined ->
            seq_gen_put(Ref, seq_gen_read_resume_value(Id)),
-           sequential_int_generator(Ref, MaxValue, Id);
+           sequential_int_generator(Ref, MaxValue, Id, DisableProgress);
        MaxValue ->
            throw({stop, empty_keygen});
        Value ->
            case Value rem 500 of
-               0 -> ok = seq_gen_write_resume_value(Id, Value);
-               _ -> ok
+               400 -> ok = seq_gen_write_resume_value(Id, Value);
+                 _ -> ok
            end,
-           case Value rem 5000 of
-               0 ->
-                   ?DEBUG("sequential_int_gen: ~p (~w%)\n", [Value, trunc(100 * (Value / MaxValue))]);
-               _ ->
+           case (not DisableProgress) andalso Value rem 5000 == 0 of
+               true ->
+                   Me = self(),
+                   spawn(fun() -> ?DEBUG("sequential_int_gen: ~p: ~p (~w%)\n", [Me, Value, trunc(100 * (Value / MaxValue))]) end);
+               false ->
                    ok
            end,
            seq_gen_put(Ref, Value+1),
@@ -141,7 +146,7 @@ seq_gen_put(Ref, Value) ->
     erlang:put({sigen, Ref}, Value).
 
 seq_gen_write_resume_value(Id, Value) ->
-    case seq_gen_state_dir() of
+    case seq_gen_state_dir(Id) of
         "" ->
             ok;
         Path ->
@@ -154,7 +159,7 @@ seq_gen_write_resume_value(Id, Value) ->
     end.
 
 seq_gen_read_resume_value(Id) ->
-    case seq_gen_state_dir() of
+    case seq_gen_state_dir(Id) of
         "" ->
             0;
         Path ->
@@ -174,7 +179,7 @@ seq_gen_read_resume_value(Id) ->
             end
     end.
 
-seq_gen_state_dir() ->
+seq_gen_state_dir(Id) ->
     Key = sequential_int_state_dir,
     DirValid = get(seq_dir_test_res),
     case {basho_bench_config:get(Key, "") , DirValid} of
@@ -193,13 +198,14 @@ seq_gen_state_dir() ->
                     put(you_have_been_warned, true),
                     ""
             end;
-        Else ->
-            case get(you_have_been_warned) of
-                undefined ->
+        {Else, _} ->
+            case Else /= "" andalso
+                 get(you_have_been_warned) == undefined andalso Id == 1 of
+                true ->
                     ?WARN("Config value ~p -> ~p is not an absolute "
                           "path, ignoring!\n", [Key, Else]),
                     put(you_have_been_warned, true);
-                _ ->
+                false ->
                     ok
             end,
             ""
