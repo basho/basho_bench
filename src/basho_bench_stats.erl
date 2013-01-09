@@ -36,8 +36,8 @@
 -include("basho_bench.hrl").
 
 -record(state, { ops,
-                 start_time = now(),
-                 last_write_time = now(),
+                 start_time = os:timestamp(),
+                 last_write_time = os:timestamp(),
                  report_interval,
                  errors_since_last_report = false,
                  summary_file,
@@ -73,6 +73,7 @@ op_complete(Op, Result, ElapsedUs) ->
 init([]) ->
     %% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
+    process_flag(priority, high),
 
     %% Spin up folsom
     folsom:start(),
@@ -131,8 +132,8 @@ init([]) ->
 
 handle_call(run, _From, State) ->
     %% Schedule next report
-    Now = now(),
-    erlang:send_after(State#state.report_interval, self(), report),
+    Now = os:timestamp(),
+    timer:send_interval(State#state.report_interval, report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
@@ -143,16 +144,14 @@ handle_cast(_, State) ->
     {noreply, State}.
 
 handle_info(report, State) ->
-    Now = now(),
+    consume_report_msgs(),
+    Now = os:timestamp(),
     process_stats(Now, State),
-
-    %% Schedule next report
-    erlang:send_after(State#state.report_interval, self(), report),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
     %% Do the final stats report and write the errors file
-    process_stats(now(), State),
+    process_stats(os:timestamp(), State),
     report_total_errors(State),
 
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
@@ -244,8 +243,8 @@ process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-    Elapsed = erlang:max(trunc(timer:now_diff(Now, State#state.start_time) / 1000000), 1),
-    Window  = erlang:max(trunc(timer:now_diff(Now, State#state.last_write_time) / 1000000), 1),
+    Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
+    Window  = timer:now_diff(Now, State#state.last_write_time) / 1000000,
 
     %% Time to report latency data to our CSV files
     {Oks, Errors, OkOpsRes} =
@@ -332,4 +331,12 @@ report_total_errors(State) ->
                         end
                 end,
             lists:foreach(F, ErrCounts)
+    end.
+
+consume_report_msgs() ->
+    receive
+        report ->
+            consume_report_msgs()
+    after 0 ->
+            ok
     end.
