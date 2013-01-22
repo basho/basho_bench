@@ -33,12 +33,17 @@ cli_options() ->
     [
      {help, $h, "help", undefined, "Print usage"},
      {results_dir, $d, "results-dir", string, "Base directory to store test results, defaults to ./tests"},
-     {bench_name, $n, "bench-name", string, "Name to identify the run, defaults to timestamp"}
+     {bench_name, $n, "bench-name", string, "Name to identify the run, defaults to timestamp"},
+     {net_node,   $N, "node",   atom, "Run benchmark in Erlang Node"},
+     {net_cookie, $C, "cookie", {atom, benchmark}, "Node cookie"},
+     {net_join,   $J, "join",   atom, "Join to Erlang Node"}
     ].
 
 main(Args) ->
     {Opts, Configs} = check_args(getopt:parse(cli_options(), Args)),
     ok = maybe_show_usage(Opts),
+    ok = maybe_net_node(Opts),
+    ok = maybe_join(Opts),
     BenchName = bench_name(Opts),
     TestDir = test_dir(Opts, BenchName),
 
@@ -114,6 +119,28 @@ maybe_show_usage(Opts) ->
         true ->
             print_usage(),
             halt(0);
+        false ->
+            ok
+    end.
+
+maybe_net_node(Opts) ->
+    case lists:keyfind(net_node, 1, Opts) of
+        {_, Node} ->
+            {_, Cookie} = lists:keyfind(net_cookie, 1, Opts),
+            net_kernel:start([Node, longnames]),
+            erlang:set_cookie(Node, Cookie),
+            ok;
+        false ->
+            ok
+    end.
+
+maybe_join(Opts) ->
+    case lists:keyfind(net_join, 1, Opts) of
+        {_, Host} ->
+            case net_adm:ping(Host) of
+                pong -> global:sync();
+                _    -> throw({no_host, Host})
+            end;
         false ->
             ok
     end.
