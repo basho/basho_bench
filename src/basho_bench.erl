@@ -34,9 +34,9 @@ cli_options() ->
      {help, $h, "help", undefined, "Print usage"},
      {results_dir, $d, "results-dir", string, "Base directory to store test results, defaults to ./tests"},
      {bench_name, $n, "bench-name", string, "Name to identify the run, defaults to timestamp"},
-     {net_node,   $N, "node",   atom, "Run benchmark in Erlang Node"},
-     {net_cookie, $C, "cookie", {atom, benchmark}, "Node cookie"},
-     {net_join,   $J, "join",   atom, "Join to Erlang Node"}
+     {net_node,   $N, "node",   atom, "Erlang long node name of local node (initiating basho_bench)"},
+     {net_cookie, $C, "cookie", {atom, benchmark}, "Erlang network distribution magic cookie"},
+     {net_join,   $J, "join",   atom, "Erlang long node name of remote node (to join to)"}
     ].
 
 main(Args) ->
