@@ -30,19 +30,19 @@
 %% API
 %% ====================================================================
 
-new({fixed_bin, Size}, _Id) ->
-    Source = init_source(),
+new({fixed_bin, Size}, Id) ->
+    Source = init_source(Id),
     fun() -> data_block(Source, Size) end;
 new({fixed_bin, Size, Val}, _Id) ->
     Data = list_to_binary(lists:duplicate(Size, Val)),
     fun() -> Data end;
 new({fixed_char, Size}, _Id) ->
     fun() -> list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,Size))) end;
-new({exponential_bin, MinSize, Mean}, _Id) ->
-    Source = init_source(),
+new({exponential_bin, MinSize, Mean}, Id) ->
+    Source = init_source(Id),
     fun() -> data_block(Source, MinSize + trunc(basho_stats_rv:exponential(1 / Mean))) end;
-new({uniform_bin, MinSize, MaxSize}, _Id) ->
-    Source = init_source(),
+new({uniform_bin, MinSize, MaxSize}, Id) ->
+    Source = init_source(Id),
     Diff = MaxSize - MinSize,
     fun() -> data_block(Source, MinSize + random:uniform(Diff)) end;
 new({function, Module, Function, Args}, Id) ->
@@ -66,16 +66,20 @@ dimension(_Other, _) ->
 %% Internal Functions
 %% ====================================================================
 
-init_source() ->
-    init_source(basho_bench_config:get(value_generator_blob_file, undefined)).
+init_source(Id) ->
+    init_source(Id, basho_bench_config:get(value_generator_blob_file, undefined)).
 
-init_source(undefined) ->
-    io:format("DEBUG: random source\n"),
+init_source(Id, undefined) ->
+    if Id == 1 -> ?DEBUG("random source\n", []);
+       true    -> ok
+    end,
     SourceSz = basho_bench_config:get(value_generator_source_size, 1048576),
     {SourceSz, crypto:rand_bytes(SourceSz)};
-init_source(Path) ->
+init_source(Id, Path) ->
     {Path, {ok, Bin}} = {Path, file:read_file(Path)},
-    io:format("DEBUG: path source ~p ~p\n", [size(Bin), Path]),
+    if Id == 1 -> ?DEBUG("path source ~p ~p\n", [size(Bin), Path]);
+       true    -> ok
+    end,
     {size(Bin), Bin}.
 
 data_block({SourceSz, Source}, BlockSize) ->
