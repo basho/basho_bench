@@ -26,7 +26,8 @@
 %% API
 -export([start/0,
          stop/0,
-         is_running/0]).
+         is_running/0,
+         halt_or_kill/0]).
 
 %% Application callbacks
 -export([start/2, stop/1]).
@@ -38,16 +39,26 @@
 
 start() ->
     %% Redirect all SASL logging into a text file
-    application:load(sasl),
-    application:set_env(sasl, sasl_error_logger, false),
-    ok = application:start(sasl),
+    case application:get_env(basho_bench,app_run_mode) of
+       {ok, included} ->
+          %%Make sure sasl and crypto is available
+          true=lists:keymember(sasl,1,application:which_applications()),
+          true=lists:keymember(crypto,1,application:which_applications()),
+          
+          %% Start up our application
+          application:start(basho_bench);
+       NotInc when NotInc == {ok, standalone} orelse NotInc == undefined ->
+          application:load(sasl),
+          application:set_env(sasl, sasl_error_logger, {file, "log.sasl.txt"}),
+          ok = application:start(sasl),
 
-    %% Make sure crypto is available
-    ok = application:start(crypto),
+          %% Make sure crypto is available
+          ok = application:start(crypto),
 
-    %% Start up our application -- mark it as permanent so that the node
-    %% will be killed if we go down
-    application:start(basho_bench, permanent).
+          %% Start up our application -- mark it as permanent so that the node
+          %% will be killed if we go down
+          application:start(basho_bench, permanent)
+    end.
 
 stop() ->
     application:stop(basho_bench).
@@ -55,6 +66,15 @@ stop() ->
 is_running() ->
     application:get_env(basho_bench_app, is_running) == {ok, true}.
 
+halt_or_kill() ->
+    %% If running standalone, halt and kill node.  Otherwise, just
+    %% kill top supervisor.
+    case application:get_env(basho_bench,app_run_mode) of
+        {ok, included} ->
+            exit(whereis(basho_bench_sup),kill);
+        _ ->
+            halt(1)
+    end.
 
 %% ===================================================================
 %% Application callbacks

@@ -1,0 +1,571 @@
+Running:
+
+basho_bench @ branch slf-null-performance-enhancements commit 03ed969a
+basho_bench/deps/folsom @ branch boundary-0.7.3+basho-bench-float,
+
+And config:
+
+   {operations, [{put, 1}]}.
+
+   {mode, max}.
+   {concurrent, 100}.
+   {duration, 999}.
+   {report_interval, 1}.
+
+   {driver, basho_bench_driver_null}.
+   {key_generator, {partitioned_sequential_int, 10000000}}.
+   {value_generator, {fixed_bin, 1000}}.
+
+I see max latency @ 1 second or even more, 3+ seconds!  Why???
+
+Try using this D script:
+
+    erlang$$1:::process-unscheduled {unsched[copyinstr(arg0)] = timestamp}
+    
+    erlang$$1:::process-scheduled {this->pid = copyinstr(arg0);this->elapsed = (timestamp-unsched[this->pid]) / 1000000;}
+    
+    erlang$$1:::process-scheduled /unsched[this->pid] > 0/ {@[probename] = quantize(this->elapsed)}
+    erlang$$1:::process-scheduled /unsched[this->pid] > 0 && this->elapsed > 200/ {@huge[copyinstr(arg0),copyinstr(arg1)] = count(); unsched[this->pid] = 0;}
+    
+    tick-10sec {printa(@); printa(@huge); exit(0)}
+
+... would give something like this (histogram units = msec)
+
+CPU     ID                    FUNCTION:NAME
+  2   2316                      :tick-10sec 
+  process-scheduled                                 
+           value  ------------- Distribution ------------- count    
+              -1 |                                         0        
+               0 |@@@@@@@@@@@@@@@@@@@@                     29766    
+               1 |                                         7        
+               2 |                                         3        
+               4 |                                         53       
+               8 |@                                        1199     
+              16 |@@@@@@@@@@                               14113    
+              32 |@@@@@@@@@                                13043    
+              64 |                                         75       
+             128 |                                         87       
+             256 |                                         34       
+             512 |                                         27       
+            1024 |                                         3        
+            2048 |                                         0        
+
+... which is pretty bad: over 50 instances of 256+ milliseconds
+between unschedule and schedule.
+
+But the second part of the output shows something interesting ... most
+of the instances of pauses over 200 msec says:
+
+  key (pid + MFA)                                 count
+  ----------------------------------------------  -----
+  [...]
+  <0.92.0>   basho_bench_worker:needs_shutdown/1      1
+  <0.94.0>   timer:now_diff/2                         1
+  <0.96.0>   basho_bench_valgen:data_block/2          1
+  <0.96.0>   io:wait_io_mon_reply/2                   1
+  <0.98.0>   io:wait_io_mon_reply/2                   1
+  <0.71.0>   gen_server:loop/6                        2
+  <0.281.0>  gen_server:loop/6                        9
+  <0.79.0>   gen_server:loop/6                       14
+
+Most of the instances have nothing to do with basho_bench_worker or
+basho_bench_driver modules:
+
+    basho_bench_worker MFAs:       6
+    basho_bench_driver_null MFAs:  3
+    all other MFAs:               95
+
+But we *are* seeing huge elapsed times as measured by the
+os:timestamp() instances in basho_bench_worker:
+
++    if ElapsedUs > 100*1000 ->
++            io:format("Medium: ~p ~p @ ~p usec\n", [time(), self(), ElapsedUs]);
++       true ->
++            ok
++    end,
+
+... this says that there are plenty of cases where the tiny amount of
+effort in basho_bench_worker:worker_next_op/1 and worker_next_op2/2
+results in elapsed times of 100+ milliseconds.  E.g.
+
+Medium: {17,49,52} <0.116.0> @ 809649 usec
+
+809.6 milliseconds?  Really?
+
+THEORY: ETS-related BIFs are really the cause of the problem.
+
+    bash-3.2# dtrace -n 'pid$$1::ets_*:entry {self->ets_start = timestamp} pid$$1::ets_*:return /self->ets_start > 0/ {@[probefunc] = quantize((timestamp-self->ets_start) / 1000000)} tick-30sec {printa(@); exit(0)}' `ps axww | grep beam | grep -v grep | grep COOKIE | awk '{print $1}'`
+    dtrace: description 'pid$$1::ets_*:entry ' matched 99 probes
+    CPU     ID                    FUNCTION:NAME
+      4  40418                      :tick-30sec 
+      ets_delete_2                                      
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 30       
+                   1 |                                         0        
+    
+      ets_lookup_element_3                              
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 30       
+                   1 |                                         0        
+    
+      ets_first_1                                       
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 60       
+                   1 |                                         0        
+    
+      ets_select_2                                      
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 60       
+                   1 |                                         0        
+    
+      ets_update_counter_3                              
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 2406904  
+                   1 |                                         4        
+                   2 |                                         3        
+                   4 |                                         0        
+    
+      ets_lookup_2                                      
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 7225546  
+                   1 |                                         28       
+                   2 |                                         2        
+                   4 |                                         0        
+    
+      ets_member_2                                      
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 9627596  
+                   1 |                                         35       
+                   2 |                                         2        
+                   4 |                                         0        
+    
+      ets_select2                                       
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@                     30       
+                   1 |@                                        2        
+                   2 |@@@@@                                    8        
+                   4 |@                                        2        
+                   8 |@@@@@                                    8        
+                  16 |@@@@@@@                                  10       
+                  32 |                                         0        
+    
+      ets_select_delete_2                               
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@                                        1        
+                   1 |@@@                                      3        
+                   2 |@@@@                                     5        
+                   4 |@@@@@                                    6        
+                   8 |@@@@@@@@@@@@@@@@                         18       
+                  16 |@@@@@@@@@@@                              13       
+                  32 |                                         0        
+    
+      ets_select_trap_1                                 
+               value  ------------- Distribution ------------- count    
+                   1 |                                         0        
+                   2 |@@@@@@@@@                                12       
+                   4 |@@@@@                                    6        
+                   8 |@@@@@@@@                                 10       
+                  16 |@@@@@@@@@@@@@@@                          19       
+                  32 |@@@                                      4        
+                  64 |                                         0        
+    
+      ets_select_delete_1                               
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@                          47       
+                   1 |@                                        3        
+                   2 |@@@@@                                    15       
+                   4 |@@                                       6        
+                   8 |@@@@@@@@@@@                              35       
+                  16 |@@@@@@                                   20       
+                  32 |                                         0        
+    
+      ets_insert_2                                      
+               value  ------------- Distribution ------------- count    
+                  -1 |                                         0        
+                   0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 2406419  
+                   1 |                                         72       
+                   2 |                                         259      
+                   4 |                                         138      
+                   8 |                                         45       
+                  16 |                                         7        
+                  32 |                                         0        
+
+No, that theory doesn't work .... unless the scheduler is blocked by
+calling *lots* of slow ETS BIFs prior to running the slow pid??
+    
+THEORY: the high latency is due to work stealing by the Erlang
+scheduler.
+
+Modify the D script (and clean it up a bit):
+
+    erlang$$1:::process-unscheduled
+    {
+        this->pid = copyinstr(arg0);
+        unsched[this->pid] = timestamp;
+        mytid[this->pid] = tid;
+        mycpu[this->pid] = cpu;
+    }
+    
+    erlang$$1:::process-scheduled
+    {
+        this->pid = copyinstr(arg0);
+        this->elapsed = (timestamp-unsched[this->pid]) / 1000000;
+    }
+    
+    erlang$$1:::process-scheduled /unsched[this->pid] > 0/
+    {
+        @[probename] = quantize(this->elapsed)
+    }
+    erlang$$1:::process-scheduled /unsched[this->pid] > 0 && this->elapsed > 200/
+    {
+        @huge[this->pid,copyinstr(arg1)] = count();
+        unsched[this->pid] = 0;
+        printf("Elapsed %d msec tid %d -> %d\n",
+               this->elapsed, mytid[this->pid], tid);
+        printf("                cpu %d -> %d same? %s\n",
+               mycpu[this->pid], cpu, mycpu[this->pid] == cpu ? "true" : "FALSE");
+    }
+    
+    tick-10sec
+    {
+        printa(@);
+        printa(@huge);
+        exit(0)
+    }
+
+So, now approximately 85% of the "same?" output says "FALSE", and only
+about 15% says "true".  Interesting.
+
+However, what we don't fully know is whether the processes with these
+long scheduling pauses are due to waiting for message delivery or
+something else.  Eyeball estimates suggest that 70-80% of all
+long-scheduling-delayed messages are not basho_bench worker procs.
+Of the 20-30% of procs that *are* b_b worker procs, almost all are not
+waking up in basho_bench_driver_null or basho_bench_worker module
+MFAs.
+
+Actually, once the pid is added to the "Elapsed %d msec ..." message,
+the majority of the long schedules happen to the 'timer_server' and
+also this proc (the majority of complaints?):
+
+ {dictionary,[{'$ancestors',[folsom_sample_slide_sup,
+                             folsom_sup,<0.74.0>]},
+              {'$initial_call',{folsom_sample_slide_server,init,1}}]},
+
+THEORY: add Erlang DTrace probes in the basho_bench worker process to
+verify exactly where & when the beginning & ending of the worker
+timing statements are being executed.
+
+Hrm.  Well, according to this script, CPU migration is almost always
+happening, but GC in the middle is almost never happening.
+
+#pragma D option dynvarsize=99m
+
+BEGIN { start = timestamp }
+
+erlang$$1:::user_trace-n0
+{
+    this->pid = copyinstr(arg0);
+    u[this->pid] = timestamp;
+    mytid[this->pid] = tid;
+    mycpu[this->pid] = cpu+1;
+}
+
+erlang$$1:::gc*-start /u[copyinstr(arg0)] > 0/
+{
+    gc[copyinstr(arg0)] = 1;
+}
+
+erlang$$1:::user_trace-n1
+{ this->pid = copyinstr(arg0); }
+
+erlang$$1:::user_trace-n1 /u[this->pid] > 0/
+{
+    this->msec = (timestamp - u[this->pid]) / 1000000;
+}
+erlang$$1:::user_trace-n1
+/u[this->pid] > 0 && this->msec > 75/
+{
+    printf("%09d msec: user_trace elapsed %d msec pid %s tid %d->%d cpu %d->%d gc-after-user0 %d\n", (timestamp - start) / 1000000, this->msec, this->pid, mytid[this->pid], tid, mycpu[this->pid], cpu+1, gc[this->pid]);
+}
+erlang$$1:::user_trace-n1
+{
+    this->pid = copyinstr(arg0);
+    u[this->pid] = 0;
+    mytid[this->pid] = 0;
+    mycpu[this->pid] = 0;
+    gc[this->pid] = 0;
+}
+
+... gives output like this.  Note the occasional bursts near each
+other like at 10.14 seconds ("10140 msec") and 21.75 seconds.
+
+000003961 msec: user_trace elapsed 612 msec pid <0.214.0> tid 13370793->13370794 cpu 4->1 gc-after-user0 0
+000003027 msec: user_trace elapsed 676 msec pid <0.136.0> tid 13370793->13370793 cpu 4->2 gc-after-user0 0
+000005073 msec: user_trace elapsed 724 msec pid <0.276.0> tid 13370793->13370793 cpu 5->4 gc-after-user0 0
+000009068 msec: user_trace elapsed 717 msec pid <0.156.0> tid 13370793->13370793 cpu 2->5 gc-after-user0 1
+000010140 msec: user_trace elapsed 795 msec pid <0.234.0> tid 13370793->13370793 cpu 3->4 gc-after-user0 0
+000010140 msec: user_trace elapsed 793 msec pid <0.156.0> tid 13370793->13370793 cpu 3->4 gc-after-user0 0
+000011060 msec: user_trace elapsed 712 msec pid <0.214.0> tid 13370793->13370794 cpu 5->6 gc-after-user0 1
+000017932 msec: user_trace elapsed 582 msec pid <0.156.0> tid 13370793->13370793 cpu 8->8 gc-after-user0 1
+000021759 msec: user_trace elapsed 76 msec pid <0.222.0> tid 13370791->13370791 cpu 4->4 gc-after-user0 0
+000021756 msec: user_trace elapsed 76 msec pid <0.152.0> tid 13370791->13370791 cpu 5->7 gc-after-user0 0
+000021906 msec: user_trace elapsed 533 msec pid <0.214.0> tid 13370793->13370793 cpu 6->8 gc-after-user0 0
+000022813 msec: user_trace elapsed 446 msec pid <0.166.0> tid 13370793->13370793 cpu 2->1 gc-after-user0 0
+000022813 msec: user_trace elapsed 443 msec pid <0.214.0> tid 13370793->13370793 cpu 2->1 gc-after-user0 0
+000023854 msec: user_trace elapsed 502 msec pid <0.166.0> tid 13370793->13370793 cpu 2->4 gc-after-user0 0
+000023854 msec: user_trace elapsed 500 msec pid <0.214.0> tid 13370793->13370793 cpu 7->4 gc-after-user0 0
+000024928 msec: user_trace elapsed 557 msec pid <0.166.0> tid 13370793->13370793 cpu 4->3 gc-after-user0 1
+000025843 msec: user_trace elapsed 495 msec pid <0.166.0> tid 13370793->13370793 cpu 6->8 gc-after-user0 1
+000028026 msec: user_trace elapsed 688 msec pid <0.234.0> tid 13370793->13370793 cpu 8->4 gc-after-user0 0
+000028023 msec: user_trace elapsed 688 msec pid <0.166.0> tid 13370793->13370793 cpu 5->7 gc-after-user0 1
+000030020 msec: user_trace elapsed 688 msec pid <0.166.0> tid 13370793->13370794 cpu 6->6 gc-after-user0 1
+000032064 msec: user_trace elapsed 720 msec pid <0.116.0> tid 13370793->13370793 cpu 6->6 gc-after-user0 0
+000035715 msec: user_trace elapsed 86 msec pid <0.128.0> tid 13370789->13370789 cpu 1->2 gc-after-user0 0
+000035706 msec: user_trace elapsed 78 msec pid <0.272.0> tid 13370796->13370796 cpu 3->3 gc-after-user0 0
+000035732 msec: user_trace elapsed 79 msec pid <0.134.0> tid 13370790->13370790 cpu 8->3 gc-after-user0 0
+000035735 msec: user_trace elapsed 78 msec pid <0.220.0> tid 13370796->13370796 cpu 8->4 gc-after-user0 0
+000035748 msec: user_trace elapsed 76 msec pid <0.82.0> tid 13370792->13370792 cpu 6->4 gc-after-user0 1
+000035717 msec: user_trace elapsed 83 msec pid <0.276.0> tid 13370795->13370795 cpu 5->6 gc-after-user0 0
+000035722 msec: user_trace elapsed 80 msec pid <0.260.0> tid 13370795->13370795 cpu 8->6 gc-after-user0 0
+000035729 msec: user_trace elapsed 79 msec pid <0.136.0> tid 13370792->13370792 cpu 8->6 gc-after-user0 0
+000035744 msec: user_trace elapsed 76 msec pid <0.206.0> tid 13370796->13370796 cpu 3->6 gc-after-user0 0
+000035726 msec: user_trace elapsed 79 msec pid <0.118.0> tid 13370790->13370790 cpu 8->8 gc-after-user0 0
+000039003 msec: user_trace elapsed 664 msec pid <0.254.0> tid 13370793->13370794 cpu 5->8 gc-after-user0 0
+000041059 msec: user_trace elapsed 713 msec pid <0.102.0> tid 13370793->13370793 cpu 1->4 gc-after-user0 0
+000043097 msec: user_trace elapsed 755 msec pid <0.156.0> tid 13370793->13370793 cpu 3->8 gc-after-user0 1
+000044010 msec: user_trace elapsed 674 msec pid <0.102.0> tid 13370793->13370794 cpu 1->1 gc-after-user0 0
+000044103 msec: user_trace elapsed 764 msec pid <0.156.0> tid 13370793->13370793 cpu 7->3 gc-after-user0 1
+000046122 msec: user_trace elapsed 784 msec pid <0.156.0> tid 13370793->13370793 cpu 3->2 gc-after-user0 1
+000047058 msec: user_trace elapsed 722 msec pid <0.204.0> tid 13370793->13370793 cpu 4->6 gc-after-user0 0
+000048110 msec: user_trace elapsed 772 msec pid <0.156.0> tid 13370793->13370793 cpu 8->1 gc-after-user0 1
+000048112 msec: user_trace elapsed 772 msec pid <0.204.0> tid 13370793->13370793 cpu 6->3 gc-after-user0 0
+000050095 msec: user_trace elapsed 752 msec pid <0.112.0> tid 13370793->13370793 cpu 5->5 gc-after-user0 0
+000051071 msec: user_trace elapsed 718 msec pid <0.234.0> tid 13370793->13370793 cpu 4->2 gc-after-user0 0
+000053018 msec: user_trace elapsed 678 msec pid <0.112.0> tid 13370793->13370793 cpu 3->8 gc-after-user0 0
+000057011 msec: user_trace elapsed 670 msec pid <0.112.0> tid 13370793->13370793 cpu 2->2 gc-after-user0 0
+000059117 msec: user_trace elapsed 779 msec pid <0.234.0> tid 13370793->13370793 cpu 4->4 gc-after-user0 0
+000061108 msec: user_trace elapsed 764 msec pid <0.234.0> tid 13370793->13370793 cpu 7->2 gc-after-user0 0
+000064001 msec: user_trace elapsed 662 msec pid <0.234.0> tid 13370793->13370793 cpu 4->3 gc-after-user0 0
+000066042 msec: user_trace elapsed 701 msec pid <0.112.0> tid 13370793->13370793 cpu 4->1 gc-after-user0 0
+000071188 msec: user_trace elapsed 91 msec pid <0.246.0> tid 13370791->13370791 cpu 7->1 gc-after-user0 0
+000071208 msec: user_trace elapsed 97 msec pid <0.114.0> tid 13370791->13370791 cpu 4->4 gc-after-user0 0
+000071199 msec: user_trace elapsed 92 msec pid <0.104.0> tid 13370791->13370791 cpu 7->5 gc-after-user0 0
+000071229 msec: user_trace elapsed 90 msec pid <0.248.0> tid 13370791->13370791 cpu 8->8 gc-after-user0 0
+000075042 msec: user_trace elapsed 716 msec pid <0.170.0> tid 13370793->13370793 cpu 5->1 gc-after-user0 0
+000075045 msec: user_trace elapsed 714 msec pid <0.260.0> tid 13370793->13370793 cpu 6->2 gc-after-user0 0
+000077877 msec: user_trace elapsed 546 msec pid <0.210.0> tid 13370793->13370793 cpu 1->1 gc-after-user0 0
+000077066 msec: user_trace elapsed 733 msec pid <0.260.0> tid 13370793->13370793 cpu 3->5 gc-after-user0 0
+000077874 msec: user_trace elapsed 548 msec pid <0.170.0> tid 13370793->13370793 cpu 5->7 gc-after-user0 0
+000077874 msec: user_trace elapsed 546 msec pid <0.260.0> tid 13370793->13370793 cpu 7->7 gc-after-user0 0
+000079053 msec: user_trace elapsed 730 msec pid <0.260.0> tid 13370793->13370793 cpu 8->6 gc-after-user0 0
+000079053 msec: user_trace elapsed 727 msec pid <0.170.0> tid 13370793->13370793 cpu 8->6 gc-after-user0 0
+000080061 msec: user_trace elapsed 726 msec pid <0.260.0> tid 13370793->13370793 cpu 5->1 gc-after-user0 0
+000080056 msec: user_trace elapsed 726 msec pid <0.170.0> tid 13370793->13370793 cpu 8->2 gc-after-user0 0
+000081063 msec: user_trace elapsed 731 msec pid <0.210.0> tid 13370793->13370793 cpu 1->4 gc-after-user0 0
+000083056 msec: user_trace elapsed 705 msec pid <0.260.0> tid 13370793->13370793 cpu 4->6 gc-after-user0 0
+000083949 msec: user_trace elapsed 599 msec pid <0.260.0> tid 13370793->13370793 cpu 6->7 gc-after-user0 0
+000084427 msec: user_trace elapsed 76 msec pid <0.174.0> tid 13370789->13370789 cpu 4->1 gc-after-user0 0
+000084427 msec: user_trace elapsed 82 msec pid <0.176.0> tid 13370790->13370790 cpu 5->1 gc-after-user0 0
+000084429 msec: user_trace elapsed 76 msec pid <0.92.0> tid 13370792->13370792 cpu 6->8 gc-after-user0 0
+000085771 msec: user_trace elapsed 431 msec pid <0.260.0> tid 13370793->13370793 cpu 2->6 gc-after-user0 0
+000086833 msec: user_trace elapsed 479 msec pid <0.260.0> tid 13370793->13370793 cpu 2->1 gc-after-user0 0
+000087864 msec: user_trace elapsed 522 msec pid <0.118.0> tid 13370793->13370793 cpu 6->6 gc-after-user0 0
+000089109 msec: user_trace elapsed 771 msec pid <0.260.0> tid 13370793->13370793 cpu 4->6 gc-after-user0 0
+000090953 msec: user_trace elapsed 614 msec pid <0.118.0> tid 13370793->13370793 cpu 4->2 gc-after-user0 0
+000092963 msec: user_trace elapsed 591 msec pid <0.118.0> tid 13370793->13370793 cpu 3->1 gc-after-user0 0
+000092328 msec: user_trace elapsed 76 msec pid <0.148.0> tid 13370795->13370795 cpu 3->4 gc-after-user0 0
+000092333 msec: user_trace elapsed 76 msec pid <0.174.0> tid 13370789->13370789 cpu 3->5 gc-after-user0 0
+000092334 msec: user_trace elapsed 77 msec pid <0.230.0> tid 13370796->13370796 cpu 5->5 gc-after-user0 0
+000092378 msec: user_trace elapsed 76 msec pid <0.238.0> tid 13370789->13370789 cpu 7->7 gc-after-user0 0
+000092332 msec: user_trace elapsed 76 msec pid <0.108.0> tid 13370792->13370792 cpu 8->8 gc-after-user0 0
+000092345 msec: user_trace elapsed 76 msec pid <0.190.0> tid 13370795->13370795 cpu 4->8 gc-after-user0 0
+000096006 msec: user_trace elapsed 666 msec pid <0.118.0> tid 13370793->13370796 cpu 8->7 gc-after-user0 0
+000099016 msec: user_trace elapsed 681 msec pid <0.210.0> tid 13370793->13370793 cpu 3->4 gc-after-user0 0
+000101001 msec: user_trace elapsed 670 msec pid <0.278.0> tid 13370793->13370793 cpu 5->5 gc-after-user0 0
+000103830 msec: user_trace elapsed 506 msec pid <0.160.0> tid 13370793->13370793 cpu 7->5 gc-after-user0 0
+000105055 msec: user_trace elapsed 730 msec pid <0.92.0> tid 13370793->13370793 cpu 1->7 gc-after-user0 0
+000106033 msec: user_trace elapsed 708 msec pid <0.160.0> tid 13370793->13370793 cpu 4->5 gc-after-user0 0
+000106035 msec: user_trace elapsed 708 msec pid <0.92.0> tid 13370793->13370793 cpu 8->5 gc-after-user0 1
+000108062 msec: user_trace elapsed 731 msec pid <0.92.0> tid 13370793->13370793 cpu 8->1 gc-after-user0 0
+000110117 msec: user_trace elapsed 789 msec pid <0.240.0> tid 13370793->13370793 cpu 8->2 gc-after-user0 0
+000111088 msec: user_trace elapsed 759 msec pid <0.240.0> tid 13370793->13370793 cpu 1->7 gc-after-user0 0
+000112039 msec: user_trace elapsed 714 msec pid <0.240.0> tid 13370793->13370794 cpu 5->6 gc-after-user0 0
+
+---------
+
+Tri-modal!
+
+    #pragma D option dynvarsize=99m
+    
+    BEGIN { start = timestamp }
+    
+    erlang$$1:::user_trace-n0
+    {
+        u[copyinstr(arg0)] = timestamp;
+    }
+    
+    erlang$$1:::user_trace-n1
+    /u[copyinstr(arg0)] > 0/
+    {
+        @["worker time (milliseconds)"] = quantize((timestamp - u[copyinstr(arg0)]) / 1000000);
+    }
+    
+    tick-120sec
+    {
+        printa(@);
+        exit(0);
+    }
+
+  worker time (milliseconds)                        
+           value  ------------- Distribution ------------- count    
+              -1 |                                         0        
+               0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 6492183  
+               1 |                                         349      
+               2 |                                         304      
+               4 |                                         15       
+               8 |                                         1868     
+              16 |                                         43979    
+              32 |                                         4432     
+              64 |                                         91       
+             128 |                                         7        
+             256 |                                         26       
+             512 |                                         15       
+            1024 |                                         0        
+
+-----
+
+OK, now we're getting somewhere!
+
+If we move the dyntrace calls away from basho_bench_worker and put
+them in basho_bench_stats:
+
+    --- a/src/basho_bench_stats.erl
+    +++ b/src/basho_bench_stats.erl
+    @@ -60,7 +60,9 @@ op_complete(Op, ok, ElapsedUs) ->
+         op_complete(Op, {ok, 1}, ElapsedUs);
+     op_complete(Op, {ok, Units}, ElapsedUs) ->
+         %% Update the histogram and units counter for the op in question
+    +    dyntrace:pn(0),
+         folsom_metrics:notify({latencies, Op}, ElapsedUs),
+    +    dyntrace:pn(1),
+         folsom_metrics:notify({units, Op}, {inc, Units}),
+         ok;
+     op_complete(Op, Result, ElapsedUs) ->
+
+... then we see the same shape of latencies, both worst-case latencies
+and the same tri-modal shape!
+
+THEORY: The folsom 'slide' type hasn't been optimized by Joe Blomstedt
+& Andrew Thompson et al.  So, change the type to 'slide_uniform' and
+retry.
+
+    --- a/src/basho_bench_stats.erl
+    +++ b/src/basho_bench_stats.erl
+    @@ -103,7 +105,8 @@ init([]) ->
+         %% Setup a histogram and counter for each operation -- we only track latencies on
+         %% successful operations
+         [begin
+    -         folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
+    +         %% folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
+    +         folsom_metrics:new_histogram({latencies, Op}, slide_uniform, {basho_bench_config:get(report_interval), 20}),
+              folsom_metrics:new_counter({units, Op})
+          end || Op <- Ops ++ Measurements],
+     
+We still have the dyntrace probes surrounding the
+
+    folsom_metrics:notify({latencies, Op}, ElapsedUs)
+
+statement, so let's see what the histogram looks like now:
+
+    #pragma D option dynvarsize=99m
+    
+    BEGIN { start = timestamp }
+    
+    erlang$$1:::user_trace-n0
+    {
+        this->pid = copyinstr(arg0);
+        u[this->pid] = timestamp;
+        mycpu[this->pid] = cpu;
+    }
+    
+    erlang$$1:::user_trace-n1
+    /u[copyinstr(arg0)] > 0/
+    {
+        this->pid = copyinstr(arg0);
+        @[mycpu[this->pid] == cpu ? "same CPU (msec)" : "different CPU (msec)"] =
+    	quantize((timestamp - u[this->pid]) / 1000000);
+    }
+    
+    erlang$$1:::user_trace-n1
+    {
+        u[this->pid] = 0;
+        mycpu[this->pid] = 0;
+    }
+    
+    tick-120sec
+    {
+        printa(@);
+        exit(0);
+    }
+
+... and it says:
+
+  same CPU (msec)                                   
+           value  ------------- Distribution ------------- count    
+              -1 |                                         0        
+               0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ 9157231  
+               1 |                                         852      
+               2 |                                         1344     
+               4 |                                         2502     
+               8 |                                         4270     
+              16 |                                         22554    
+              32 |                                         1269     
+              64 |                                         12       
+             128 |                                         0        
+
+  different CPU (msec)                              
+           value  ------------- Distribution ------------- count    
+              -1 |                                         0        
+               0 |@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@        661318   
+               1 |                                         331      
+               2 |                                         921      
+               4 |                                         3565     
+               8 |@                                        13040    
+              16 |@@@@@@                                   122454   
+              32 |                                         8281     
+              64 |                                         56       
+             128 |                                         0        
+
+If we move the dyntrace statements to measure the elapsed time for
+    folsom_metrics:notify({units, Op}, {inc, Units}),
+... then we see the same histogram pattern.
+
+HOWEVER, if we use something like:
+
+         folsom_metrics:new_histogram({latencies, Op}, slide_uniform,
+                              {basho_bench_config:get(report_interval), 20}),
+
+... we get fairly low worst-case latencies (less than 100msec) but
+very inaccurate percentile data written to the CSV files.  On the
+other hand, if we get better accuracy via:
+
+         folsom_metrics:new_histogram({latencies, Op}, slide_uniform,
+                              {basho_bench_config:get(report_interval), 50000}),
+
+... then the percentile data is accurate, but the worst-case latencies
+are horrible.  Those worst-case latencies appear to be aggravated by
+the {report_interval, Seconds}.  Using Seconds=10, then the worst-case
+latencies only appear every ~10 seconds.  If Seconds=1, then the
+worst-case latencies appear all the time.  Whee!
+

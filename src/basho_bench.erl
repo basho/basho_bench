@@ -42,7 +42,11 @@ main(Args) ->
     BenchName = bench_name(Opts),
     TestDir = test_dir(Opts, BenchName),
 
-    ok = application:load(basho_bench),
+    %% Load baseline configs
+    case application:load(basho_bench) of
+        ok -> ok;
+	{error, {already_loaded, basho_bench}} -> ok
+    end,
     register(basho_bench, self()),
     basho_bench_config:set(test_id, BenchName),
 
