@@ -55,6 +55,20 @@ new(Id) ->
             ok
     end,
 
+    case basho_bench_config:get(http_use_ssl, false) of
+        false ->
+            ok;
+        _ ->
+            case ssl:start() of
+                ok ->
+                    ok;
+                {error, {already_started, ssl}} ->
+                    ok;
+                _ ->
+                    ?FAIL_MSG("Unable to enable SSL support.\n", [])
+            end
+    end,
+
     %% Setup client ID by base-64 encoding the ID
     ClientId = {'X-Riak-ClientId', base64:encode(<<Id:32/unsigned>>)},
     ?DEBUG("Client ID: ~p\n", [ClientId]),
@@ -449,7 +463,15 @@ send_request(_Url, _Headers, _Method, _Body, _Options, 0) ->
     {error, max_retries};
 send_request(Url, Headers, Method, Body, Options, Count) ->
     Pid = connect(Url),
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options, basho_bench_config:get(http_raw_request_timeout, 5000))) of
+    Options2 = case basho_bench_config:get(http_use_ssl, false) of
+                   false ->
+                       Options;
+                   true ->
+                       [{is_ssl, true}, {ssl_options, []} | Options];
+                   SSLOpts when is_list(SSLOpts) ->
+                       [{is_ssl, true}, {ssl_options, SSLOpts} | Options]
+               end,
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options2, basho_bench_config:get(http_raw_request_timeout, 5000))) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Url),
             {ok, Status, RespHeaders, RespBody};
