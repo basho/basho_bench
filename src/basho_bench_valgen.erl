@@ -67,29 +67,29 @@ dimension(_Other, _) ->
 %% ====================================================================
 
 init_source(Id) ->
-    init_source(Id, basho_bench_config:get(value_generator_blob_file, undefined)).
+    init_source(Id, basho_bench_config:get(?VAL_GEN_BLOB_CFG, undefined)).
 
 init_source(Id, undefined) ->
     if Id == 1 -> ?DEBUG("random source\n", []);
        true    -> ok
     end,
-    SourceSz = basho_bench_config:get(value_generator_source_size, 1048576),
-    {SourceSz, crypto:rand_bytes(SourceSz)};
+    SourceSz = basho_bench_config:get(?VAL_GEN_SRC_SIZE, 1048576),
+    {?VAL_GEN_SRC_SIZE, SourceSz, crypto:rand_bytes(SourceSz)};
 init_source(Id, Path) ->
     {Path, {ok, Bin}} = {Path, file:read_file(Path)},
     if Id == 1 -> ?DEBUG("path source ~p ~p\n", [size(Bin), Path]);
        true    -> ok
     end,
-    {size(Bin), Bin}.
+    {?VAL_GEN_BLOB_CFG, size(Bin), Bin}.
 
-data_block({SourceSz, Source}, BlockSize) ->
+data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
     case SourceSz - BlockSize > 0 of
         true ->
             Offset = random:uniform(SourceSz - BlockSize),
             <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
             Slice;
         false ->
-            ?WARN("value_generator_source_size is too small; it needs a value > ~p.\n",
-                  [BlockSize]),
+            ?WARN("~p is too small ~p < ~p\n",
+                  [SourceCfg, SourceSz, BlockSize]),
             Source
     end.
