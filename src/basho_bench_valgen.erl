@@ -30,6 +30,9 @@
 %% API
 %% ====================================================================
 
+new({fixed_bin, var_size}, _Id) ->
+    Source = init_source(),
+    fun(Size) -> data_block(Source, Size) end;
 new({fixed_bin, Size}, _Id) ->
     Source = init_source(),
     fun() -> data_block(Source, Size) end;

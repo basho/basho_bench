@@ -21,6 +21,8 @@
 %% -------------------------------------------------------------------
 -module(basho_bench_driver_bitcask).
 
+-compile({parse_transform, basho_bench_provide}).
+
 -export([new/1,
          run/4]).
 

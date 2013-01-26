@@ -21,6 +21,8 @@
 %% -------------------------------------------------------------------
 -module(basho_bench_driver_riakc_pb).
 
+-compile({parse_transform, basho_bench_provide}).
+
 -export([new/1,
          run/4,
          mapred_valgen/2,
@@ -127,6 +129,16 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(get_provided, Key, _ValueGen, State) ->
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                             [{r, State#state.r}]) of
+        {ok, _} ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 run(get_existing, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
@@ -141,6 +153,16 @@ run(get_existing, KeyGen, _ValueGen, State) ->
 run(put, KeyGen, ValueGen, State) ->
     Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
     Robj = riakc_obj:update_value(Robj0, ValueGen()),
+    case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
+                                                     {dw, State#state.dw}]) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(put_provided, Key, Value, State) ->
+    Robj0 = riakc_obj:new(State#state.bucket, Key),
+    Robj = riakc_obj:update_value(Robj0, Value),
     case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
                                                      {dw, State#state.dw}]) of
         ok ->
@@ -166,6 +188,31 @@ run(update, KeyGen, ValueGen, State) ->
             Robj = riakc_obj:update_value(Robj0, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
                                                              {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
+    end;
+run(update_provided, Key, Value, State) ->
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
+                             Key, [{r, State#state.r}]) of
+        {ok, Robj} ->
+            Robj2 = riakc_obj:update_value(Robj, Value),
+            case riakc_pb_socket:put(State#state.pid, 
+                                     Robj2, [{w, State#state.w},
+                                             {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, notfound} ->
+            Robj0 = riakc_obj:new(State#state.bucket, Key),
+            Robj = riakc_obj:update_value(Robj0, Value),
+            case riakc_pb_socket:put(State#state.pid, 
+                                     Robj, [{w, State#state.w},
+                                            {dw, State#state.dw}]) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
