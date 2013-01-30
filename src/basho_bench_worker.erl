@@ -73,7 +73,11 @@ init([SupChild, Id]) ->
     %% NOTE: If the worker process dies, this obviously introduces some entroy
     %% into the equation since you'd be restarting the RNG all over.
     process_flag(trap_exit, true),
-    {A1, A2, A3} = basho_bench_config:get(rng_seed),
+    {A1, A2, A3} = case basho_bench_config:get(rng_seed) of
+                       {Aa, Ab, Ac} -> {Aa, Ab, Ac};
+                       now -> now()
+                   end,
+                       
     RngSeed = {A1+Id, A2+Id, A3+Id},
 
     %% Pull all config settings from environment
