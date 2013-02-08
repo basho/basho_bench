@@ -94,6 +94,29 @@ make results
 %% {escript_emu_args, "%%! -name bb@127.0.0.1 -setcookie YOUR_ERLANG_COOKIE\n"}.
 #+END_SRC
 
+** Alternative Graph Generation by gnuplot
+   You can generate graphs using gnuplot.
+
+#+BEGIN_SRC shell
+$ ./priv/gp_throughput.sh
+#+END_SRC
+
+#+BEGIN_SRC shell
+$ ./priv/gp_latency.sh
+#+END_SRC
+
+   By passing =-h= option to each script, help messages are shown.
+
+   Some of options for these scripts are:
+
+   - =-d TEST_DIR= : directory which include test result CSV files
+   - =-t TERMINAL_TYPE= : gnuplot terminal type
+   - =-P= : just print gnuplot script without drawing graph
+
+   For example, you can draw graphs with ASCII characters
+   by the option =-t dumb=, which is useful in non-graphical
+   environment or quick sharing of result in chat.
+
 ** Contributing
    We encourage contributions to Basho Bench from the community.
 
