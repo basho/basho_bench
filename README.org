@@ -67,7 +67,7 @@ $ open tests/current/summary.png
    If you receive the error message: Warning: unable to access index for repository http://lib.stat.cmu.edu/R/CRAN/src/contrib 
    it means the default R repo for installing additional packages is broken, you can change it as follows:
 
-#*BEGIN_SRC shell
+#+BEGIN_SRC shell
 $ R
 > chooseCRANmirror()
 Selection: 69
