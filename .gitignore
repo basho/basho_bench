@@ -2,4 +2,6 @@ ebin/
 deps/
 tests/
 basho_bench
+*~
+#*#
 
