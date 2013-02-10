@@ -71,10 +71,5 @@
          %% {fixed_bin, N} - Fixed size binary blob of N bytes
          %%
          {value_generator, {fixed_bin, 100}},
-
-         %%
-         %% RNG Seed -- ensures consistent generation of key/value sizes (but not content!)
-         %%
-         {rng_seed, {42, 23, 12}}
         ]}
 ]}.
