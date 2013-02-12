@@ -70,6 +70,6 @@
          %%
          %% {fixed_bin, N} - Fixed size binary blob of N bytes
          %%
-         {value_generator, {fixed_bin, 100}},
+         {value_generator, {fixed_bin, 100}}
         ]}
 ]}.
