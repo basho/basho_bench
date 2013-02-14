@@ -162,7 +162,7 @@ run(update, KeyGen, ValueGen, State) ->
                     {error, Reason, State}
             end;
         {error, notfound} ->
-            Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
+            Robj0 = riakc_obj:new(State#state.bucket, Key),
             Robj = riakc_obj:update_value(Robj0, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
                                                              {dw, State#state.dw}]) of
