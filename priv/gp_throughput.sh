@@ -5,7 +5,7 @@ function Usage {
   echo "                        [-t TERMINAL_TYPE] [-s PLOT_STYLE] [-p PRE_COMMAD]" >&2
   echo "                        [-P] [-h]" >&2
   echo "" >&2
-  echo "    -d TEST_DIR:      test directory with summary.csv" >&2
+  echo "    -d TEST_DIR:      comma separated test directories with summary.csv" >&2
   echo "                      default: \"tests/current\"" >&2
   echo "    -k SUMMARY_KINDS: summary kinds in comma separated list" >&2
   echo "                      default: \"total,failed\"" >&2
@@ -54,15 +54,18 @@ done
 
 function plot_command(){
     echo "plot \\"
-    for KIND in ${SUMMARY_KINDS//,/ }
+    for THIS_TEST_DIR in ${TEST_DIR//,/ }
     do
-        plot_per_kind ${KIND}
+        for KIND in ${SUMMARY_KINDS//,/ }
+        do
+            plot_per_kind ${KIND}
+        done
     done
     echo "    1/0 notitle # dummy"
 }
 
 function plot_per_kind() {
-    FILE=${TEST_DIR}/summary.csv
+    FILE=${THIS_TEST_DIR}/summary.csv
     case "${KIND}" in
         "total")      COL_POS=3 ;;
         "successful") COL_POS=4 ;;
@@ -71,7 +74,13 @@ function plot_per_kind() {
     esac
     echo "    \"${FILE}\" using 1:(\$${COL_POS}/\$2) with \\"
     echo "        ${PLOT_STYLE} \\"
-    echo "        title \"${KIND}\" \\"
+
+    # If plotting only 1 directory, do not add its name
+    if [ "${THIS_DIR}" == "${THIS_TEST_DIR}" ]; then
+        echo "        title \"${KIND}\" \\"
+    else
+        echo "        title \"${THIS_TEST_DIR##*/} - ${KIND}\" \\"
+    fi
     echo "        ,\\"
 }
 

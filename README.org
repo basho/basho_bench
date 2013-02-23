@@ -109,13 +109,16 @@ $ ./priv/gp_latency.sh
 
    Some of options for these scripts are:
 
-   - =-d TEST_DIR= : directory which include test result CSV files
+   - =-d TEST_DIR= : comma separated list of directories which include
+         test result CSV files
    - =-t TERMINAL_TYPE= : gnuplot terminal type
    - =-P= : just print gnuplot script without drawing graph
 
    For example, you can draw graphs with ASCII characters
    by the option =-t dumb=, which is useful in non-graphical
    environment or quick sharing of result in chat.
+
+   Also, you can plot multiple test runs on a single plot by using "-d" switch.
 
 ** Contributing
    We encourage contributions to Basho Bench from the community.
