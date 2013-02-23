@@ -60,24 +60,27 @@ done
 
 function plot_command(){
     echo "plot \\"
-    if [ -z "${OPERATIONS}" ]; then
-        for f in `ls ${TEST_DIR}/*_latencies.csv`
-        do
-            OPERATION=`basename $f _latencies.csv`
-            plot_per_op ${OPERATION}
-        done
-    else
-        for OPERATION in ${OPERATIONS//,/ }
-        do
-            plot_per_op ${OPERATION}
-        done
-    fi
+    for THIS_TEST_DIR in ${TEST_DIR//,/ }
+    do
+        if [ -z "${OPERATIONS}" ]; then
+            for f in `ls ${THIS_TEST_DIR}/*_latencies.csv`
+            do
+                OPERATION=`basename $f _latencies.csv`
+                plot_per_op ${OPERATION}
+            done
+        else
+            for OPERATION in ${OPERATIONS//,/ }
+            do
+                plot_per_op ${OPERATION}
+            done
+        fi
+    done
     echo "    1/0 notitle # dummy"
 }
 
 function plot_per_op(){
     OPERATION=$1
-    LATENCY_FILE="${TEST_DIR}/${OPERATION}_latencies.csv"
+    LATENCY_FILE="${THIS_TEST_DIR}/${OPERATION}_latencies.csv"
     for KIND in ${STATS_KINDS//,/ }
     do
         plot_per_op_kind ${OPERATION} ${LATENCY_FILE} ${KIND}
@@ -99,7 +102,12 @@ function plot_per_op_kind() {
     esac
     echo "    \"${FILE}\" using 1:(\$${COL_POS}/\$2/1000) with \\"
     echo "        ${PLOT_STYLE} \\"
-    echo "        title \"${OPERATION}:${KIND}\" \\"
+    # If plotting only 1 directory, do not add its name
+    if [ "${TEST_DIR}" == "${THIS_TEST_DIR}" ]; then
+        echo "        title \"${OPERATION}:${KIND}\" \\"
+    else
+        echo "        title \"${THIS_TEST_DIR##*/} - ${OPERATION}:${KIND}\" \\"
+    fi
     echo "        ,\\"
 }
 
