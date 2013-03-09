@@ -2,7 +2,7 @@
 %%
 %% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009-2010 Basho Techonologies
+%% Copyright (c) 2009-2013 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -212,6 +212,15 @@ run(put, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
+run(delete, KeyGen, _ValueGen, State) ->
+    {NextUrl, S2} = next_url(State),
+    Url = url(NextUrl, KeyGen, State#state.path_params),
+    case do_delete(Url, [State#state.client_id]) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 
 run(put_file, _, _, #state{files=[]}) ->
     throw({stop, empty_keygen});
@@ -384,6 +393,17 @@ do_post(Url, Headers, ValueGen) ->
             {error, Reason}
     end.
 
+do_delete(Url, Headers) ->
+    case send_request(Url, Headers, delete, [], []) of
+        {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, "404", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 connect(Url) ->
     case erlang:get({ibrowse_pid, Url#url.host}) of
