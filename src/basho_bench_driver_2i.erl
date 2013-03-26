@@ -217,7 +217,7 @@ run({query_mr, MaxN}, KeyGen, _ValueGen, State) ->
              binary_to_list(iolist_to_binary(
                 io_lib:format("Not enough results for query_mr: ~p/~p/~p~n", [StartKey, EndKey, Results]))),
              State};
-        {error, Reason} ->
+        {{error, Reason}, _} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
@@ -312,7 +312,7 @@ run({query_pb, MaxN}, KeyGen, _ValueGen, State) ->
              binary_to_list(iolist_to_binary(
                 io_lib:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]))),
              State};
-        {error, Reason} ->
+        {{error, Reason}, _} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
