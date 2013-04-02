@@ -80,6 +80,8 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     fun() -> sequential_int_generator(Ref, Range, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id) ->
     fun() -> random:uniform(MaxKey) end;
+new({uniform_int, StartKey, NumKeys}, _Id) ->
+    fun() -> random:uniform(NumKeys) + StartKey - 1 end;
 new({pareto_int, MaxKey}, _Id) ->
     pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE);
 new({truncated_pareto_int, MaxKey}, Id) ->
