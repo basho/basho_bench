@@ -72,7 +72,9 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     Workers = basho_bench_config:get(concurrent),
     Range = NumKeys div Workers,
     MinValue = StartKey + Range * (Id - 1),
-    MaxValue = StartKey + Range * Id,
+    MaxValue = StartKey +
+               % Last worker picks up remainder to include entire range
+               case Workers == Id of true-> NumKeys; false -> Range * Id end,
     Ref = make_ref(),
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
