@@ -16,6 +16,8 @@ function Usage {
   echo "    -p PRE_COMMAND:   any command to be executed before plot" >&2
   echo "                      default: nothing" >&2
   echo "    -P:               print gnuplot script to stdout" >&2
+  echo "    -u UNIT:          unit of measurement" >&2
+  echo "                      default: \"ops/sec\"" >&2
   echo "    -h:               print this usage" >&2
   exit 1
 }
@@ -26,8 +28,9 @@ TERMINAL_COMMAND=
 PLOT_STYLE="linespoints pointsize 2 linewidth 1"
 PRE_COMMAD=
 EXEC_COMMAND="gnuplot -persist"
+UNIT="ops/sec"
 
-while getopts ":d:k:t:s:p:Ph" opt; do
+while getopts ":d:k:t:s:p:u:Ph" opt; do
     case $opt in
         d)
             TEST_DIR=${OPTARG} ;;
@@ -41,6 +44,8 @@ while getopts ":d:k:t:s:p:Ph" opt; do
             PRE_COMMAD=${OPTARG} ;;
         P)
             EXEC_COMMAND="cat" ;;
+	u)
+	    UNIT="${OPTARG}" ;;
         h)
             Usage ;;
         \?)
@@ -97,12 +102,12 @@ ${EXEC_COMMAND} << EOF
 ${TERMINAL_COMMAND}
 
 ## title, key and axis
-set title "Throughput [ops/sec]"
+set title "Throughput ${UNIT}"
 set autoscale
 set yrange [0:]
 set grid
 set xlabel "Elapsed [sec]"
-set ylabel "ops/sec"
+set ylabel "${UNIT}"
 set key inside bottom
 
 ## data file
