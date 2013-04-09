@@ -491,7 +491,7 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
                    SSLOpts when is_list(SSLOpts) ->
                        [{is_ssl, true}, {ssl_options, SSLOpts} | Options]
                end,
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers, Method, Body, Options2, basho_bench_config:get(http_raw_request_timeout, 5000))) of
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers ++ basho_bench_config:get(http_raw_append_headers,[]), Method, Body, Options2, basho_bench_config:get(http_raw_request_timeout, 5000))) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Url),
             {ok, Status, RespHeaders, RespBody};
