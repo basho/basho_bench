@@ -2,7 +2,7 @@
 %%
 %% basho_bench_driver_riakc_pb: Driver for riak protocol buffers client
 %%
-%% Copyright (c) 2009 Basho Techonologies
+%% Copyright (c) 2009-2013 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -35,8 +35,11 @@
                  dw,
                  rw,
                  keylist_length,
-                 preloaded_keys}).
+                 preloaded_keys,
+                 indexes}).
 
+-define(MR_MULTIGET,
+        [{map, {modfun, riak_kv_mapreduce, map_object_value}, <<"filter_notfound">>, true}]).
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
          {reduce, {modfun, riak_kv_mapreduce, reduce_count_inputs}, none, true}]).
@@ -72,6 +75,7 @@ new(Id) ->
     PreloadedKeys = basho_bench_config:get(
                       riakc_pb_preloaded_keys, undefined),
     warn_bucket_mr_correctness(PreloadedKeys),
+    Indexes  = process_index_config(basho_bench_config:get(secondary_indexes, []), []),
 
     %% Choose the target node using our ID as a modulus
     Targets = basho_bench_config:normalize_ips(Ips, Port),
@@ -86,7 +90,8 @@ new(Id) ->
                           dw = DW,
                           rw = RW,
                           keylist_length = KeylistLength,
-                          preloaded_keys = PreloadedKeys
+                          preloaded_keys = PreloadedKeys,
+                          indexes = Indexes
                          }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -139,9 +144,9 @@ run(get_existing, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
-    Robj = riakc_obj:update_value(Robj0, ValueGen()),
-    case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
+    Robj1 = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen()),
+    Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
+    case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                      {dw, State#state.dw}]) of
         ok ->
             {ok, State};
@@ -153,7 +158,8 @@ run(update, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}]) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj1 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                               {dw, State#state.dw}]) of
                 ok ->
@@ -162,9 +168,9 @@ run(update, KeyGen, ValueGen, State) ->
                     {error, Reason, State}
             end;
         {error, notfound} ->
-            Robj0 = riakc_obj:new(State#state.bucket, Key),
-            Robj = riakc_obj:update_value(Robj0, ValueGen()),
-            case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
+            Robj1 = riakc_obj:new(State#state.bucket, Key, ValueGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
+            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                              {dw, State#state.dw}]) of
                 ok ->
                     {ok, State};
@@ -177,7 +183,8 @@ run(update_existing, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}]) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj1 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                               {dw, State#state.dw}]) of
                 ok ->
@@ -204,6 +211,48 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
     case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket) of
         {ok, _Keys} ->
             {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run({get_index, IndexName, Range}, _KeyGen, _ValueGen, State) ->
+    I = string:to_lower(IndexName),
+    case proplists:lookup(I, State#state.indexes) of
+        none ->
+            Error = io_lib:format("Secondary index ~p that is specified for get_index operation has not been defined.\n", [IndexName]),
+            {error, Error, State};
+        {I, {integer_index, Start, End}} ->
+            Rnd = get_ranged_random_int(Start, End),
+            case riakc_pb_socket:get_index(State#state.pid, State#state.bucket, {integer_index, I}, Rnd, ((Rnd + Range - 1))) of
+                {ok, _Results} ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {I, {binary_index, Start, End, Fmt}} ->
+            Rnd = get_ranged_random_int(Start, End),
+            BS = list_to_binary(io_lib:format(Fmt, [Rnd])),
+            BE = list_to_binary(io_lib:format(Fmt, [(Rnd + Range - 1)])),
+            case riakc_pb_socket:get_index(State#state.pid, State#state.bucket, {binary_index, I}, BS, BE) of
+                {ok, _Results} ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
+    end;
+run({mr_multiget, ItemCount}, KeyGen, _ValueGen, State) when is_integer(ItemCount) andalso ItemCount > 0 ->
+    KeyList = make_keylist(State#state.bucket, KeyGen, ItemCount),
+    case riakc_pb_socket:mapred(State#state.pid, KeyList, ?MR_MULTIGET) of
+        {ok, []} ->
+            io:format("Incorrect number of results for mr_multiget. Expected ~p, Received 0~n", [ItemCount]),
+            {ok, State};
+        {ok, [{_, Results}]} ->
+            case length(Results) of
+                ItemCount ->
+                    {ok, State};
+                N ->
+                    io:format("Incorrect number of results for mr_multiget. Expected ~p, Received ~p~n", [ItemCount, N]),
+                    {ok, State}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -306,3 +355,49 @@ mapred_ordered_valgen(Id) ->
             put(Save, Next+1),
             list_to_binary(integer_to_list(Next))
     end.
+
+process_index_config([], Validated) ->
+    Validated;
+process_index_config([{IndexName, integer_index, Start, End} | List], Validated) when is_list(IndexName) 
+                                                                   andalso is_integer(Start)
+                                                                   andalso is_integer(End) 
+                                                                   andalso End > Start ->
+    process_index_config(List, [{string:to_lower(IndexName), {integer_index, Start, End}} | Validated]);
+process_index_config([{IndexName, binary_index, Start, End} | List], Validated) when is_list(IndexName) 
+                                                                   andalso is_integer(Start)
+                                                                   andalso is_integer(End) 
+                                                                   andalso End > Start ->
+    Fmt = "\~" ++ integer_to_list(length(integer_to_list(End))) ++ ".10.0B",
+    process_index_config(List, [{string:to_lower(IndexName), {binary_index, Start, End, Fmt}} | Validated]);
+process_index_config([{IndexName, _, _} | List], Validated) ->
+    ?ERROR("Secondary index ~p not correctly configured and will be dropped\n", [IndexName]),
+    process_index_config(List, Validated);
+process_index_config([Index | List], Validated) ->
+    ?ERROR("Secondary index (~p) not correctly configured and will be dropped\n", [Index]),
+    process_index_config(List, Validated).
+
+ensure_2i_set(MD, State) ->
+    case riakc_obj:get_secondary_indexes(MD) of
+        [] ->
+            add_all_2i(MD, State);
+        _ ->
+            MD
+    end.
+
+add_all_2i(MD, State) ->
+    add_2i(MD, State#state.indexes).
+
+add_2i(MD, []) ->
+    MD;
+add_2i(MD, [{IndexName, {binary_index, Start, End, Fmt}} | Rest]) ->
+    Rnd = get_ranged_random_int(Start, End),
+    BinVal = list_to_binary(io_lib:format(Fmt, [Rnd])),
+    MDU = riakc_obj:add_secondary_index(MD, {{binary_index, IndexName}, [BinVal]}),
+    add_2i(MDU, Rest);
+add_2i(MD, [{IndexName, {integer_index, Start, End}} | Rest]) ->
+    Rnd = get_ranged_random_int(Start, End),
+    MDU = riakc_obj:add_secondary_index(MD, {{integer_index, IndexName}, [Rnd]}),
+    add_2i(MDU, Rest).
+
+get_ranged_random_int(Start, End) ->
+    random:uniform(End - Start + 1) - 1 + Start.
