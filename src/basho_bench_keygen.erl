@@ -24,6 +24,7 @@
 -export([new/2,
          dimension/1,
          sequential_int_generator/4]).
+-export([reset_sequential_int_state/0]).        % Internal driver use only.
 
 -include("basho_bench.hrl").
 
@@ -236,4 +237,13 @@ seq_gen_state_dir(Id) ->
                     ok
             end,
             ""
+    end.
+
+reset_sequential_int_state() ->
+    case [X || {{sigen, X}, _} <- element(2, process_info(self(),
+                                                          dictionary))] of
+        [Ref] ->
+            erlang:put({sigen, Ref}, 0);
+        [] ->
+            ok
     end.
