@@ -150,7 +150,7 @@ sequential_int_generator(Ref, MaxValue, Id, DisableProgress) ->
    %% dictionary to keep track of where we are.
    case erlang:get({sigen, Ref}) of
        undefined ->
-           seq_gen_put(Ref, seq_gen_read_resume_value(Id)),
+           seq_gen_put(Ref, seq_gen_read_resume_value(Id, MaxValue)),
            sequential_int_generator(Ref, MaxValue, Id, DisableProgress);
        MaxValue ->
            throw({stop, empty_keygen});
@@ -186,7 +186,7 @@ seq_gen_write_resume_value(Id, Value) ->
             ok = file:rename(OutFileTmp, OutFile)
     end.
 
-seq_gen_read_resume_value(Id) ->
+seq_gen_read_resume_value(Id, MaxValue) ->
     case seq_gen_state_dir(Id) of
         "" ->
             0;
@@ -195,8 +195,14 @@ seq_gen_read_resume_value(Id) ->
                 InFile = Path ++ "/" ++ integer_to_list(Id),
                 {ok, Bin} = file:read_file(InFile),
                 Value = binary_to_term(Bin),
-                ?DEBUG("Id ~p resuming from value ~p\n", [Id, Value]),
-                Value
+            case Value > MaxValue of
+               true ->
+                  ?WARN("Id ~p resume value ~p exceeds maximum value ~p. Restarting from 0",[Id, Value, MaxValue]),
+                  0;
+               false ->
+                  ?DEBUG("Id ~p resuming from value ~p\n", [Id, Value]),
+                  Value
+            end
             catch
                 error:{badmatch, _} ->
                     0;
