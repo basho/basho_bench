@@ -183,7 +183,9 @@ run(update, KeyGen, ValueGen, State) ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
-            end
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
     end;
 run(update_existing, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
@@ -199,7 +201,9 @@ run(update_existing, KeyGen, ValueGen, State) ->
                     {error, Reason, State}
             end;
         {error, notfound} ->
-            {error, {not_found, Key}, State}
+            {error, {not_found, Key}, State};
+        {error, Reason} ->
+            {error, Reason, State}
     end;
 run(delete, KeyGen, _ValueGen, State) ->
     %% Pass on rw
