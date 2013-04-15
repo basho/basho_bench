@@ -35,7 +35,15 @@
                  dw,
                  rw,
                  keylist_length,
-                 preloaded_keys}).
+                 preloaded_keys,
+                 timeout_general,
+                 timeout_read,
+                 timeout_write,
+                 timeout_listkeys,
+                 timeout_mapreduce
+               }).
+
+-define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -77,7 +85,7 @@ new(Id) ->
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
-    case riakc_pb_socket:start_link(TargetIp, TargetPort) of
+    case riakc_pb_socket:start_link(TargetIp, TargetPort, get_connect_options()) of
         {ok, Pid} ->
             {ok, #state { pid = Pid,
                           bucket = Bucket,
@@ -86,8 +94,13 @@ new(Id) ->
                           dw = DW,
                           rw = RW,
                           keylist_length = KeylistLength,
-                          preloaded_keys = PreloadedKeys
-                         }};
+                          preloaded_keys = PreloadedKeys,
+                          timeout_general = get_timeout_general(),
+                          timeout_read = get_timeout(pb_timeout_read),
+                          timeout_write = get_timeout(pb_timeout_write),
+                          timeout_listkeys = get_timeout(pb_timeout_listkeys),
+                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce)
+                        }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
                       [TargetIp, TargetPort, Reason2])
@@ -119,7 +132,7 @@ warn_bucket_mr_correctness(_) ->
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
-                             [{r, State#state.r}]) of
+                             [{r, State#state.r}], State#state.timeout_read) of
         {ok, _} ->
             {ok, State};
         {error, notfound} ->
@@ -130,7 +143,7 @@ run(get, KeyGen, _ValueGen, State) ->
 run(get_existing, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
-                             [{r, State#state.r}]) of
+                             [{r, State#state.r}], State#state.timeout_read) of
         {ok, _} ->
             {ok, State};
         {error, notfound} ->
@@ -142,7 +155,7 @@ run(put, KeyGen, ValueGen, State) ->
     Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
     Robj = riakc_obj:update_value(Robj0, ValueGen()),
     case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
-                                                     {dw, State#state.dw}]) of
+                                                     {dw, State#state.dw}], State#state.timeout_write) of
         ok ->
             {ok, State};
         {error, Reason} ->
@@ -151,11 +164,11 @@ run(put, KeyGen, ValueGen, State) ->
 run(update, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
-                             Key, [{r, State#state.r}]) of
+                             Key, [{r, State#state.r}], State#state.timeout_read) of
         {ok, Robj} ->
             Robj2 = riakc_obj:update_value(Robj, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                              {dw, State#state.dw}]) of
+                                                              {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
@@ -165,33 +178,37 @@ run(update, KeyGen, ValueGen, State) ->
             Robj0 = riakc_obj:new(State#state.bucket, Key),
             Robj = riakc_obj:update_value(Robj0, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
-                                                             {dw, State#state.dw}]) of
+                                                             {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
-            end
+            end;
+        {error, Reason} ->
+            {error, Reason, State}
     end;
 run(update_existing, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
-                             Key, [{r, State#state.r}]) of
+                             Key, [{r, State#state.r}], State#state.timeout_read) of
         {ok, Robj} ->
             Robj2 = riakc_obj:update_value(Robj, ValueGen()),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                              {dw, State#state.dw}]) of
+                                                              {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
             end;
         {error, notfound} ->
-            {error, {not_found, Key}, State}
+            {error, {not_found, Key}, State};
+        {error, Reason} ->
+            {error, Reason, State}
     end;
 run(delete, KeyGen, _ValueGen, State) ->
     %% Pass on rw
     case riakc_pb_socket:delete(State#state.pid, State#state.bucket, KeyGen(),
-                                [{rw, State#state.rw}]) of
+                                [{rw, State#state.rw}], State#state.timeout_write) of
         ok ->
             {ok, State};
         {error, notfound} ->
@@ -201,7 +218,7 @@ run(delete, KeyGen, _ValueGen, State) ->
     end;
 run(listkeys, _KeyGen, _ValueGen, State) ->
     %% Pass on rw
-    case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket) of
+    case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket, State#state.timeout_listkeys) of
         {ok, _Keys} ->
             {ok, State};
         {error, Reason} ->
@@ -225,7 +242,7 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
 %% ====================================================================
 
 mapred(State, Input, Query) ->
-    case riakc_pb_socket:mapred(State#state.pid, Input, Query) of
+    case riakc_pb_socket:mapred(State#state.pid, Input, Query, State#state.timeout_mapreduce) of
         {ok, Result} ->
             case check_result(State, Input, Query, Result) of
                 ok ->
@@ -306,3 +323,15 @@ mapred_ordered_valgen(Id) ->
             put(Save, Next+1),
             list_to_binary(integer_to_list(Next))
     end.
+
+get_timeout_general() ->
+    basho_bench_config:get(pb_timeout_general, ?TIMEOUT_GENERAL).
+
+get_timeout(Name) when Name == pb_timeout_read;
+                       Name == pb_timeout_write;
+                       Name == pb_timeout_listkeys;
+                       Name == pb_timeout_mapreduce ->
+    basho_bench_config:get(Name, get_timeout_general()).
+
+get_connect_options() ->
+    basho_bench_config:get(pb_connect_options, [{auto_reconnect, true}]).
