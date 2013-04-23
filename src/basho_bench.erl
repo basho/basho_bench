@@ -73,6 +73,10 @@ main(Args) ->
     %% show.
     basho_bench_config:load(Configs),
 
+    %% Log level can be overriden by the config files
+    CustomLagerLevel = basho_bench_config:get(log_level),
+    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
+
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
 
