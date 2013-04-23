@@ -56,7 +56,7 @@ main(Args) ->
     basho_bench_config:set(test_id, BenchName),
 
     application:load(lager),
-    ConsoleLagerLevel = basho_bench_config:get(lager_level, debug),
+    ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
     ErrorLog = filename:join([TestDir, "error.log"]),
     ConsoleLog = filename:join([TestDir, "console.log"]),
     CrashLog = filename:join([TestDir, "crash.log"]),
