@@ -100,7 +100,7 @@ function plot_per_op_kind() {
         "max")    COL_POS=10 ;;
         *)        Usage ;;
     esac
-    echo "    \"${FILE}\" using 1:(\$${COL_POS}/\$2/1000) with \\"
+    echo "    \"${FILE}\" using 1:(\$${COL_POS}/1000) with \\"
     echo "        ${PLOT_STYLE} \\"
     # If plotting only 1 directory, do not add its name
     if [ "${TEST_DIR}" == "${THIS_TEST_DIR}" ]; then
