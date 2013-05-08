@@ -50,7 +50,7 @@ main(Args) ->
     %% Load baseline configs
     case application:load(basho_bench) of
         ok -> ok;
-	{error, {already_loaded, basho_bench}} -> ok
+        {error, {already_loaded, basho_bench}} -> ok
     end,
     register(basho_bench, self()),
     basho_bench_config:set(test_id, BenchName),
