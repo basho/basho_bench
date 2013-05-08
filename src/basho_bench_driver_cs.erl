@@ -109,7 +109,7 @@ new(ID) ->
                                               ["127.0.0.1"]) of
                       [C|_] = String when is_integer(C), C < 256 ->
                           [String];
-                      T = Tuple when is_tuple(T) ->
+                      T when is_tuple(T) ->
                           [T];
                       Else ->
                           Else
@@ -209,7 +209,7 @@ run2(Op, _KeyGen, _ValueGen, State) ->
 
 bigfile_valgen(Id, Props) ->
     if Id == 1 ->
-            lager:log(info, "~p value gen props: ~p\n", [?MODULE, Props]);
+            lager:log(info, self(), "~p value gen props: ~p\n", [?MODULE, Props]);
        true ->
             ok
     end,
