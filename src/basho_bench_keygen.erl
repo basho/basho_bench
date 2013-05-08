@@ -80,7 +80,7 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
-    fun() -> sequential_int_generator(Ref, Range, Id, DisableProgress) + MinValue end;
+    fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id) ->
     fun() -> random:uniform(MaxKey) end;
 new({uniform_int, StartKey, NumKeys}, _Id) ->
