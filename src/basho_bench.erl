@@ -98,6 +98,9 @@ main(Args) ->
 
     log_dimensions(),
 
+    %% Run pre_hook for user code preconditions
+    run_pre_hook(),
+
     %% Spin up the application
     ok = basho_bench_app:start(),
 
@@ -176,19 +179,23 @@ test_dir(Opts, Name) ->
 wait_for_stop(Mref, infinity) ->
     receive
         {'DOWN', Mref, _, _, Info} ->
+            run_post_hook(),
             ?CONSOLE("Test stopped: ~p\n", [Info])
     end;
 wait_for_stop(Mref, DurationMins) ->
     Duration = timer:minutes(DurationMins) + timer:seconds(1),
     receive
         {'DOWN', Mref, _, _, Info} ->
+            run_post_hook(),
             ?CONSOLE("Test stopped: ~p\n", [Info]);
         {shutdown, Reason, Exit} ->
+            run_post_hook(),
             basho_bench_app:stop(),
             ?CONSOLE("Test shutdown: ~s~n", [Reason]),
             halt(Exit)
 
     after Duration ->
+            run_post_hook(),
             basho_bench_app:stop(),
             ?CONSOLE("Test completed after ~p mins.\n", [DurationMins])
     end.
@@ -255,3 +262,16 @@ load_source_files(Dir) ->
                         end
                 end,
     filelib:fold_files(Dir, ".*.erl", false, CompileFn, ok).
+
+run_pre_hook() ->
+    run_hook(basho_bench_config:get(pre_hook, no_op)).
+
+run_post_hook() ->
+    run_hook(basho_bench_config:get(post_hook, no_op)).
+
+run_hook({Module, Function}) ->
+    Module:Function();
+
+run_hook(no_op) ->
+    no_op.
+
