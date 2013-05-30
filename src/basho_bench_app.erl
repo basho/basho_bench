@@ -50,10 +50,8 @@ start() ->
        NotInc when NotInc == {ok, standalone} orelse NotInc == undefined ->
           application:load(sasl),
           application:set_env(sasl, sasl_error_logger, {file, "log.sasl.txt"}),
-          ok = application:start(sasl),
-
           %% Make sure crypto is available
-          ok = application:start(crypto),
+          ensure_started([sasl, crypto]),
 
           %% Start up our application -- mark it as permanent so that the node
           %% will be killed if we go down
@@ -95,3 +93,16 @@ stop(_State) ->
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
+
+ensure_started(Applications) when is_list(Applications) ->
+  [ensure_started(Application) || Application <- Applications];
+
+ensure_started(Application) ->
+  case application:start(Application) of
+    ok ->
+      ok;
+    {error, {already_started, Application}} ->
+      ok;
+    Error ->
+      throw(Error)
+  end.
