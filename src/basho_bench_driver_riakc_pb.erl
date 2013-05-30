@@ -31,8 +31,10 @@
 -record(state, { pid,
                  bucket,
                  r,
+                 pr,
                  w,
                  dw,
+                 pw,
                  rw,
                  keylist_length,
                  preloaded_keys,
@@ -75,6 +77,8 @@ new(Id) ->
     W = basho_bench_config:get(riakc_pb_w, Replies),
     DW = basho_bench_config:get(riakc_pb_dw, Replies),
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
+    PW = basho_bench_config:get(riakc_pb_pw, Replies),
+    PR = basho_bench_config:get(riakc_pb_pr, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
     PreloadedKeys = basho_bench_config:get(
@@ -90,9 +94,11 @@ new(Id) ->
             {ok, #state { pid = Pid,
                           bucket = Bucket,
                           r = R,
+                          pr = PR,
                           w = W,
                           dw = DW,
                           rw = RW,
+                          pw = PW,
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
                           timeout_general = get_timeout_general(),
@@ -234,8 +240,32 @@ run(mr_keylist_erlang, KeyGen, _ValueGen, State) ->
     mapred(State, Keylist, ?ERLANG_MR);
 run(mr_keylist_js, KeyGen, _ValueGen, State) ->
     Keylist = make_keylist(State#state.bucket, KeyGen,
-                          State#state.keylist_length),
-    mapred(State, Keylist, ?JS_MR).
+                           State#state.keylist_length),
+    mapred(State, Keylist, ?JS_MR);
+run(counter_incr, KeyGen, ValueGen, State) ->
+    Amt = ValueGen(),
+    Key = KeyGen(),
+    case riakc_pb_socket:counter_incr(State#state.pid, State#state.bucket, Key, Amt,
+                                      [{w, State#state.w},
+                                       {dw, State#state.dw},
+                                       {pw, State#state.pw}]) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(counter_val, KeyGen, _ValueGen, State) ->
+    Key = KeyGen(),
+    case riakc_pb_socket:counter_val(State#state.pid, State#state.bucket, Key,
+                                     [{r, State#state.r}, {pr, State#state.pr}]) of
+        {ok, _N} ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
 
 %% ====================================================================
 %% Internal functions
