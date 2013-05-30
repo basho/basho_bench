@@ -351,9 +351,6 @@ to_list(B) when is_binary(B) ->
 to_list(I) when is_integer(I) ->
     integer_to_list(I).
 
-choose(N, L) ->
-    lists:nth((N rem length(L) + 1), L).
-
 json_get(Url) ->
     Response = ibrowse:send_req(lists:flatten(Url), [], get),
     case Response of
