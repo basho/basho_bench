@@ -1,6 +1,6 @@
 {application, basho_bench,
  [{description, "Riak Benchmarking Suite"},
-  {vsn, "0.1"},
+  {vsn, "0.2"},
   {modules, []},
   {registered, [ basho_bench_sup ]},
   {applications, [kernel,
