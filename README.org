@@ -2,7 +2,7 @@
 ** Overview
    [[http://travis-ci.org/basho/basho_bench][Travis-CI]] :: [[https://secure.travis-ci.org/basho/basho_bench.png]]
 
-   [[http://docs.basho.com/riak/latest/cookbooks/Benchmarking/][Additional Documentation on docs.basho.com]]
+   [[http://docs.basho.com/riak/latest/cookbooks/Benchmarking/][Additional documentation on docs.basho.com]]
 
    Basho Bench is a benchmarking tool created to conduct accurate and
    repeatable performance tests and stress tests, and produce
