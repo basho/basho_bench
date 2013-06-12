@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(basho_bench).
 
--export([main/1]).
+-export([main/1, start/1]).
 
 -include("basho_bench.hrl").
 
@@ -46,7 +46,20 @@ main(Args) ->
     ok = maybe_join(Opts),
     BenchName = bench_name(Opts),
     TestDir = test_dir(Opts, BenchName),
+    load_baseline(BenchName),
+    setup_lager(TestDir),
+    load_configs(TestDir, Configs),
+    run().
 
+start(Config) ->
+    BenchName = id(),
+    %% TestDir = file:get_cwd(),
+    load_baseline(BenchName),
+    %% setup_lager(TestDir),
+    basho_bench_config:load_terms(Config),
+    run().
+
+load_baseline(BenchName) ->
     %% Load baseline configs
     case application:load(basho_bench) of
         ok -> ok;
@@ -54,7 +67,9 @@ main(Args) ->
     end,
     register(basho_bench, self()),
     basho_bench_config:set(test_id, BenchName),
+    ok.
 
+setup_lager(TestDir) ->
     application:load(lager),
     ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
     ErrorLog = filename:join([TestDir, "error.log"]),
@@ -68,7 +83,9 @@ main(Args) ->
                             {ConsoleLog, debug, 10485760, "$D0", 5} ]} ]),
     application:set_env(lager, crash_log, CrashLog),
     lager:start(),
+    ok.
 
+load_configs(TestDir, Configs) ->
     %% Make sure this happens after starting lager or failures wont
     %% show.
     basho_bench_config:load(Configs),
@@ -77,6 +94,16 @@ main(Args) ->
     CustomLagerLevel = basho_bench_config:get(log_level),
     lager:set_loglevel(lager_console_backend, CustomLagerLevel),
 
+    %% Copy the config into the test dir for posterity
+    [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
+      || Config <- Configs ],
+
+    %% Set our CWD to the test dir
+    ok = file:set_cwd(TestDir),
+
+    ok.
+
+run() ->
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
 
@@ -88,13 +115,6 @@ main(Args) ->
         SourceDir ->
             load_source_files(SourceDir)
     end,
-
-    %% Copy the config into the test dir for posterity
-    [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
-      || Config <- Configs ],
-
-    %% Set our CWD to the test dir
-    ok = file:set_cwd(TestDir),
 
     log_dimensions(),
 

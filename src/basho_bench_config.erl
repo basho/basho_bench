@@ -22,6 +22,7 @@
 -module(basho_bench_config).
 
 -export([load/1,
+         load_terms/1,
          normalize_ips/2,
          set/2,
          get/1, get/2]).
@@ -40,7 +41,10 @@ load(Files) ->
               {error, Reason} ->
                   ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason])
           end || File <- Files ],
-    load_config(lists:append(TermsList)).
+    load_terms(lists:append(TermsList)).
+
+load_terms(Terms) ->
+    load_config(Terms).
 
 %% @doc Normalize the list of IPs and Ports.
 %%
