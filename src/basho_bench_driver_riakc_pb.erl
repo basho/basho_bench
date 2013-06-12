@@ -68,8 +68,15 @@ new(Id) ->
             ok
     end,
 
-    Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
-    Port  = basho_bench_config:get(riakc_pb_port, 8087),
+    case basho_bench_config:get(riakc_pb_seed, undefined) of
+        undefined ->
+            Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
+            Port = basho_bench_config:get(riakc_pb_port, 8087);
+        SeedConfig ->
+            Ips = seed(SeedConfig),
+            Port = undefined
+    end,
+
     %% riakc_pb_replies sets defaults for R, W, DW and RW.
     %% Each can be overridden separately
     Replies = basho_bench_config:get(riakc_pb_replies, quorum),
@@ -112,6 +119,62 @@ new(Id) ->
                       [TargetIp, TargetPort, Reason2])
     end.
 
+seed({Node, Cookie}) ->
+    erlang:set_cookie(Node, Cookie),
+    seed(Node);
+seed(Node) ->
+    case net_adm:ping(Node) of
+        pang ->
+            ?FAIL_MSG("Unable to contact seed node: ~p~n", [Node]);
+        pong ->
+            {ok, Ring} = rpc:call(Node, riak_core_ring_manager, get_my_ring, []),
+            Nodes = rpc:call(Node, riak_core_ring, all_members, [Ring]),
+            NodeConns = connection_info(Nodes),
+            [{IP, Port} || {_, Connections} <- NodeConns,
+                           {pb, {IP, Port}} <- Connections]
+    end.
+
+%% @doc Helper that returns first successful application get_env result,
+%%      used when different versions of Riak use different app vars for
+%%      the same setting.
+rpc_get_env(_, []) ->
+    undefined;
+rpc_get_env(Node, [{App,Var}|Others]) ->
+    case rpc:call(Node, application, get_env, [App, Var]) of
+        {ok, Value} ->
+            {ok, Value};
+        _ ->
+            rpc_get_env(Node, Others)
+    end.
+
+-type interface() :: {http, tuple()} | {pb, tuple()}.
+-type interfaces() :: [interface()].
+-type conn_info() :: [{node(), interfaces()}].
+
+-spec connection_info([node()]) -> conn_info().
+connection_info(Nodes) ->
+    [begin
+         {ok, [{PB_IP, PB_Port}]} = get_pb_conn_info(Node),
+         {ok, [{HTTP_IP, HTTP_Port}]} =
+             rpc:call(Node, application, get_env, [riak_core, http]),
+         {Node, [{http, {HTTP_IP, HTTP_Port}}, {pb, {PB_IP, PB_Port}}]}
+     end || Node <- Nodes].
+
+-spec get_pb_conn_info(node()) -> [{inet:ip_address(), pos_integer()}].
+get_pb_conn_info(Node) ->
+    case rpc_get_env(Node, [{riak_api, pb},
+                            {riak_api, pb_ip},
+                            {riak_kv, pb_ip}]) of
+        {ok, [{NewIP, NewPort}|_]} ->
+            {ok, [{NewIP, NewPort}]};
+        {ok, PB_IP} ->
+            {ok, PB_Port} = rpc_get_env(Node, [{riak_api, pb_port},
+                                               {riak_kv, pb_port}]),
+            {ok, [{PB_IP, PB_Port}]};
+        _ ->
+            undefined
+    end.
+
 %% @doc For bucket-wide MapReduce, we can only check the result for
 %% correctness if we know how many keys are stored.  This will print a
 %% warning if that information is not available (it's expected as
@@ -144,6 +207,7 @@ run(get, KeyGen, _ValueGen, State) ->
         {error, notfound} ->
             {ok, State};
         {error, Reason} ->
+            %% io:format("R: ~p~n", [Reason]),
             {error, Reason, State}
     end;
 run(get_existing, KeyGen, _ValueGen, State) ->
