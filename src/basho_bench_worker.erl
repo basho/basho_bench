@@ -67,6 +67,25 @@ stop(Pids) ->
 %% ====================================================================
 
 init([SupChild, Id]) ->
+    gen_server:cast(self(), init),
+
+    %% If the system is marked as running this is a restart; queue up the run
+    %% message for this worker
+    case basho_bench_app:is_running() of
+        true ->
+            ?WARN("Restarting crashed worker.\n", []),
+            gen_server:cast(self(), run);
+        false ->
+            ok
+    end,
+
+    {ok, #state{sup_id=SupChild, id=Id}}.
+
+handle_call(run, _From, State) ->
+    State#state.worker_pid ! run,
+    {reply, ok, State}.
+
+handle_cast(init, #state{sup_id=SupChild, id=Id}) ->
     %% Setup RNG seed for worker sub-process to use; incorporate the ID of
     %% the worker to ensure consistency in load-gen
     %%
@@ -117,21 +136,7 @@ init([SupChild, Id]) ->
             ok
     end,
 
-    %% If the system is marked as running this is a restart; queue up the run
-    %% message for this worker
-    case basho_bench_app:is_running() of
-        true ->
-            ?WARN("Restarting crashed worker.\n", []),
-            gen_server:cast(self(), run);
-        false ->
-            ok
-    end,
-
-    {ok, State#state { worker_pid = WorkerPid }}.
-
-handle_call(run, _From, State) ->
-    State#state.worker_pid ! run,
-    {reply, ok, State}.
+    {noreply, State#state { worker_pid = WorkerPid }};
 
 handle_cast(run, State) ->
     State#state.worker_pid ! run,
