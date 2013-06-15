@@ -64,28 +64,60 @@ new(Id) ->
 
     {ok, #state {path_params = Params}}.
 
-run({get, {Host, Port, Path}}, KeyGen, _ValueGen, _State) ->
+run({get_re, {Host, Port, Path}, Headers}, KeyGen, _ValueGen, _State) ->
+    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
+    run({get, {Host, Port, Path1}, Headers}, KeyGen, _ValueGen, _State);
 
-    Path1 = re:replace(Path, "%%V", KeyGen(), [global, {return, list}]),
+run({get, {Host, Port, Path}, Headers}, _KeyGen, _ValueGen, _State) ->
+    PUrl = #url{host=Host, port=Port, path=Path},
 
-    PUrl = #url{host=Host, port=Port, path=Path1},
-
-    case do_get(PUrl) of
+    case do_get(PUrl, Headers) of
         {not_found, _Url} ->
             {ok, 1};
-        {ok, _Url, _Headers} ->
+        {ok, _Url, _Header} ->
             {ok, 1};
         {error, Reason} ->
             {error, Reason, 1}
     end;
-run({put, {Host, Port, Path, Data}}, KeyGen, _ValueGen, _State) ->
-    Path1 = re:replace(Path, "%%V", KeyGen(), [global, {return, list}]),
 
-    PUrl = #url{host=Host, port=Port, path=Path1},
+run({put_re, {Host, Port, Path, Data}, Headers}, KeyGen, ValueGen, _State) ->
+    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
+    Value = re:replace(Data, "%%V", ValueGen(), [global, {return, list}]),
+    run({put, {Host, Port, Path1, Value}, Headers}, KeyGen, ValueGen, _State);
 
-    Value = re:replace(Data, "%%V", KeyGen(), [global, {return, list}]),
+run({put, {Host, Port, Path, Data}, Headers}, _KeyGen, _ValueGen, _State) ->
+    PUrl = #url{host=Host, port=Port, path=Path},
 
-    case do_put(PUrl, [], Value) of
+    case do_put(PUrl, Headers, Data) of
+        ok ->
+            {ok, 1};
+        {error, Reason} ->
+            {error, Reason, 1}
+    end;
+
+run({post_re, {Host, Port, Path, Data}, Headers}, KeyGen, ValueGen, _State) ->
+    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
+    Value = re:replace(Data, "%%V", ValueGen(), [global, {return, list}]),
+    run({post, {Host, Port, Path1, Value}, Headers}, KeyGen, ValueGen, _State);
+
+run({post, {Host, Port, Path, Data}, Headers}, _KeyGen, _ValueGen, _State) ->
+    PUrl = #url{host=Host, port=Port, path=Path},
+
+    case do_post(PUrl, Headers, Data) of
+        ok ->
+            {ok, 1};
+        {error, Reason} ->
+            {error, Reason, 1}
+    end;
+
+run({delete_re, {Host, Port, Path}, Headers}, KeyGen, _ValueGen, _State) ->
+    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
+    run({delete, {Host, Port, Path1}, Headers}, KeyGen, _ValueGen, _State);
+
+run({delete, {Host, Port, Path}, Headers}, _KeyGen, _ValueGen, _State) ->
+    PUrl = #url{host=Host, port=Port, path=Path},
+
+    case do_delete(PUrl, Headers) of
         ok ->
             {ok, 1};
         {error, Reason} ->
@@ -96,21 +128,16 @@ run({put, {Host, Port, Path, Data}}, KeyGen, _ValueGen, _State) ->
 %% Internal functions
 %% ====================================================================
 
-do_get(Url) ->
-    do_get(Url, []).
-
-do_get(Url, Opts) ->
-    case send_request(Url, [], get, [], [{response_format, binary}]) of
-        {ok, "404", _Headers, _Body} ->
+do_get(Url, Headers) ->
+    %%case send_request(Url, [], get, [], [{response_format, binary}]) of
+    case send_request(Url, Headers, get, [], [{response_format, binary}]) of
+        {ok, "404", _Header, _Body} ->
             {not_found, Url};
-        {ok, "300", Headers, _Body} ->
-            {ok, Url, Headers};
-        {ok, "200", Headers, Body} ->
-            case proplists:get_bool(body_on_success, Opts) of
-                true -> {ok, Url, Headers, Body};
-                false -> {ok, Url, Headers}
-            end;
-        {ok, Code, _Headers, _Body} ->
+        {ok, "300", Header, _Body} ->
+            {ok, Url, Header};
+        {ok, "200", Header, _Body} ->
+            {ok, Url, Header};
+        {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
         {error, Reason} ->
             {error, Reason}
@@ -122,9 +149,57 @@ do_put(Url, Headers, ValueGen) ->
              true ->
                   ValueGen
           end,
-    case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
+    case send_request(Url, Headers,
                       put, Val, [{response_format, binary}]) of
+        {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, "202", _Header, _Body} ->
+            ok;
         {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+do_post(Url, Headers, ValueGen) ->
+    Val = if is_function(ValueGen) ->
+                  ValueGen();
+             true ->
+                  ValueGen
+          end,
+    case send_request(Url, Headers,
+                      post, Val, [{response_format, binary}]) of
+        {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, "202", _Header, _Body} ->
+            ok;
+        {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+do_delete(Url, Headers) ->
+    case send_request(Url, Headers, delete, [], []) of
+        {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, "201", _Header, _Body} ->
+            ok;
+        {ok, "202", _Header, _Body} ->
+            ok;
+        {ok, "204", _Header, _Body} ->
+            ok;
+        {ok, "404", _Header, _Body} ->
+            ok;
+        {ok, "410", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
             {error, {http_error, Code}};
