@@ -40,6 +40,7 @@ cli_options() ->
     ].
 
 main(Args) ->
+    schedmon:start(5000, true),
     {Opts, Configs} = check_args(getopt:parse(cli_options(), Args)),
     ok = maybe_show_usage(Opts),
     ok = maybe_net_node(Opts),

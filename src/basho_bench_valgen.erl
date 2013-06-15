@@ -45,6 +45,9 @@ new({uniform_bin, MinSize, MaxSize}, Id) ->
     Source = init_source(Id),
     Diff = MaxSize - MinSize,
     fun() -> data_block(Source, MinSize + random:uniform(Diff)) end;
+new({highly_compressible_bin, Size}, _Id) ->
+    Char = random:uniform(95)+31,
+    fun() -> list_to_binary(lists:map(fun (_) -> Char end, lists:seq(1,Size))) end;
 new({function, Module, Function, Args}, Id) ->
     case code:ensure_loaded(Module) of
         {module, Module} ->

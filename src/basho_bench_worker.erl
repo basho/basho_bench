@@ -60,6 +60,8 @@ run(Pids) ->
 
 stop(Pids) ->
     [ok = gen_server:call(Pid, stop) || Pid <- Pids],
+    Driver  = basho_bench_config:get(driver),
+    Driver:stop(),
     ok.
 
 %% ====================================================================

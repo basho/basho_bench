@@ -1,4 +1,4 @@
-#!/usr/bin/env Rscript --vanilla
+#!/usr/bin/env Rscript
 
 # Parse the --file= argument out of command line args and
 # determine where base directory is so that we can source
