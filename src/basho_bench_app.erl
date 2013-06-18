@@ -88,6 +88,10 @@ start(_StartType, _StartArgs) ->
 
 
 stop(_State) ->
+    %% intentionally left in to show where worker profiling start/stop calls go.
+    %% eprof:stop_profiling(),
+    %% eprof:analyze(total),
+    %% eprof:log("bb.eprof"),
     ok.
 
 %% ===================================================================
