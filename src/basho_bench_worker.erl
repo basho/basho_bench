@@ -279,10 +279,18 @@ worker_next_op(State) ->
 needs_shutdown(State) ->
     Parent = State#state.parent_pid,
     receive
-        {'EXIT', Parent, _Reason} ->
-            %% Give the driver a chance to cleanup
-            (catch (State#state.driver):terminate(normal, State#state.driver_state)),
-            true
+        {'EXIT', Pid, _Reason} ->
+            case Pid of
+                Parent ->
+                    %% Give the driver a chance to cleanup
+                    (catch (State#state.driver):terminate(normal, 
+                                                          State#state.driver_state)),
+                    true;
+                _Else -> 
+                    %% catch this so that selective recieve doesn't kill us when running 
+                    %% the riakclient_driver
+                    false
+            end
     after 0 ->
             false
     end.
