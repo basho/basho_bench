@@ -2,7 +2,7 @@ REPO            ?= basho_bench
 
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION     ?= $(shell git describe --tags | tr - .)
-PKG_ID           = basho-bench-$(PKG_VERSION)
+PKG_ID           = bashobench-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
@@ -11,6 +11,9 @@ OVERLAY_VARS    ?=
 
 
 .PHONY: deps
+
+rel: deps compile
+	./rebar skip_deps=true escriptize
 
 all: deps compile
 	./rebar skip_deps=true escriptize
