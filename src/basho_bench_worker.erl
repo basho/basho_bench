@@ -263,7 +263,21 @@ worker_next_op(State) ->
             (catch (State#state.driver):terminate({'EXIT', Reason}, State#state.driver_state)),
 
             ?DEBUG("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
-            crash;
+            case State#state.shutdown_on_error of
+                true ->
+                    %% Yes, I know this is weird, but currently this
+                    %% is how you tell Basho Bench to return a
+                    %% non-zero exit status.  Ideally this would all
+                    %% be done in the `handle_info' callback where it
+                    %% would check `Reason' and `shutdown_on_error'.
+                    %% Then I wouldn't have to return a bullshit "ok"
+                    %% here.
+                    erlang:send_after(500, basho_bench,
+                                      {shutdown, "Shutdown on errors requested", 2}),
+                    {ok, State};
+                false ->
+                    crash
+            end;
 
         {stop, Reason} ->
             %% Driver (or something within it) has requested that this worker
