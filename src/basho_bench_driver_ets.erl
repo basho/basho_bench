@@ -2,7 +2,7 @@
 %%
 %% basho_bench: Benchmarking Suite
 %%
-%% Copyright (c) 2009-2010 Basho Techonologies
+%% Copyright (c) 2009-2013 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
 %% Version 2.0 (the "License"); you may not use this file
@@ -31,7 +31,7 @@
 %% ====================================================================
 
 new(_Id) ->
-    Opts = basho_bench_config:get(options, ?MODULE),
+    Opts = basho_bench_config:get(ets_table_options, [set,private]),
     Tid = ets:new(?MODULE, Opts),
     {ok, Tid}.
 
@@ -41,7 +41,7 @@ run(get, KeyGen, _ValueGen, State) ->
     case ets:lookup(Tid, Key) of
         [] ->
             {ok, State};
-        [{Key, _}] ->
+        [{Key, _}|_] ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
