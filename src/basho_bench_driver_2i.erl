@@ -308,8 +308,8 @@ run({query_pb, MaxN}, KeyGen, _ValueGen, State) ->
     Bucket = State#state.bucket,
     {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
     case {riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
-                                   to_binary(StartKey), to_binary(EndKey),
-                                    State#state.pb_timeout), MaxKey} of
+				    to_binary(StartKey), to_binary(EndKey),
+                                    State#state.pb_timeout, State#state.pb_timeout), MaxKey} of
         {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
         {{ok, Results}, undefined} ->
