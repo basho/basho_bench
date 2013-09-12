@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(basho_bench).
 
--export([main/1]).
+-export([main/1, md5/1]).
 
 -include("basho_bench.hrl").
 
@@ -275,3 +275,11 @@ run_hook({Module, Function}) ->
 run_hook(no_op) ->
     no_op.
 
+%% just a utility, should be in basho_bench_utils.erl
+%% but 's' is for multiple utilities, and so far this
+%% is the only one.
+-ifdef(new_hash).
+md5(Bin) -> crypto:hash(md5, Bin).
+-else.
+md5(Bin) -> crypto:md5(Bin).
+-endif.
