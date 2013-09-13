@@ -17,6 +17,7 @@ distclean: clean
 
 results:
 	@echo "\n\nPfffft... you wish!  For further details, please spam steve@basho.com\n\n"
+	priv/summary.r -i tests/current
 
 byte_sec-results:
 	priv/summary.r --ylabel1stgraph byte/sec -i tests/current
