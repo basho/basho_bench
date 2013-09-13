@@ -36,6 +36,9 @@
                  dw,
                  pw,
                  rw,
+                 search_queries,
+                 query_step_interval,
+                 start_time,
                  keylist_length,
                  preloaded_keys,
                  timeout_general,
@@ -79,6 +82,8 @@ new(Id) ->
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     PW = basho_bench_config:get(riakc_pb_pw, Replies),
     PR = basho_bench_config:get(riakc_pb_pr, Replies),
+    SearchQs = basho_bench_config:get(riakc_pb_search_queries, []),
+    SearchQStepIval = basho_bench_config:get(query_step_interval, 60),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
     PreloadedKeys = basho_bench_config:get(
@@ -99,6 +104,9 @@ new(Id) ->
                           dw = DW,
                           rw = RW,
                           pw = PW,
+                          search_queries = SearchQs,
+                          query_step_interval = SearchQStepIval,
+                          start_time = erlang:now(),
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
                           timeout_general = get_timeout_general(),
@@ -230,6 +238,34 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
+    [{Index, Query, Options}|_] = SearchQs,
+
+    NewState = State#state{search_queries=roll_list(SearchQs)},
+
+    case riakc_pb_socket:search(NewState#state.pid, Index, Query, Options, NewState#state.timeout_read) of
+          {ok, _Results} ->
+              {ok, NewState};
+          {error, Reason} ->
+              {error, Reason, NewState}
+    end;
+run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_time=StartTime, query_step_interval=Interval}=State) ->
+    [{Index, Query, Options}|_] = SearchQs,
+
+    Now = erlang:now(),
+    case timer:now_diff(Now, StartTime) of
+        _MicroSec when _MicroSec > (Interval * 1000000) ->
+            NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
+        _MicroSec -> 
+            NewState = State
+    end,
+
+    case riakc_pb_socket:search(NewState#state.pid, Index, Query, Options, NewState#state.timeout_read) of
+          {ok, _Results} ->
+              {ok, NewState};
+          {error, Reason} ->
+              {error, Reason, NewState}
+    end;
 run(mr_bucket_erlang, _KeyGen, _ValueGen, State) ->
     mapred(State, State#state.bucket, ?ERLANG_MR);
 run(mr_bucket_js, _KeyGen, _ValueGen, State) ->
@@ -335,6 +371,9 @@ make_keylist(_Bucket, _KeyGen, 0) ->
 make_keylist(Bucket, KeyGen, Count) ->
     [{Bucket, list_to_binary(KeyGen())}
      |make_keylist(Bucket, KeyGen, Count-1)].
+
+roll_list(List) ->
+    [lists:last(List) | lists:sublist(List, length(List) - 1)].
 
 mapred_valgen(_Id, MaxRand) ->
     fun() ->
