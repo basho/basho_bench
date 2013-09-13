@@ -16,7 +16,7 @@ distclean: clean
 	@rm -rf basho_bench deps
 
 results:
-	priv/summary.r -i tests/current
+	@echo "\n\nPfffft... you wish!  For further details, please spam steve@basho.com\n\n"
 
 byte_sec-results:
 	priv/summary.r --ylabel1stgraph byte/sec -i tests/current
