@@ -241,7 +241,7 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
 run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
     [{Index, Query, Options}|_] = SearchQs,
 
-    NewState = State#state{search_queries=roll_search_query_list(SearchQs)},
+    NewState = State#state{search_queries=roll_list(SearchQs)},
 
     case riakc_pb_socket:search(NewState#state.pid, Index, Query, Options, NewState#state.timeout_read) of
           {ok, _Results} ->
@@ -255,7 +255,7 @@ run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_t
     Now = erlang:now(),
     case timer:now_diff(Now, StartTime) of
         _MicroSec when _MicroSec > (Interval * 1000000) ->
-            NewState = State#state{search_queries=roll_search_query_list(SearchQs),start_time=Now};
+            NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
         _MicroSec -> 
             NewState = State
     end,
@@ -372,7 +372,7 @@ make_keylist(Bucket, KeyGen, Count) ->
     [{Bucket, list_to_binary(KeyGen())}
      |make_keylist(Bucket, KeyGen, Count-1)].
 
-roll_search_query_list(List) ->
+roll_list(List) ->
     [lists:last(List) | lists:sublist(List, length(List) - 1)].
 
 mapred_valgen(_Id, MaxRand) ->
