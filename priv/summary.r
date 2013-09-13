@@ -61,6 +61,8 @@ latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
 
 # Plot 99 and 99.9th percentiles
 plot2 <- latency_plot +
+            geom_point(aes(y = X99th, color = "X99th")) +
+            geom_point(aes(y = X99_9th, color = "X99_9th")) +
             geom_smooth(aes(y = X99th, color = "X99th")) +
             geom_smooth(aes(y = X99_9th, color = "X99_9th")) +
             scale_color_hue("Percentile",
@@ -70,6 +72,9 @@ plot2 <- latency_plot +
 
 # Plot median, mean and 95th percentiles
 plot3 <- latency_plot +
+            geom_point(aes(y = median, color = "median")) +
+            geom_point(aes(y = mean, color = "mean")) +
+            geom_point(aes(y = X95th, color = "X95th")) +
             geom_smooth(aes(y = median, color = "median")) +
             geom_smooth(aes(y = mean, color = "mean")) +
             geom_smooth(aes(y = X95th, color = "X95th")) +
