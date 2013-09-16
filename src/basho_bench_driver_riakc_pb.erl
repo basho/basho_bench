@@ -1,4 +1,4 @@
-%% -------------------------------------------------------------------
+% -------------------------------------------------------------------
 %%
 %% basho_bench_driver_riakc_pb: Driver for riak protocol buffers client
 %%
@@ -36,6 +36,7 @@
                  dw,
                  pw,
                  rw,
+                 content_type,
                  search_queries,
                  query_step_interval,
                  start_time,
@@ -88,6 +89,7 @@ new(Id) ->
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
     PreloadedKeys = basho_bench_config:get(
                       riakc_pb_preloaded_keys, undefined),
+    CT = basho_bench_config:get(riakc_pb_content_type, "application/octet-stream"),
     warn_bucket_mr_correctness(PreloadedKeys),
 
     %% Choose the target node using our ID as a modulus
@@ -104,6 +106,7 @@ new(Id) ->
                           dw = DW,
                           rw = RW,
                           pw = PW,
+                          content_type = CT,
                           search_queries = SearchQs,
                           query_step_interval = SearchQStepIval,
                           start_time = erlang:now(),
@@ -166,8 +169,7 @@ run(get_existing, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    Robj0 = riakc_obj:new(State#state.bucket, KeyGen()),
-    Robj = riakc_obj:update_value(Robj0, ValueGen()),
+    Robj = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen(), State#state.content_type),
     case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
                                                      {dw, State#state.dw}], State#state.timeout_write) of
         ok ->
@@ -180,7 +182,7 @@ run(update, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}], State#state.timeout_read) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj2 = riakc_obj:update_content_type(riakc_obj:update_value(Robj, ValueGen()), State#state.content_type),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                               {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
@@ -189,8 +191,7 @@ run(update, KeyGen, ValueGen, State) ->
                     {error, Reason, State}
             end;
         {error, notfound} ->
-            Robj0 = riakc_obj:new(State#state.bucket, Key),
-            Robj = riakc_obj:update_value(Robj0, ValueGen()),
+            Robj = riakc_obj:new(State#state.bucket, Key, ValueGen(), State#state.content_type),
             case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
                                                              {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
@@ -206,7 +207,7 @@ run(update_existing, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}], State#state.timeout_read) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj2 = riakc_obj:update_content_type(riakc_obj:update_value(Robj, ValueGen()), State#state.content_type),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                               {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
