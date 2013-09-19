@@ -30,7 +30,6 @@
 %
 -module(uuid).
 -export([v4/0, to_string/1, get_parts/1, to_binary/1]).
--import(random).
 
 % Generates a random binary UUID.
 v4() ->
