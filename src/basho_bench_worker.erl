@@ -55,6 +55,12 @@ start_link(SupChild, Id) ->
     gen_server:start_link(?MODULE, [SupChild, Id], []).
 
 run(Pids) ->
+    Driver = basho_bench_config:get(driver),
+    try Driver:setup() of 
+        _ -> ok 
+    catch 
+        _:_ -> ok 
+    end,
     [ok = gen_server:call(Pid, run) || Pid <- Pids],
     ok.
 
