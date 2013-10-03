@@ -79,6 +79,12 @@ halt_or_kill() ->
 %%===================================================================
 
 start(_StartType, _StartArgs) ->
+    Driver = basho_bench_config:get(driver),
+    try Driver:setup() of 
+        _ -> ok 
+    catch 
+        _:_ -> ok 
+    end,
     {ok, Pid} = basho_bench_sup:start_link(),
     application:set_env(basho_bench_app, is_running, true),
     ok = basho_bench_stats:run(),
