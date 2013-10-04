@@ -55,6 +55,10 @@ new({function, Module, Function, Args}, Id) ->
         _Error ->
             ?FAIL_MSG("Could not find valgen function: ~p:~p\n", [Module, Function])
     end;
+new({uniform_int, MaxVal}, _Id) ->
+    fun() -> random:uniform(MaxVal) end;
+new({uniform_int, MinVal, MaxVal}, _Id) ->
+    fun() -> random:uniform(MinVal, MaxVal) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported value generator requested: ~p\n", [Other]).
 

@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 -module(basho_bench).
 
--export([main/1]).
+-export([main/1, md5/1]).
 
 -include("basho_bench.hrl").
 
@@ -51,13 +51,13 @@ main(Args) ->
     %% Load baseline configs
     case application:load(basho_bench) of
         ok -> ok;
-	{error, {already_loaded, basho_bench}} -> ok
+        {error, {already_loaded, basho_bench}} -> ok
     end,
     register(basho_bench, self()),
     basho_bench_config:set(test_id, BenchName),
 
     application:load(lager),
-    ConsoleLagerLevel = basho_bench_config:get(lager_level, debug),
+    ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
     ErrorLog = filename:join([TestDir, "error.log"]),
     ConsoleLog = filename:join([TestDir, "console.log"]),
     CrashLog = filename:join([TestDir, "crash.log"]),
@@ -73,6 +73,10 @@ main(Args) ->
     %% Make sure this happens after starting lager or failures wont
     %% show.
     basho_bench_config:load(Configs),
+
+    %% Log level can be overriden by the config files
+    CustomLagerLevel = basho_bench_config:get(log_level),
+    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
 
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
@@ -94,6 +98,9 @@ main(Args) ->
     ok = file:set_cwd(TestDir),
 
     log_dimensions(),
+
+    %% Run pre_hook for user code preconditions
+    run_pre_hook(),
 
     %% Spin up the application
     ok = basho_bench_app:start(),
@@ -173,19 +180,23 @@ test_dir(Opts, Name) ->
 wait_for_stop(Mref, infinity) ->
     receive
         {'DOWN', Mref, _, _, Info} ->
+            run_post_hook(),
             ?CONSOLE("Test stopped: ~p\n", [Info])
     end;
 wait_for_stop(Mref, DurationMins) ->
     Duration = timer:minutes(DurationMins) + timer:seconds(1),
     receive
         {'DOWN', Mref, _, _, Info} ->
+            run_post_hook(),
             ?CONSOLE("Test stopped: ~p\n", [Info]);
         {shutdown, Reason, Exit} ->
+            run_post_hook(),
             basho_bench_app:stop(),
             ?CONSOLE("Test shutdown: ~s~n", [Reason]),
             halt(Exit)
 
     after Duration ->
+            run_post_hook(),
             basho_bench_app:stop(),
             ?CONSOLE("Test completed after ~p mins.\n", [DurationMins])
     end.
@@ -252,3 +263,24 @@ load_source_files(Dir) ->
                         end
                 end,
     filelib:fold_files(Dir, ".*.erl", false, CompileFn, ok).
+
+run_pre_hook() ->
+    run_hook(basho_bench_config:get(pre_hook, no_op)).
+
+run_post_hook() ->
+    run_hook(basho_bench_config:get(post_hook, no_op)).
+
+run_hook({Module, Function}) ->
+    Module:Function();
+
+run_hook(no_op) ->
+    no_op.
+
+%% just a utility, should be in basho_bench_utils.erl
+%% but 's' is for multiple utilities, and so far this
+%% is the only one.
+-ifdef(new_hash).
+md5(Bin) -> crypto:hash(md5, Bin).
+-else.
+md5(Bin) -> crypto:md5(Bin).
+-endif.

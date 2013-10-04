@@ -80,7 +80,7 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
-    fun() -> sequential_int_generator(Ref, Range, Id, DisableProgress) + MinValue end;
+    fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id) ->
     fun() -> random:uniform(MaxKey) end;
 new({uniform_int, StartKey, NumKeys}, _Id) ->
@@ -99,6 +99,10 @@ new({function, Module, Function, Args}, Id) ->
         _Error ->
             ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
     end;
+%% Adapt a value generator. The function keygen would work if Id was added as 
+%% the last parameter. But, alas, it is added as the first.
+new({valgen, ValGen}, Id) ->
+    basho_bench_valgen:new(ValGen, Id);
 new(Bin, _Id) when is_binary(Bin) ->
     fun() -> Bin end;
 new(Other, _Id) ->

@@ -7,7 +7,7 @@ deps:
 	./rebar get-deps
 
 compile: deps
-	./rebar compile
+	@(./rebar compile)
 
 clean:
 	@./rebar clean

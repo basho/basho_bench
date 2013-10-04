@@ -31,7 +31,9 @@
           http_host,
           http_port,
           bucket,
-          max_key
+          max_key,
+          pb_timeout,
+          http_timeout
          }).
 
 
@@ -55,6 +57,8 @@ new(Id) ->
 
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"mybucket">>),
     MaxKey  = basho_bench_config:get(enforce_keyrange, undefined),
+    PBTimeout = basho_bench_config:get(pb_timeout_general, 30*1000),
+    HTTPTimeout = basho_bench_config:get(http_timeout_general, 30*1000),
 
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
@@ -73,7 +77,9 @@ new(Id) ->
                http_host = HTTPTargetIp,
                http_port = HTTPTargetPort,
                bucket = Bucket,
-               max_key = MaxKey }};
+               max_key = MaxKey,
+               pb_timeout = PBTimeout,
+               http_timeout = HTTPTimeout}};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [PBTargetIp, PBTargetPort, Reason2])
@@ -84,7 +90,7 @@ run(get_pb, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
     Key = to_binary(KeyGen()),
-    case riakc_pb_socket:get(Pid, Bucket, Key) of
+    case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
             {ok, State};
         {error, notfound} ->
@@ -108,7 +114,7 @@ run({put_pb, N}, KeyGen, ValueGen, State) ->
     Robj2 = riakc_obj:update_metadata(Robj1, MetaData),
 
     %% Write the object...
-    case riakc_pb_socket:put(Pid, Robj2) of
+    case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
         ok ->
             {ok, State};
         {error, Reason} ->
@@ -124,7 +130,7 @@ run({query_http, MaxN}, KeyGen, _ValueGen, State) ->
     URL = io_lib:format("http://~s:~p/buckets/~s/index/field1_int/~p/~p", 
                     [Host, Port, Bucket, StartKey, EndKey]),
 
-    case json_get(URL) of
+    case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             case {proplists:get_value(<<"keys">>, Proplist), MaxKey} of
                 {Results, _} when length(Results) == N ->
@@ -170,7 +176,7 @@ run({query_mr, 1}, KeyGen, _ValueGen, State) ->
          ]
       }
     "],
-    case json_post(URL, Body) of
+    case json_post(URL, Body, State) of
         {ok, Results} when length(Results) == 1 ->
             {ok, State};
         {ok, Results} ->
@@ -206,7 +212,7 @@ run({query_mr, MaxN}, KeyGen, _ValueGen, State) ->
          ]
       }
     "],
-    case {json_post(URL, Body), MaxKey} of
+    case {json_post(URL, Body, State), MaxKey} of
         {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
         {{ok, Results}, undefined} ->
@@ -238,7 +244,7 @@ run({query_mr2, 1}, KeyGen, _ValueGen, State) ->
          \"query\":[]
       }
     "],
-    case json_post(URL, Body) of
+    case json_post(URL, Body, State) of
         {ok, Results} when length(Results) == 1 ->
             {ok, State};
         {ok, Results} ->
@@ -265,7 +271,7 @@ run({query_mr2, MaxN}, KeyGen, _ValueGen, State) ->
          \"query\":[]
       }
     "],
-    case {json_post(URL, Body), MaxKey} of
+    case {json_post(URL, Body, State), MaxKey} of
         {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
         {{ok, Results}, undefined} ->
@@ -286,7 +292,8 @@ run({query_pb, 1}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
     Key = to_integer(KeyGen()),
-    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>, to_binary(Key)) of
+    case riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
+                                   to_binary(Key), State#state.pb_timeout) of
         {ok, Results} when length(Results) == 1 ->
             {ok, State};
         {ok, Results} ->
@@ -301,7 +308,8 @@ run({query_pb, MaxN}, KeyGen, _ValueGen, State) ->
     Bucket = State#state.bucket,
     {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
     case {riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
-                                   to_binary(StartKey), to_binary(EndKey)), MaxKey} of
+				    to_binary(StartKey), to_binary(EndKey),
+                                    State#state.pb_timeout, State#state.pb_timeout), MaxKey} of
         {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
         {{ok, Results}, undefined} ->
@@ -351,11 +359,9 @@ to_list(B) when is_binary(B) ->
 to_list(I) when is_integer(I) ->
     integer_to_list(I).
 
-choose(N, L) ->
-    lists:nth((N rem length(L) + 1), L).
-
-json_get(Url) ->
-    Response = ibrowse:send_req(lists:flatten(Url), [], get),
+json_get(Url, State) ->
+    Response = ibrowse:send_req(lists:flatten(Url), [], get,
+                                [], [], State#state.pb_timeout),
     case Response of
         {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
@@ -363,10 +369,11 @@ json_get(Url) ->
             {error, Other}
     end.
 
-json_post(Url, Payload) ->
+json_post(Url, Payload, State) ->
     Headers = [{"Content-Type", "application/json"}],
     Response = ibrowse:send_req(lists:flatten(Url), Headers,
-                                post, lists:flatten(Payload)),
+                                post, lists:flatten(Payload),
+                                [], State#state.pb_timeout),
     case Response of
         {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
