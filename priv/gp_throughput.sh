@@ -3,7 +3,7 @@
 function Usage {
   echo "Usage: gp_throughput.sh [-d TEST_DIR] [-k SUMMARY_KINDS]" >&2
   echo "                        [-t TERMINAL_TYPE] [-s PLOT_STYLE] [-p PRE_COMMAD]" >&2
-  echo "                        [-P] [-h]" >&2
+  echo "                        [-P] [-E EXEC_COMMAND] [-h]" >&2
   echo "" >&2
   echo "    -d TEST_DIR:      comma separated test directories with summary.csv" >&2
   echo "                      default: \"tests/current\"" >&2
@@ -16,6 +16,8 @@ function Usage {
   echo "    -p PRE_COMMAND:   any command to be executed before plot" >&2
   echo "                      default: nothing" >&2
   echo "    -P:               print gnuplot script to stdout" >&2
+  echo "    -E EXEC_COMMAND:  command to be executed" >&2
+  echo "                      default: \"gnuplot -persist\"" >&2
   echo "    -u UNIT:          unit of measurement" >&2
   echo "                      default: \"ops/sec\"" >&2
   echo "    -h:               print this usage" >&2
@@ -30,7 +32,7 @@ PRE_COMMAD=
 EXEC_COMMAND="gnuplot -persist"
 UNIT="ops/sec"
 
-while getopts ":d:k:t:s:p:u:Ph" opt; do
+while getopts ":d:k:t:s:p:u:PE:h" opt; do
     case $opt in
         d)
             TEST_DIR=${OPTARG} ;;
@@ -44,6 +46,8 @@ while getopts ":d:k:t:s:p:u:Ph" opt; do
             PRE_COMMAD=${OPTARG} ;;
         P)
             EXEC_COMMAND="cat" ;;
+        E)
+            EXEC_COMMAND=${OPTARG} ;;
 	u)
 	    UNIT="${OPTARG}" ;;
         h)
