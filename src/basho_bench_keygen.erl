@@ -99,7 +99,7 @@ new({function, Module, Function, Args}, Id) ->
         _Error ->
             ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
     end;
-%% Adapt a value generator. The function keygen would work if Id was added as 
+%% Adapt a value generator. The function keygen would work if Id was added as
 %% the last parameter. But, alas, it is added as the first.
 new({valgen, ValGen}, Id) ->
     basho_bench_valgen:new(ValGen, Id);
@@ -108,6 +108,10 @@ new(Bin, _Id) when is_binary(Bin) ->
 new(Other, _Id) ->
     ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
 
+dimension({int_to_bin_bigendian, InputGen}) ->
+    dimension(InputGen);
+dimension({int_to_bin_littleendian, InputGen}) ->
+    dimension(InputGen);
 dimension({int_to_str, InputGen}) ->
     dimension(InputGen);
 dimension({int_to_bin, InputGen}) ->
