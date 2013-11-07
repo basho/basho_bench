@@ -310,8 +310,7 @@ get_path(PL, [Name|Path]) ->
 next_url(State) when is_record(State#state.base_urls, url) ->
     {State#state.base_urls, State};
 next_url(State) when State#state.base_urls_index > tuple_size(State#state.base_urls) ->
-    { element(1, State#state.base_urls),
-      State#state { base_urls_index = 1 } };
+    next_url(State#state { base_urls_index = 1 });
 next_url(State) ->
     { element(State#state.base_urls_index, State#state.base_urls),
       State#state { base_urls_index = State#state.base_urls_index + 1 }}.
