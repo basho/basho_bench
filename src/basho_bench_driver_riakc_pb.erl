@@ -38,8 +38,6 @@
                  preloaded_keys,
                  indexes}).
 
--define(MR_MULTIGET,
-        [{map, {modfun, riak_kv_mapreduce, map_object_value}, <<"filter_notfound">>, true}]).
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
          {reduce, {modfun, riak_kv_mapreduce, reduce_count_inputs}, none, true}]).
@@ -214,47 +212,34 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run({get_index, IndexName, Range}, _KeyGen, _ValueGen, State) ->
+run({get_index, IndexName, Range}, KeyGen, ValueGen, State) ->
+    run({get_index, IndexName, Range, []}, KeyGen, ValueGen, State);
+run({get_index, IndexName, Range, MaxResults}, KeyGen, ValueGen, State) when is_integer(MaxResults) ->
+    run({get_index, IndexName, Range, [{max_results, MaxResults}]}, KeyGen, ValueGen, State);
+run({get_index, IndexName, Range, MaxResults}, _KeyGen, _ValueGen, State) when is_list(MaxResults) ->
     I = string:to_lower(IndexName),
     case proplists:lookup(I, State#state.indexes) of
         none ->
             Error = io_lib:format("Secondary index ~p that is specified for get_index operation has not been defined.\n", [IndexName]),
             {error, Error, State};
         {I, {integer_index, Start, End}} ->
-            Rnd = get_ranged_random_int(Start, End),
-            case riakc_pb_socket:get_index(State#state.pid, State#state.bucket, {integer_index, I}, Rnd, ((Rnd + Range - 1))) of
+            Rnd = get_ranged_random_int(Start, End, Range),
+            case riakc_pb_socket:get_index_range(State#state.pid, State#state.bucket, {integer_index, I}, Rnd, ((Rnd + Range - 1)), MaxResults) of
                 {ok, _Results} ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
             end;
         {I, {binary_index, Start, End, Fmt}} ->
-            Rnd = get_ranged_random_int(Start, End),
+            Rnd = get_ranged_random_int(Start, End, Range),
             BS = list_to_binary(io_lib:format(Fmt, [Rnd])),
             BE = list_to_binary(io_lib:format(Fmt, [(Rnd + Range - 1)])),
-            case riakc_pb_socket:get_index(State#state.pid, State#state.bucket, {binary_index, I}, BS, BE) of
+            case riakc_pb_socket:get_index_range(State#state.pid, State#state.bucket, {binary_index, I}, BS, BE, MaxResults) of
                 {ok, _Results} ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
             end
-    end;
-run({mr_multiget, ItemCount}, KeyGen, _ValueGen, State) when is_integer(ItemCount) andalso ItemCount > 0 ->
-    KeyList = make_keylist(State#state.bucket, KeyGen, ItemCount),
-    case riakc_pb_socket:mapred(State#state.pid, KeyList, ?MR_MULTIGET) of
-        {ok, []} ->
-            io:format("Incorrect number of results for mr_multiget. Expected ~p, Received 0~n", [ItemCount]),
-            {ok, State};
-        {ok, [{_, Results}]} ->
-            case length(Results) of
-                ItemCount ->
-                    {ok, State};
-                N ->
-                    io:format("Incorrect number of results for mr_multiget. Expected ~p, Received ~p~n", [ItemCount, N]),
-                    {ok, State}
-            end;
-        {error, Reason} ->
-            {error, Reason, State}
     end;
 run(mr_bucket_erlang, _KeyGen, _ValueGen, State) ->
     mapred(State, State#state.bucket, ?ERLANG_MR);
@@ -390,14 +375,14 @@ add_all_2i(MD, State) ->
 add_2i(MD, []) ->
     MD;
 add_2i(MD, [{IndexName, {binary_index, Start, End, Fmt}} | Rest]) ->
-    Rnd = get_ranged_random_int(Start, End),
+    Rnd = get_ranged_random_int(Start, End, 0),
     BinVal = list_to_binary(io_lib:format(Fmt, [Rnd])),
     MDU = riakc_obj:add_secondary_index(MD, {{binary_index, IndexName}, [BinVal]}),
     add_2i(MDU, Rest);
 add_2i(MD, [{IndexName, {integer_index, Start, End}} | Rest]) ->
-    Rnd = get_ranged_random_int(Start, End),
+    Rnd = get_ranged_random_int(Start, End, 0),
     MDU = riakc_obj:add_secondary_index(MD, {{integer_index, IndexName}, [Rnd]}),
     add_2i(MDU, Rest).
 
-get_ranged_random_int(Start, End) ->
-    random:uniform(End - Start + 1) - 1 + Start.
+get_ranged_random_int(Start, End, Range) ->
+    random:uniform(End - Start + 1 - Range) - 1 + Start.
