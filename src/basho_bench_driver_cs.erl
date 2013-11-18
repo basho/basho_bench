@@ -516,6 +516,5 @@ initiate_request(Host, Url, Headers0, Method, Body, Options) ->
     AuthStr = ["AWS ", basho_bench_config:get(cs_access_key), ":", Sig],
     HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
     Timeout = basho_bench_config:get(cs_request_timeout, 5000),
-io:format(user, "Initiate ~p\n", [Url]),
     ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
                                  Body, Options, Timeout).
