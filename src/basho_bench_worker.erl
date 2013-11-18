@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(basho_bench_worker).
@@ -72,16 +72,16 @@ init([SupChild, Id]) ->
     %%
     %% NOTE: If the worker process dies, this obviously introduces some entroy
     %% into the equation since you'd be restarting the RNG all over.
-    %% 
+    %%
     %% The RNG_SEED is static by default for replicability of key size
-    %% and value size generation between test runs.  
+    %% and value size generation between test runs.
     process_flag(trap_exit, true),
-    {A1, A2, A3} = 
+    {A1, A2, A3} =
         case basho_bench_config:get(rng_seed, {42, 23, 12}) of
             {Aa, Ab, Ac} -> {Aa, Ab, Ac};
             now -> now()
         end,
-                       
+
     RngSeed = {A1+Id, A2+Id, A3+Id},
 
     %% Pull all config settings from environment
@@ -220,6 +220,9 @@ worker_idle_loop(State) ->
                 max ->
                     ?INFO("Starting max worker: ~p\n", [self()]),
                     max_worker_run_loop(State);
+                {rate, max} ->
+                    ?INFO("Starting max worker: ~p\n", [self()]),
+                    max_worker_run_loop(State);
                 {rate, Rate} ->
                     %% Calculate mean interarrival time in in milliseconds. A
                     %% fixed rate worker can generate (at max) only 1k req/sec.
@@ -297,11 +300,11 @@ needs_shutdown(State) ->
             case Pid of
                 Parent ->
                     %% Give the driver a chance to cleanup
-                    (catch (State#state.driver):terminate(normal, 
+                    (catch (State#state.driver):terminate(normal,
                                                           State#state.driver_state)),
                     true;
-                _Else -> 
-                    %% catch this so that selective recieve doesn't kill us when running 
+                _Else ->
+                    %% catch this so that selective recieve doesn't kill us when running
                     %% the riakclient_driver
                     false
             end
