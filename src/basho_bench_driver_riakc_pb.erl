@@ -182,7 +182,9 @@ run(update, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}], State#state.timeout_read) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_content_type(riakc_obj:update_value(Robj, ValueGen()), State#state.content_type),
+            [M | _] = riakc_obj:get_metadatas(Robj),
+            Robj1 = riakc_obj:update_metadata(Robj, M),
+            Robj2 = riakc_obj:update_value(Robj1, ValueGen(), State#state.content_type),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                               {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
@@ -207,7 +209,9 @@ run(update_existing, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}], State#state.timeout_read) of
         {ok, Robj} ->
-            Robj2 = riakc_obj:update_content_type(riakc_obj:update_value(Robj, ValueGen()), State#state.content_type),
+            [M | _] = riakc_obj:get_metadatas(Robj),
+            Robj1 = riakc_obj:update_metadata(Robj, M),
+            Robj2 = riakc_obj:update_value(Robj, ValueGen(), State#state.content_type),
             case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                               {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
