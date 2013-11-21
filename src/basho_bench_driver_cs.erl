@@ -227,7 +227,7 @@ bigfile_valgen(Id, Props) ->
                  undefined ->
                      ok; %% This is our first call, so no timing to report.
                  StartT ->
-                     DiffT = timer:now_diff(now(), StartT),
+                     DiffT = timer:now_diff(os:timestamp(), StartT),
                      ReportFun = element(2, application:get_env(
                                               ?MODULE, ?REPORTFUN_APPKEY)),
                      SleepUS = erlang:max(0, MaxRateSleepUS - DiffT),
@@ -239,7 +239,7 @@ bigfile_valgen(Id, Props) ->
              end,
              %% Alright, now set up for the next block to write.
              PrefixSize = erlang:min(FileSize - Start, ChunkSize),
-             erlang:put(?START_KEY, now()),
+             erlang:put(?START_KEY, os:timestamp()),
              erlang:put(?BLOCKSIZE_KEY, PrefixSize),
              <<Prefix:PrefixSize/binary, _/binary>> = Chunk,
              {ok, Prefix, Start + PrefixSize};
@@ -346,13 +346,13 @@ should_disconnect_secs(Seconds, {Host, Port}) ->
     Key = {last_disconnect, {Host, Port}},
     case erlang:get(Key) of
         undefined ->
-            erlang:put(Key, erlang:now()),
+            erlang:put(Key, os:timestamp()),
             false;
         Time when is_tuple(Time) andalso size(Time) == 3 ->
-            Diff = timer:now_diff(erlang:now(), Time),
+            Diff = timer:now_diff(os:timestamp(), Time),
             if
                 Diff >= Seconds * 1000000 ->
-                    erlang:put(Key, erlang:now()),
+                    erlang:put(Key, os:timestamp()),
                     true;
                 true -> false
             end
@@ -362,7 +362,7 @@ clear_disconnect_freq(ConnInfo) ->
     case erlang:get(disconnect_freq) of
         infinity -> ok;
         {ops, _Count} -> erlang:put({ops_since_disconnect, ConnInfo}, 0);
-        _Seconds -> erlang:put({last_disconnect, ConnInfo}, erlang:now())
+        _Seconds -> erlang:put({last_disconnect, ConnInfo}, os:timestamp())
     end.
 
 send_request(Host, Url, Headers, Method, Body, Options) ->
@@ -449,7 +449,7 @@ do_get_first_unit(Host, Url, Headers, State) ->
 
 do_get_loop(#state{req_id = ReqId} = State) ->
     ibrowse:stream_next(ReqId),
-    do_get_loop(0, now(), State).
+    do_get_loop(0, os:timestamp(), State).
 
 do_get_loop(Sum, StartT,
             #state{req_id = ReqId, report_fun = ReportFun} = State) ->
@@ -458,7 +458,7 @@ do_get_loop(Sum, StartT,
             ibrowse:stream_next(ReqId),
             NewSum = Sum + size(Bin),
             if NewSum > ?BLOCK ->
-                    DiffT = timer:now_diff(now(), StartT),
+                    DiffT = timer:now_diff(os:timestamp(), StartT),
                     basho_bench_stats:op_complete(
                       {get,get}, {ok, ReportFun(NewSum)}, DiffT),
                     {ok, State#state{working_op = get}};
@@ -466,7 +466,7 @@ do_get_loop(Sum, StartT,
                     do_get_loop(NewSum, StartT, State)
             end;
         {ibrowse_async_response_end, ReqId} ->
-            DiffT = timer:now_diff(now(), StartT),
+            DiffT = timer:now_diff(os:timestamp(), StartT),
             basho_bench_stats:op_complete(
               {get,get}, {ok, ReportFun(Sum)}, DiffT),
             {ok, State#state{working_op = undefined}}
