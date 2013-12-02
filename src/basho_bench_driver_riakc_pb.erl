@@ -36,7 +36,10 @@
                  rw,
                  keylist_length,
                  preloaded_keys,
-                 indexes}).
+                 indexes,
+                 term_index_keygen,
+                 term_index_valgen,
+                 index_bucket}).
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -69,12 +72,26 @@ new(Id) ->
     DW = basho_bench_config:get(riakc_pb_dw, Replies),
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
+    IndexBucket  = basho_bench_config:get(riakc_pb_index_bucket, <<"test_index">>),
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
     PreloadedKeys = basho_bench_config:get(
                       riakc_pb_preloaded_keys, undefined),
     warn_bucket_mr_correctness(PreloadedKeys),
     Indexes  = process_index_config(basho_bench_config:get(secondary_indexes, []), []),
-
+    case {basho_bench_config:get(index_key_generator, undefined), basho_bench_config:get(index_value_generator, undefined)} of
+        {undefined, undefined} ->
+            IndexKey = undefined,
+            IndexVal = undefined;
+        {undefined, _} ->
+            IndexKey = undefined,
+            IndexVal = undefined;
+        {_, undefined} ->
+            IndexKey = undefined,
+            IndexVal = undefined;
+        {KG, VG} ->
+            IndexKey = basho_bench_keygen:new(KG, Id),
+            IndexVal = basho_bench_valgen:new(VG, Id)
+    end,
     %% Choose the target node using our ID as a modulus
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
@@ -89,7 +106,10 @@ new(Id) ->
                           rw = RW,
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
-                          indexes = Indexes
+                          indexes = Indexes,
+                          term_index_keygen = IndexKey,
+                          term_index_valgen = IndexVal,
+                          index_bucket = IndexBucket
                          }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -141,41 +161,26 @@ run(get_existing, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
-run(put, KeyGen, ValueGen, State) ->
-    Robj1 = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen()),
-    Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
-    case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                     {dw, State#state.dw}]) of
-        ok ->
+run(get_term_index, _KeyGen, _ValueGen, State) ->
+    KeyGen = State#state.term_index_keygen,
+    Key = KeyGen(),
+    case riakc_pb_socket:get(State#state.pid, State#state.index_bucket, Key,
+                             [{r, State#state.r}]) of
+        {ok, _} ->
+            {ok, State};
+        {error, notfound} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(put, KeyGen, ValueGen, State) ->
+    perform_put(KeyGen, ValueGen, State);
+run({put_term_index, TermIndexCount}, KeyGen, ValueGen, State) when is_integer(TermIndexCount) ->
+    perform_put(KeyGen, ValueGen, State, TermIndexCount);
 run(update, KeyGen, ValueGen, State) ->
-    Key = KeyGen(),
-    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
-                             Key, [{r, State#state.r}]) of
-        {ok, Robj} ->
-            Robj1 = riakc_obj:update_value(Robj, ValueGen()),
-            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
-            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                              {dw, State#state.dw}]) of
-                ok ->
-                    {ok, State};
-                {error, Reason} ->
-                    {error, Reason, State}
-            end;
-        {error, notfound} ->
-            Robj1 = riakc_obj:new(State#state.bucket, Key, ValueGen()),
-            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
-            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
-                                                             {dw, State#state.dw}]) of
-                ok ->
-                    {ok, State};
-                {error, Reason} ->
-                    {error, Reason, State}
-            end
-    end;
+    perform_update(KeyGen, ValueGen, State);
+run({update_term_index, TermIndexCount}, KeyGen, ValueGen, State) ->
+    perform_update(KeyGen, ValueGen, State, TermIndexCount);  
 run(update_existing, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
@@ -194,16 +199,9 @@ run(update_existing, KeyGen, ValueGen, State) ->
             {error, {not_found, Key}, State}
     end;
 run(delete, KeyGen, _ValueGen, State) ->
-    %% Pass on rw
-    case riakc_pb_socket:delete(State#state.pid, State#state.bucket, KeyGen(),
-                                [{rw, State#state.rw}]) of
-        ok ->
-            {ok, State};
-        {error, notfound} ->
-            {ok, State};
-        {error, Reason} ->
-            {error, Reason, State}
-    end;
+    perform_delete(KeyGen, State);
+run({delete_term_index, TermIndexCount}, KeyGen, _ValueGen, State) ->
+    perform_delete(KeyGen, State, TermIndexCount);
 run(listkeys, _KeyGen, _ValueGen, State) ->
     %% Pass on rw
     case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket) of
@@ -257,6 +255,96 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+perform_put(KeyGen, ValueGen, State) ->
+    perform_put(KeyGen, ValueGen, State, 0).
+
+perform_put(KeyGen, ValueGen, State, TermIndexCount) ->
+    [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
+    Robj1 = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen()),
+    Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
+    case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+                                                     {dw, State#state.dw}]) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+perform_update(KeyGen, ValueGen, State) ->
+    perform_update(KeyGen, ValueGen, State, 0).
+
+perform_update(KeyGen, ValueGen, State, TermIndexCount) ->
+    [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
+    Key = KeyGen(),
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket,
+                             Key, [{r, State#state.r}]) of
+        {ok, Robj} ->
+            Robj1 = riakc_obj:update_value(Robj, ValueGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
+            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+                                                              {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, notfound} ->
+            Robj1 = riakc_obj:new(State#state.bucket, Key, ValueGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
+            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+                                                             {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
+    end.
+
+perform_delete(KeyGen, State) ->
+    perform_delete(KeyGen, State, 0).
+
+perform_delete(KeyGen, State, TermIndexCount) ->
+    [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
+    %% Pass on rw
+    case riakc_pb_socket:delete(State#state.pid, State#state.bucket, KeyGen(),
+                                [{rw, State#state.rw}]) of
+        ok ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
+
+update_term_based_index(State) ->
+    Bucket = State#state.index_bucket,
+    KeyGen = State#state.term_index_keygen,
+    ValGen = State#state.term_index_valgen,
+    Key = KeyGen(),
+    case riakc_pb_socket:get(State#state.pid, Bucket,
+                             Key, [{r, State#state.r}]) of
+        {ok, Robj} ->
+            Robj1 = riakc_obj:update_value(Robj, ValGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, dict:new()),
+            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+                                                              {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        {error, notfound} ->
+            Robj1 = riakc_obj:new(Bucket, Key, ValGen()),
+            Robj2 = riakc_obj:update_metadata(Robj1, dict:new()),
+            case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
+                                                             {dw, State#state.dw}]) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
+    end.
 
 mapred(State, Input, Query) ->
     case riakc_pb_socket:mapred(State#state.pid, Input, Query) of
