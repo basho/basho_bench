@@ -25,6 +25,7 @@
          run/4]).
 
 -include("basho_bench.hrl").
+-include_lib("riakc/include/riakc.hrl").
 
 -record(state, {
           pb_pid,
@@ -304,21 +305,43 @@ run({query_pb, 1}, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run({query_pb, MaxN}, KeyGen, _ValueGen, State) ->
+    run({query_pb, MaxN, []}, KeyGen, _ValueGen, State);
+run({query_pb, RangeN, Opts0}, KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
-    {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()), State#state.max_key, MaxN),
-    case {riakc_pb_socket:get_index(Pid, Bucket, <<"field1_int">>,
-				    to_binary(StartKey), to_binary(EndKey),
-                                    State#state.pb_timeout, State#state.pb_timeout), MaxKey} of
+    Opts = lists:keymerge(1, lists:keysort(1, Opts0),
+                          %% Note: don't change the order of these.
+                          %% They need to be sorted for keymerge to work.
+                          [{call_timeout, State#state.pb_timeout},
+                           {timeout, State#state.pb_timeout}]),
+    %% Note that the `undefined' atom is larger than any number.
+    MaxN = min(RangeN, proplists:get_value(max_results, Opts)),
+    {StartKey, EndKey, MaxKey, N} = expected_n(to_integer(KeyGen()),
+                                               State#state.max_key, MaxN),
+    Ret0 = riakc_pb_socket:get_index_range(Pid, Bucket,
+                                           {integer_index, "field1"},
+                                           StartKey, EndKey, Opts), 
+    Ret =
+    case Ret0 of
+        ErrRet = {error, _} ->
+            ErrRet;
+        {ok, ?INDEX_RESULTS{keys=Keys}} when is_list(Keys) ->
+            {ok, Keys};
+        {ok, ?INDEX_RESULTS{terms=Terms}} when is_list(Terms) ->
+            {ok, Terms}
+    end,
+    case {Ret, MaxKey} of
         {{ok, Results}, _} when length(Results) == N ->
             {ok, State};
         {{ok, Results}, undefined} ->
-            io:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]),
+            io:format("Not enough results (~p!=~p) for query_pb: ~p/~p/~p~n",
+                      [length(Results), N, StartKey, EndKey, Results]),
             {ok, State};
         {{ok, Results}, _} ->
             {ok,
              binary_to_list(iolist_to_binary(
-                io_lib:format("Not enough results for query_pb: ~p/~p/~p~n", [StartKey, EndKey, Results]))),
+                io_lib:format("Not enough results (~p!=~p) for query_pb: ~p/~p/~p~n",
+                              [length(Results), N, StartKey, EndKey, Results]))),
              State};
         {{error, Reason}, _} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
