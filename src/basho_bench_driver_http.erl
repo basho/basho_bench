@@ -181,7 +181,6 @@ build_value(ValueName, KeyGen, ValueGen, State) ->
     end.
 
 do_get(Url, Headers) ->
-    %%case send_request(Url, [], get, [], [{response_format, binary}]) of
     case send_request(Url, Headers, get, [], [{response_format, binary}]) of
         {ok, "404", _Header, _Body} ->
             {not_found, Url};
@@ -364,10 +363,3 @@ should_retry(_)                          -> false.
 normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
-
-any_to_str(Val) when is_binary(Val) ->
-    binary_to_list(Val);
-any_to_str(Val) when is_integer(Val) ->
-    integer_to_list(Val);
-any_to_str(Val) ->
-    Val.
