@@ -47,7 +47,7 @@ build_generators([{Name, {value_generator, ValGenSpec}}|Rest], Generators, Id) -
     ValGen = basho_bench_valgen:new(ValGenSpec, Id),
     build_generators(Rest, [{Name, ValGen}|Generators], Id);
 build_generators([], Generators, _) ->
-    {ok, Generators}.
+    Generators.
 
 new(Id) ->
     ?DEBUG("ID: ~p\n", [Id]),
@@ -91,56 +91,56 @@ run({get, Target}, KeyGen, ValueGen, State) ->
     run({get, Target, undefined}, KeyGen, ValueGen, State);
 run({get, Target, HeaderName}, KeyGen, ValueGen, State) ->
     Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get(HeaderName, State#state.headers, []),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
 
     case do_get(Url, Headers) of
         {not_found, _Url} ->
-            {ok, 1};
+            {ok, State};
         {ok, _Url, _Header} ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end;
 
 run({put, Target, ValueName}, KeyGen, ValueGen, State) ->
     run({put, Target, ValueName, undefined}, KeyGen, ValueGen, State);
 run({put, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
     Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get(HeaderName, State#state.headers, []),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
     Data = build_value(ValueName, KeyGen, ValueGen, State),
 
     case do_put(Url, Headers, Data) of
         ok ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end;
 
 run({post, Target, ValueName}, KeyGen, ValueGen, State) ->
     run({post, Target, ValueName, undefined}, KeyGen, ValueGen, State);
 run({post, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
     Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get(HeaderName, State#state.headers, []),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
     Data = build_value(ValueName, KeyGen, ValueGen, State),
 
     case do_post(Url, Headers, Data) of
         ok ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end;
 
 run({delete, Target}, KeyGen, ValueGen, State) ->
     run({delete, Target, undefined}, KeyGen, ValueGen, State);
 run({delete, Target, HeaderName}, KeyGen, ValueGen, State) ->
     Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get(HeaderName, State#state.headers, []),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
 
     case do_delete(Url, Headers) of
         ok ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end.
 
 %% ====================================================================
@@ -148,23 +148,20 @@ run({delete, Target, HeaderName}, KeyGen, ValueGen, State) ->
 %% ====================================================================
 
 evaluate_generator(Name, Generators, KeyGen, ValueGen) ->
+    io:format("build_formatted_value_yeah2~n Name: ~p~n Generators: ~p~n Keygen: ~p~n ValueGen: ~p~n", [Name, Generators, KeyGen, ValueGen]),
+
     case Name of
         key_generator -> KeyGen();
         value_generator -> ValueGen();
-        N when is_atom(N) -> proplists:get(N, Generators);
+        N when is_atom(N) ->
+            Fun = proplists:get_value(N, Generators),
+            Fun();
         Value -> Value
     end.
 
 build_formatted_value(String, GeneratorNames, Generators, KeyGen, ValueGen) ->
-
-    %% F = fun(Name) ->
-    %%             evaluate_generator(Name, Generators, KeyGen, ValueGen)
-    %%     end,
-
-    %% Values = lists:map(F, GeneratorNames),
-
-    Values =  [evaluate_generator(Name, Generators, KeyGen, ValueGen) || Name <- GeneratorNames],
-
+    io:format("build_formatted_value_yeah1~n String: ~p~n GeneratorNames: ~p~n Generators: ~p~n KeyGen: ~p~n ValueGen: ~p~n", [String, GeneratorNames, Generators, KeyGen, ValueGen]),
+    Values = lists:map(fun (Name) -> evaluate_generator(Name, Generators, KeyGen, ValueGen) end, GeneratorNames),
     io_lib:format(String, Values).
 
 build_url({Host, Port, {FormattedPath, GeneratorNames}}, Generators, KeyGen, ValueGen) ->
@@ -173,6 +170,7 @@ build_url({Host, Port, {FormattedPath, GeneratorNames}}, Generators, KeyGen, Val
 build_url({Host, Port, Path}, _, _, _) ->
     #url{host=Host, port=Port, path=Path};
 build_url(Target, KeyGen, ValueGen, State) ->
+    io:format("build_url~n Target: ~p~n State: ~p~n", [Target, State]),
     build_url(proplists:get_value(Target, State#state.targets), State#state.generators, KeyGen, ValueGen).
 
 build_value(ValueName, KeyGen, ValueGen, State) ->
