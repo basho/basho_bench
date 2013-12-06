@@ -157,11 +157,13 @@ evaluate_generator(Name, Generators, KeyGen, ValueGen) ->
 
 build_formatted_value(String, GeneratorNames, Generators, KeyGen, ValueGen) ->
 
-    F = fun(Name) ->
-                evaluate_generator(Name, Generators, KeyGen, ValueGen)
-        end,
+    %% F = fun(Name) ->
+    %%             evaluate_generator(Name, Generators, KeyGen, ValueGen)
+    %%     end,
 
-    Values = lists:map(F, GeneratorNames),
+    %% Values = lists:map(F, GeneratorNames),
+
+    Values =  [evaluate_generator(Name, Generators, KeyGen, ValueGen) || Name <- GeneratorNames],
 
     io_lib:format(String, Values).
 
