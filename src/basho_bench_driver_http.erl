@@ -39,16 +39,6 @@
 %% API
 %% ====================================================================
 
-
-build_generators([{Name, {key_generator, KeyGenSpec}}|Rest], Generators, Id) ->
-    KeyGen = basho_bench_keygen:new(KeyGenSpec, Id),
-    build_generators(Rest, [{Name, KeyGen}|Generators], Id);
-build_generators([{Name, {value_generator, ValGenSpec}}|Rest], Generators, Id) ->
-    ValGen = basho_bench_valgen:new(ValGenSpec, Id),
-    build_generators(Rest, [{Name, ValGen}|Generators], Id);
-build_generators([], Generators, _) ->
-    Generators.
-
 new(Id) ->
     ?DEBUG("ID: ~p\n", [Id]),
 
@@ -147,9 +137,16 @@ run({delete, Target, HeaderName}, KeyGen, ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-evaluate_generator(Name, Generators, KeyGen, ValueGen) ->
-    io:format("build_formatted_value_yeah2~n Name: ~p~n Generators: ~p~n Keygen: ~p~n ValueGen: ~p~n", [Name, Generators, KeyGen, ValueGen]),
+build_generators([{Name, {key_generator, KeyGenSpec}}|Rest], Generators, Id) ->
+    KeyGen = basho_bench_keygen:new(KeyGenSpec, Id),
+    build_generators(Rest, [{Name, KeyGen}|Generators], Id);
+build_generators([{Name, {value_generator, ValGenSpec}}|Rest], Generators, Id) ->
+    ValGen = basho_bench_valgen:new(ValGenSpec, Id),
+    build_generators(Rest, [{Name, ValGen}|Generators], Id);
+build_generators([], Generators, _) ->
+    Generators.
 
+evaluate_generator(Name, Generators, KeyGen, ValueGen) ->
     case Name of
         key_generator -> KeyGen();
         value_generator -> ValueGen();
@@ -160,7 +157,6 @@ evaluate_generator(Name, Generators, KeyGen, ValueGen) ->
     end.
 
 build_formatted_value(String, GeneratorNames, Generators, KeyGen, ValueGen) ->
-    io:format("build_formatted_value_yeah1~n String: ~p~n GeneratorNames: ~p~n Generators: ~p~n KeyGen: ~p~n ValueGen: ~p~n", [String, GeneratorNames, Generators, KeyGen, ValueGen]),
     Values = lists:map(fun (Name) -> evaluate_generator(Name, Generators, KeyGen, ValueGen) end, GeneratorNames),
     io_lib:format(String, Values).
 
@@ -170,7 +166,6 @@ build_url({Host, Port, {FormattedPath, GeneratorNames}}, Generators, KeyGen, Val
 build_url({Host, Port, Path}, _, _, _) ->
     #url{host=Host, port=Port, path=Path};
 build_url(Target, KeyGen, ValueGen, State) ->
-    io:format("build_url~n Target: ~p~n State: ~p~n", [Target, State]),
     build_url(proplists:get_value(Target, State#state.targets), State#state.generators, KeyGen, ValueGen).
 
 build_value(ValueName, KeyGen, ValueGen, State) ->
