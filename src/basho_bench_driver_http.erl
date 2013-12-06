@@ -28,7 +28,11 @@
 
 -record(url, {abspath, host, port, username, password, path, protocol, host_type}).
 
--record(state, {path_params}).        % Params to append on the path
+-record(state, {
+          generators = [],
+          values = [],
+          headers = [],
+          targets = []}).
 
 
 %% ====================================================================
@@ -36,7 +40,6 @@
 %% ====================================================================
 
 new(Id) ->
-
     ?DEBUG("ID: ~p\n", [Id]),
 
     %% Make sure ibrowse is available
@@ -49,9 +52,8 @@ new(Id) ->
 
     application:start(ibrowse),
 
-    Params = basho_bench_config:get(http_params, ""),
     Disconnect = basho_bench_config:get(http_disconnect_frequency, infinity),
-    
+
     case Disconnect of
         infinity -> ok;
         Seconds when is_integer(Seconds) -> ok;
@@ -62,74 +64,118 @@ new(Id) ->
     %% Uses pdict to avoid threading state record through lots of functions
     erlang:put(disconnect_freq, Disconnect),
 
-    {ok, #state {path_params = Params}}.
+    %% TODO: Validate these
+    Generators = build_generators(basho_bench_config:get(generators), [], Id),
+    Values = basho_bench_config:get(values),
+    Headers = basho_bench_config:get(headers),
+    Targets = basho_bench_config:get(targets),
 
-run({get_re, {Host, Port, Path}, Headers}, KeyGen, _ValueGen, _State) ->
-    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
-    run({get, {Host, Port, Path1}, Headers}, KeyGen, _ValueGen, _State);
+    {ok, #state {
+            generators = Generators,
+            values = Values,
+            headers = Headers,
+            targets = Targets
+           }}.
 
-run({get, {Host, Port, Path}, Headers}, _KeyGen, _ValueGen, _State) ->
-    PUrl = #url{host=Host, port=Port, path=Path},
+run({get, Target}, KeyGen, ValueGen, State) ->
+    run({get, Target, undefined}, KeyGen, ValueGen, State);
+run({get, Target, HeaderName}, KeyGen, ValueGen, State) ->
+    Url = build_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
 
-    case do_get(PUrl, Headers) of
+    case do_get(Url, Headers) of
         {not_found, _Url} ->
-            {ok, 1};
+            {ok, State};
         {ok, _Url, _Header} ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end;
 
-run({put_re, {Host, Port, Path, Data}, Headers}, KeyGen, ValueGen, _State) ->
-    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
-    Value = re:replace(Data, "%%V", ValueGen(), [global, {return, list}]),
-    run({put, {Host, Port, Path1, Value}, Headers}, KeyGen, ValueGen, _State);
+run({put, Target, ValueName}, KeyGen, ValueGen, State) ->
+    run({put, Target, ValueName, undefined}, KeyGen, ValueGen, State);
+run({put, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
+    Url = build_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
+    Data = build_value(ValueName, KeyGen, ValueGen, State),
 
-run({put, {Host, Port, Path, Data}, Headers}, _KeyGen, _ValueGen, _State) ->
-    PUrl = #url{host=Host, port=Port, path=Path},
-
-    case do_put(PUrl, Headers, Data) of
+    case do_put(Url, Headers, Data) of
         ok ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end;
 
-run({post_re, {Host, Port, Path, Data}, Headers}, KeyGen, ValueGen, _State) ->
-    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
-    Value = re:replace(Data, "%%V", ValueGen(), [global, {return, list}]),
-    run({post, {Host, Port, Path1, Value}, Headers}, KeyGen, ValueGen, _State);
+run({post, Target, ValueName}, KeyGen, ValueGen, State) ->
+    run({post, Target, ValueName, undefined}, KeyGen, ValueGen, State);
+run({post, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
+    Url = build_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
+    Data = build_value(ValueName, KeyGen, ValueGen, State),
 
-run({post, {Host, Port, Path, Data}, Headers}, _KeyGen, _ValueGen, _State) ->
-    PUrl = #url{host=Host, port=Port, path=Path},
-
-    case do_post(PUrl, Headers, Data) of
+    case do_post(Url, Headers, Data) of
         ok ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end;
 
-run({delete_re, {Host, Port, Path}, Headers}, KeyGen, _ValueGen, _State) ->
-    Path1 = re:replace(Path, "%%K", KeyGen(), [global, {return, list}]),
-    run({delete, {Host, Port, Path1}, Headers}, KeyGen, _ValueGen, _State);
+run({delete, Target}, KeyGen, ValueGen, State) ->
+    run({delete, Target, undefined}, KeyGen, ValueGen, State);
+run({delete, Target, HeaderName}, KeyGen, ValueGen, State) ->
+    Url = build_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, State#state.headers, []),
 
-run({delete, {Host, Port, Path}, Headers}, _KeyGen, _ValueGen, _State) ->
-    PUrl = #url{host=Host, port=Port, path=Path},
-
-    case do_delete(PUrl, Headers) of
+    case do_delete(Url, Headers) of
         ok ->
-            {ok, 1};
+            {ok, State};
         {error, Reason} ->
-            {error, Reason, 1}
+            {error, Reason, State}
     end.
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
+build_generators([{Name, {key_generator, KeyGenSpec}}|Rest], Generators, Id) ->
+    KeyGen = basho_bench_keygen:new(KeyGenSpec, Id),
+    build_generators(Rest, [{Name, KeyGen}|Generators], Id);
+build_generators([{Name, {value_generator, ValGenSpec}}|Rest], Generators, Id) ->
+    ValGen = basho_bench_valgen:new(ValGenSpec, Id),
+    build_generators(Rest, [{Name, ValGen}|Generators], Id);
+build_generators([], Generators, _) ->
+    Generators.
+
+evaluate_generator(Name, Generators, KeyGen, ValueGen) ->
+    case Name of
+        key_generator -> KeyGen();
+        value_generator -> ValueGen();
+        N when is_atom(N) ->
+            Fun = proplists:get_value(N, Generators),
+            Fun();
+        Value -> Value
+    end.
+
+build_formatted_value(String, GeneratorNames, Generators, KeyGen, ValueGen) ->
+    Values = lists:map(fun (Name) -> evaluate_generator(Name, Generators, KeyGen, ValueGen) end, GeneratorNames),
+    io_lib:format(String, Values).
+
+build_url({Host, Port, {FormattedPath, GeneratorNames}}, Generators, KeyGen, ValueGen) ->
+    Path = build_formatted_value(FormattedPath, GeneratorNames, Generators, KeyGen, ValueGen),
+    #url{host=Host, port=Port, path=Path};
+build_url({Host, Port, Path}, _, _, _) ->
+    #url{host=Host, port=Port, path=Path};
+build_url(Target, KeyGen, ValueGen, State) ->
+    build_url(proplists:get_value(Target, State#state.targets), State#state.generators, KeyGen, ValueGen).
+
+build_value(ValueName, KeyGen, ValueGen, State) ->
+    case proplists:get_value(ValueName, State#state.values) of
+        {FormattedValue, GeneratorNames} ->
+            build_formatted_value(FormattedValue, GeneratorNames, State#state.generators, KeyGen, ValueGen);
+        V -> evaluate_generator(V, State#state.generators, KeyGen, ValueGen)
+    end.
+
 do_get(Url, Headers) ->
-    %%case send_request(Url, [], get, [], [{response_format, binary}]) of
     case send_request(Url, Headers, get, [], [{response_format, binary}]) of
         {ok, "404", _Header, _Body} ->
             {not_found, Url};
