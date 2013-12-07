@@ -260,8 +260,9 @@ perform_put(KeyGen, ValueGen, State) ->
     perform_put(KeyGen, ValueGen, State, 0).
 
 perform_put(KeyGen, ValueGen, State, TermIndexCount) ->
+    Key = KeyGen(),
     [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
-    Robj1 = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen()),
+    Robj1 = riakc_obj:new(State#state.bucket, Key, ValueGen()),
     Robj2 = riakc_obj:update_metadata(Robj1, ensure_2i_set(dict:new(), State)),
     case riakc_pb_socket:put(State#state.pid, Robj2, [{w, State#state.w},
                                                      {dw, State#state.dw}]) of
@@ -275,8 +276,8 @@ perform_update(KeyGen, ValueGen, State) ->
     perform_update(KeyGen, ValueGen, State, 0).
 
 perform_update(KeyGen, ValueGen, State, TermIndexCount) ->
-    [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
     Key = KeyGen(),
+    [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
                              Key, [{r, State#state.r}]) of
         {ok, Robj} ->
@@ -305,9 +306,10 @@ perform_delete(KeyGen, State) ->
     perform_delete(KeyGen, State, 0).
 
 perform_delete(KeyGen, State, TermIndexCount) ->
+    Key = KeyGen(),
     [update_term_based_index(State) || _ <- lists:seq(1, TermIndexCount)],
     %% Pass on rw
-    case riakc_pb_socket:delete(State#state.pid, State#state.bucket, KeyGen(),
+    case riakc_pb_socket:delete(State#state.pid, State#state.bucket, Key,
                                 [{rw, State#state.rw}]) of
         ok ->
             {ok, State};
