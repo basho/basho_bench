@@ -81,8 +81,6 @@ run(get, KeyGen, _ValueGen,
         {ok,void} ->
             {ok, State};
         {ok, {_Rows, _Cols}} ->
-			%% [Row|_] = Rows,
-			%% KeyColumn = erlcassa_client:get_column("KEY", Row),
             {ok, State};
         Error ->
             {error, Error, State}
