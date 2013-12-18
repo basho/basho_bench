@@ -41,7 +41,6 @@
 
 new(Id) ->
     ?DEBUG("ID: ~p\n", [Id]),
-
     %% Make sure ibrowse is available
     case code:which(ibrowse) of
         non_existing ->
@@ -98,7 +97,7 @@ run({put, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
     Url = build_url(Target, KeyGen, ValueGen, State),
     Headers = proplists:get_value(HeaderName, State#state.headers, []),
     Data = build_value(ValueName, KeyGen, ValueGen, State),
-
+    
     case do_put(Url, Headers, Data) of
         ok ->
             {ok, State};
@@ -142,6 +141,9 @@ build_generators([{Name, {key_generator, KeyGenSpec}}|Rest], Generators, Id) ->
     build_generators(Rest, [{Name, KeyGen}|Generators], Id);
 build_generators([{Name, {value_generator, ValGenSpec}}|Rest], Generators, Id) ->
     ValGen = basho_bench_valgen:new(ValGenSpec, Id),
+    build_generators(Rest, [{Name, ValGen}|Generators], Id);
+build_generators([{Name, {custom_value_generator, {Mod, Fun}, Args}}|Rest], Generators, Id) ->
+    ValGen = Mod:Fun(Args, Id),
     build_generators(Rest, [{Name, ValGen}|Generators], Id);
 build_generators([], Generators, _) ->
     Generators.
