@@ -16,7 +16,9 @@ new(Args, Id) ->
     IntValueGen = basho_bench_keygen:new(KeyGenSpec, Id),
 
     case read_json_file(SchemaLocation) of
-        {ok, JsonData} -> fun() -> generate_json_value(JsonData, IntValueGen) end;
+        {ok, JsonData} -> 
+            SchemaProps = create_schema_proplist(JsonData, []),
+            fun() -> generate_json_value(SchemaProps, IntValueGen) end;
         Error -> ?ERROR("Error creating basho_ench_valgen_json", []), Error
     end.
     
@@ -27,10 +29,16 @@ read_json_file(FileLocation) ->
         {error, Reason} -> {error, Reason}
     end.
 
+create_schema_proplist([], Props) ->
+    lists:reverse(Props);
+create_schema_proplist([FieldSpec|Rest], Props) ->
+    {struct, [{<<"Field">>, FieldName}, {<<"Type">>, FieldType}]} = FieldSpec,
+    create_schema_proplist(Rest, [{FieldName, FieldType} | Props]).
+
 generate_json_value(Schema, IntValueGen) ->
     mochijson2:encode(create_document(Schema, IntValueGen)).
 
-create_document({struct, Fields}, IntValueGen) ->
+create_document(Fields, IntValueGen) ->
     create_document(Fields, [], IntValueGen()).
 
 create_document([], Doc, _IntValue) ->
@@ -49,7 +57,7 @@ create_document([{Name,Type}|Rest], Doc, IntValue) ->
 -ifdef(TEST).
 new_test() ->
     Filename = "/tmp/bb_schema.json",
-    Json = <<"{\"name\": \"string\", \"age\": \"integer\", \"x_factor\": \"number\"}">>,
+    Json = <<"[{\"Field\": \"name\", \"Type\": \"string\"}, {\"Field\": \"age\", \"Type\": \"integer\"}, {\"Field\": \"x_factor\", \"Type\": \"number\"}]">>,
     file:write_file(Filename, Json),
 
     Args = [{schema_location, Filename}, {keygenspec, {sequential_int, ?MAX_VALUE}}],
@@ -66,8 +74,8 @@ new_test() ->
 
 create_document_test() ->
     Id = 1,
-    Json = "{\"name\": \"string\", \"age\": \"integer\", \"x_factor\": \"number\"}",
-    {struct, Actual} = create_document(mochijson2:decode(Json), basho_bench_keygen:new({sequential_int, ?MAX_VALUE}, Id)),
+    Schema = [{<<"name">>, <<"string">>}, {<<"age">>, <<"integer">>}, {<<"x_factor">>, <<"number">>}],
+    {struct, Actual} = create_document(Schema, basho_bench_keygen:new({sequential_int, ?MAX_VALUE}, Id)),
 
     ?assertEqual(<<"0">>, proplists:get_value(<<"name">>, Actual)),
     ?assertEqual(0, proplists:get_value(<<"age">>, Actual)),

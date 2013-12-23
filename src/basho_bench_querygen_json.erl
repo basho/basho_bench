@@ -35,7 +35,7 @@ get_range_query(_Id, Args) ->
 	Field = proplists:get_value(field, Args),
 	Start = proplists:get_value(start, Args),
 	Stop = proplists:get_value(stop, Args),
-	DataStruct = conjunct("$and", [op("$gte", Field, Start), op("$lte", Field, Stop)]),
+	DataStruct = op("$between", Field, [Start, Stop]),
 	encode(DataStruct).
 
 
@@ -49,8 +49,16 @@ encode_value(Value) ->
 		is_float(Value) ->
 			Value;
 		true ->
-			list_to_binary(Value)
+			case io_lib:printable_list(Value) of
+				true -> list_to_binary(Value);
+				false -> encode_list(Value, [])
+			end
 	end.
+
+encode_list([], List) ->
+	lists:reverse(List);
+encode_list([Item|Rest], List) ->
+	encode_list(Rest, [encode_value(Item)|List]).
 
 conjunct(Conjunction, Terms) ->
 	{struct, [{list_to_binary(Conjunction), Terms}]}.
@@ -59,7 +67,7 @@ eq(Field, Value) ->
 	{struct, [{list_to_binary(Field), encode_value(Value)}]}.
 
 op(Operator, Field, Value) ->
-	{struct, [{list_to_binary(Operator), {struct, [{list_to_binary(Field), encode_value(Value)}]}}]}.
+	{struct, [{list_to_binary(Field), {struct, [{list_to_binary(Operator), encode_value(Value)}]}}]}.
 
 
 
@@ -76,7 +84,7 @@ op(Operator, Field, Value) ->
 	new_range_query_test() ->
 		Args = [{field, "Field"}, {range_length, ?RANGE_LENGTH}, {keygenspec, {sequential_int, ?MAX_VALUE}}],
 		StopValue = 0 + ?RANGE_LENGTH,
-		Expected = list_to_binary(io_lib:format("{\"$and\":[{\"$gte\":{\"Field\":0}},{\"$lte\":{\"Field\":~p}}]}", [StopValue])),
+		Expected = list_to_binary(io_lib:format("{\"Field\":{\"$between\":[0,~p]}}", [StopValue])),
 		Generator = new_range_query(Args, undefined),
 		Actual = Generator(),
 
@@ -89,7 +97,7 @@ op(Operator, Field, Value) ->
 		?assertEqual(Expected, Actual).
 
 	get_range_query_test() ->
-		Expected = <<"{\"$and\":[{\"$gte\":{\"Field\":1}},{\"$lte\":{\"Field\":10}}]}">>,
+		Expected = <<"{\"Field\":{\"$between\":[1,10]}}">>,
 		Actual = get_range_query(undefined, [{collection, "test_collection"}, {field, "Field"}, {start, 1}, {stop, 10}]),
 
 		?assertEqual(Expected, Actual).
