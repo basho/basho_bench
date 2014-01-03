@@ -1,6 +1,7 @@
 -module(basho_bench_querygen_json).
 
--export([new_index_query/2, new_range_query/2]).
+-export([new_index_query/2, new_random_index_query/2, 
+	     new_range_query/2, new_random_range_query/2]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
@@ -14,6 +15,15 @@ new_index_query(Args, Id) ->
 	KeyGen = basho_bench_keygen:new(KeySpec, Id),
 	fun() -> get_index_query(Id, [{value, KeyGen()}|Args]) end.
 
+new_random_index_query(Args, Id) ->
+	FieldCount = proplists:get_value(field_count, Args),
+    FieldType = proplists:get_value(field_type, Args),
+    Schema = basho_bench_riak_json_utils:generate_schema(FieldCount, FieldType),
+    FieldGen = fun() -> basho_bench_riak_json_utils:random_field_name(Schema) end,
+	KeySpec = proplists:get_value(keygenspec, Args),
+	KeyGen = basho_bench_keygen:new(KeySpec, Id),
+	fun() -> get_index_query(Id, [{value, KeyGen()},{field, FieldGen()}|Args]) end.
+
 new_range_query(Args, Id) ->
 	KeySpec = proplists:get_value(keygenspec, Args),
 	RangeLength = proplists:get_value(range_length, Args, ?RANGE_LENGTH),
@@ -21,8 +31,27 @@ new_range_query(Args, Id) ->
 	RangeFun = fun() -> Value = KeyGen(), [{start, Value}, {stop, Value + RangeLength}] end,
 	fun() -> get_range_query(Id, RangeFun() ++ Args) end.
 
+new_random_range_query(Args, Id) ->
+	FieldCount = proplists:get_value(field_count, Args),
+    FieldType = proplists:get_value(field_type, Args),
+    Schema = basho_bench_riak_json_utils:generate_schema(FieldCount, FieldType),
+
+	RangeLength = proplists:get_value(range_length, Args, ?RANGE_LENGTH),
+
+	KeySpec = proplists:get_value(keygenspec, Args),
+	KeyGen = basho_bench_keygen:new(KeySpec, Id),
+	
+	FieldFun = fun() -> basho_bench_riak_json_utils:random_field_name(Schema) end,
+	RangeFun = fun() -> Value = KeyGen(), [{start, Value}, {stop, Value + RangeLength}] end,
+	fun() -> get_range_query(Id, RangeFun() ++ [{field, FieldFun()}|Args]) end.
+
 
 %% internal
+read_json_file(FileLocation) ->
+    case file:read_file(FileLocation) of
+        {ok, Data} -> {ok, mochijson2:decode(Data)};
+        {error, Reason} -> {error, Reason}
+    end.
 
 get_index_query(_Id, Args) ->
 	Field = proplists:get_value(field, Args),
@@ -31,13 +60,11 @@ get_index_query(_Id, Args) ->
 	encode(DataStruct).
 
 get_range_query(_Id, Args) ->
-	
 	Field = proplists:get_value(field, Args),
 	Start = proplists:get_value(start, Args),
 	Stop = proplists:get_value(stop, Args),
 	DataStruct = op("$between", Field, [Start, Stop]),
 	encode(DataStruct).
-
 
 encode(ToEncode) ->
 	iolist_to_binary(mochijson2:encode(ToEncode)).
@@ -47,6 +74,8 @@ encode_value(Value) ->
 		is_integer(Value) ->
 			Value;
 		is_float(Value) ->
+			Value;
+		is_binary(Value) ->
 			Value;
 		true ->
 			case io_lib:printable_list(Value) of
@@ -61,22 +90,32 @@ encode_list([Item|Rest], List) ->
 	encode_list(Rest, [encode_value(Item)|List]).
 
 conjunct(Conjunction, Terms) ->
-	{struct, [{list_to_binary(Conjunction), Terms}]}.
+	{struct, [{Conjunction, Terms}]}.
 
 eq(Field, Value) ->
-	{struct, [{list_to_binary(Field), encode_value(Value)}]}.
+	{struct, [{Field, encode_value(Value)}]}.
 
 op(Operator, Field, Value) ->
-	{struct, [{list_to_binary(Field), {struct, [{list_to_binary(Operator), encode_value(Value)}]}}]}.
+	{struct, [{Field, {struct, [{list_to_binary(Operator), encode_value(Value)}]}}]}.
 
 
 
 -ifdef(TEST).
 	
 	new_index_query_test() ->
-		Args = [{field, "Field"}, {keygenspec, {sequential_int, ?MAX_VALUE}}],
+		Args = [{field, <<"Field">>}, {keygenspec, {sequential_int, ?MAX_VALUE}}],
 		Expected = <<"{\"Field\":0}">>,
 		Generator = new_index_query(Args, undefined),
+		Actual = Generator(),
+
+		?assertEqual(Expected, Actual).
+
+	new_random_index_query_test() ->
+		Args = [{field_count, 1}, 
+				{field_type, "integer"}, 
+				{keygenspec, {sequential_int, ?MAX_VALUE}}],
+		Expected = <<"{\"1\":0}">>,
+		Generator = new_random_index_query(Args, undefined),
 		Actual = Generator(),
 
 		?assertEqual(Expected, Actual).
@@ -89,10 +128,22 @@ op(Operator, Field, Value) ->
 		Actual = Generator(),
 
 		?assertEqual(Expected, Actual).
+
+	new_random_range_query_test() ->
+		Args = [{field_count, 1}, {field_type, "integer"},
+				{keygenspec, {sequential_int, ?MAX_VALUE}}],
+		StopValue = 0 + ?RANGE_LENGTH,
+		Expected = list_to_binary(io_lib:format("{\"1\":{\"$between\":[0,~p]}}", [StopValue])),
+		Generator = new_random_range_query(Args, undefined),
+		Actual = Generator(),
+
+		?assertEqual(Expected, Actual).
 		
 	get_index_query_test() ->
 		Expected = <<"{\"Field\":\"Value\"}">>,
-		Actual = get_index_query(undefined, [{collection, "test_collection"}, {field, "Field"}, {value, "Value"}]),
+		Actual = get_index_query(undefined, [{collection, "test_collection"}, 
+											 {field, "Field"}, 
+											 {value, "Value"}]),
 
 		?assertEqual(Expected, Actual).
 
@@ -105,13 +156,13 @@ op(Operator, Field, Value) ->
 	conjunct_test() ->
 		Expected = {struct, [{<<"$and">>, [{struct, [{<<"Field1">>, <<"Value1">>}]},
 										   {struct, [{<<"Field2">>, <<"Value2">>}]}]}]},
-		Actual = conjunct("$and", [eq("Field1", "Value1"), eq("Field2", "Value2")]),
+		Actual = conjunct(<<"$and">>, [eq(<<"Field1">>, <<"Value1">>), eq(<<"Field2">>, <<"Value2">>)]),
 
 		?assertEqual(Expected, Actual).
 
 	eq_test() ->
 		Expected = {struct, [{<<"Field">>, <<"Value">>}]},
-		Actual = eq("Field", "Value"),
+		Actual = eq(<<"Field">>, <<"Value">>),
 
 		?assertEqual(Expected, Actual).
 -endif.

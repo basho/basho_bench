@@ -1,6 +1,6 @@
 -module(basho_bench_valgen_json).
 
--export([new/2]).
+-export([new/2, new_fixed_schema/2]).
 
 -include("basho_bench.hrl").
 
@@ -11,6 +11,18 @@
 -define(MAX_VALUE, 999999).
 
 new(Args, Id) ->
+    FieldCount = proplists:get_value(field_count, Args),
+    FieldType = proplists:get_value(field_type, Args),
+    KeyGenSpec = proplists:get_value(keygenspec, Args),
+    IntValueGen = basho_bench_keygen:new(KeyGenSpec, Id),
+
+    Schema = basho_bench_riak_json_utils:generate_schema(FieldCount, FieldType),
+    SchemaProps = create_schema_proplist(Schema, []),
+
+    fun() -> generate_json_value(SchemaProps, IntValueGen) end.
+
+
+new_fixed_schema(Args, Id) ->
     SchemaLocation = proplists:get_value(schema_location, Args),
     KeyGenSpec = proplists:get_value(keygenspec, Args),
     IntValueGen = basho_bench_keygen:new(KeyGenSpec, Id),
@@ -56,12 +68,25 @@ create_document([{Name,Type}|Rest], Doc, IntValue) ->
 
 -ifdef(TEST).
 new_test() ->
+    Args = [{field_count, 10}, {field_type, "integer"},
+        {keygenspec, {sequential_int, ?MAX_VALUE}}],
+    ValGen = new(Args, undefined),
+
+    ActualJson = ValGen(),
+    {struct, Actual} = mochijson2:decode(ActualJson),
+
+    io:format("~p", [Actual]),
+
+    ?assertEqual(0, proplists:get_value(<<"1">>, Actual)),
+    ?assertEqual(0, proplists:get_value(<<"10">>, Actual)).
+
+new_fixed_schema_test() ->
     Filename = "/tmp/bb_schema.json",
     Json = <<"[{\"Field\": \"name\", \"Type\": \"string\"}, {\"Field\": \"age\", \"Type\": \"integer\"}, {\"Field\": \"x_factor\", \"Type\": \"number\"}]">>,
     file:write_file(Filename, Json),
 
     Args = [{schema_location, Filename}, {keygenspec, {sequential_int, ?MAX_VALUE}}],
-    ValGen = new(Args, undefined),
+    ValGen = new_fixed_schema(Args, undefined),
 
     ActualJson = ValGen(),
     {struct, Actual} = mochijson2:decode(ActualJson),

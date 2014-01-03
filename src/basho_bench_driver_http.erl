@@ -143,7 +143,9 @@ build_generators([{Name, {value_generator, ValGenSpec}}|Rest], Generators, Id) -
     ValGen = basho_bench_valgen:new(ValGenSpec, Id),
     build_generators(Rest, [{Name, ValGen}|Generators], Id);
 build_generators([{Name, {custom_value_generator, {Mod, Fun}, Args}}|Rest], Generators, Id) ->
+    lager:debug("Creating custom generator ~p:~p", [Mod, Fun]),
     ValGen = Mod:Fun(Args, Id),
+    lager:debug("Created custom generator ~p:~p", [Mod, Fun]),
     build_generators(Rest, [{Name, ValGen}|Generators], Id);
 build_generators([], Generators, _) ->
     Generators.
