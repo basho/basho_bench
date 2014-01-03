@@ -47,6 +47,15 @@ new_random_range_query(Args, Id) ->
 
 
 %% internal
+% get_range(NumGen, RangeLength) ->
+% 	Value = NumGen(),
+% 	if
+% 	 	is_number(Value) -> [{start, Value}, {stop, Value + RangeLength}];
+% 	 	true -> lager:debug("Generated invalid number: ~p", [Value]),
+% 	 		[{start, 0}, {stop, RangeLength}]
+% 	end.
+	 
+
 read_json_file(FileLocation) ->
     case file:read_file(FileLocation) of
         {ok, Data} -> {ok, mochijson2:decode(Data)};
@@ -67,7 +76,11 @@ get_range_query(_Id, Args) ->
 	encode(DataStruct).
 
 encode(ToEncode) ->
-	iolist_to_binary(mochijson2:encode(ToEncode)).
+	case catch iolist_to_binary(mochijson2:encode(ToEncode)) of
+		{'EXIT', {Exception,Reason}} ->
+			lager:debug("Couldn't encode ~p ~p:~p", [ToEncode, Exception, Reason]);
+		Result -> Result
+	end.
 
 encode_value(Value) ->
 	if
@@ -95,6 +108,8 @@ conjunct(Conjunction, Terms) ->
 eq(Field, Value) ->
 	{struct, [{Field, encode_value(Value)}]}.
 
+op(Operator, Field, [Start, Stop]) ->
+	{struct, [{Field, {struct, [{list_to_binary(Operator), [encode_value(Start), encode_value(Stop)]}]}}]};
 op(Operator, Field, Value) ->
 	{struct, [{Field, {struct, [{list_to_binary(Operator), encode_value(Value)}]}}]}.
 
