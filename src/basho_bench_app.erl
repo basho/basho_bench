@@ -71,7 +71,7 @@ halt_or_kill() ->
         {ok, included} ->
             exit(whereis(basho_bench_sup),kill);
         _ ->
-            halt(1)
+            init:stop()
     end.
 
 %% ===================================================================
