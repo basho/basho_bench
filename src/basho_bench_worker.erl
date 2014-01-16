@@ -240,7 +240,7 @@ worker_next_op(State0) ->
     {State, OpTag} = 
         case State0#state.op of
             undefined ->
-                Op = element(crypto:rand_uniform(1, State0#state.ops_len), 
+                Op = element(crypto:rand_uniform(1, State0#state.ops_len + 1), 
                              State0#state.ops),
                 {_Label, Tag} = Op,
                 {State0#state{op = Op}, Tag};
