@@ -24,8 +24,7 @@
 -export([new/1,
          run/4]).
 
--include("basho_bench.hrl").
--include_lib("erlcassa/include/erlcassa.hrl").
+-include_lib("basho_bench/include/basho_bench.hrl").
 
 -record(state, { client,
                  keyspace,
@@ -40,36 +39,48 @@
 
 new(Id) ->
     Host    = basho_bench_config:get(cassandra_host, "localhost"),
-    Port     = basho_bench_config:get(cassandra_port, 9160),
+    Port     = basho_bench_config:get(cassandra_port, 9042),
     Keyspace = basho_bench_config:get(cassandra_keyspace, "Keyspace1"),
 	ColumnFamily = basho_bench_config:get(cassandra_columnfamily, "ColumnFamily1"),
 	Column = basho_bench_config:get(cassandra_column, "Column"),
 
 	% connect to client
-	{ok, C} = erlcassa_client:connect(Host, Port),
-	?INFO("Id: ~p, Connected to Cassandra at Host ~p and Port ~p\n", [Id, Host, Port]),
-	
-	% use keyspace
-	{result, ok} = erlcassa_client:cql_execute(C, lists:concat(["USE ", Keyspace, ";"])), 
+	{ok, C} = erlcql:start_link(Host, [{port, Port}]),
+    error_logger:info_msg("Id: ~p, "
+        "Connected to Cassandra at Host ~p and Port ~p\n", [Id, Host, Port]),
 
-	case erlcassa_client:cql_execute(C, lists:concat(["USE ", Keyspace, ";"])) of
-		{result, ok} ->
+
+    case ksbarrier(C, Keyspace) of
+        ok ->
 			{ok, #state { client = C,
 						  keyspace = Keyspace,
 						  columnfamily = ColumnFamily,
 						  column = Column}};
-		{error, Reason} -> 
-			?FAIL_MSG("Failed to get a thrift_client for ~p: ~p\n", [Host, Reason])
+        {error, Reason} ->
+			error_logger:error_msg("Failed to get a erlcql client for ~p: ~p\n",
+                                   [Host, Reason])
+    end.
+
+
+ksbarrier(C, Keyspace) ->
+    case erlcql:q(C, lists:concat(["USE ", Keyspace, ";"])) of
+		{ok, _KSBin} -> ok;
+        {error, not_ready} ->
+            %% Not ready yet, try again
+            timer:sleep(100),
+            ksbarrier(C, Keyspace);
+		{error, _} = Error ->
+            Error
 	end.
 
-run(get, KeyGen, _ValueGen, 
+run(get, KeyGen, _ValueGen,
 	#state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
 	Key = KeyGen(),
-	Query = lists:concat(["SELECT ", Column ," FROM ", ColumnFamily ," where KEY = '", Key ,"';"]), 
-	case erlcassa_client:cql_execute(C, Query, proplist) of
-        {result, {rows, _Rows}} ->
-			%% [Row|_] = Rows,
-			%% KeyColumn = erlcassa_client:get_column("KEY", Row),
+	Query = ["SELECT ", Column ," FROM ", ColumnFamily ," where KEY = '", Key ,"';"],
+    case erlcql:q(C, Query, one) of
+        {ok,void} ->
+            {ok, State};
+        {ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
@@ -78,9 +89,14 @@ run(insert, KeyGen, ValueGen,
     #state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
     Key = KeyGen(),
     Val = ValueGen(),
-    Query = lists:concat(["INSERT INTO ", ColumnFamily , " (KEY, ", Column, ") VALUES ('", Key ,"', ", bin_to_hexstr(Val) ,");"]),
-	case erlcassa_client:cql_execute(C, Query) of
-        {result, ok} ->
+    Query = ["INSERT INTO ", ColumnFamily ,
+               " (KEY, ", Column, ") VALUES "
+               "('", Key ,"', ", bin_to_hexstr(Val) ,");"],
+
+    case erlcql:q(C, Query, any) of
+        {ok,void} ->
+            {ok, State};
+        {ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
@@ -89,9 +105,14 @@ run(put, KeyGen, ValueGen,
 	#state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
 	Key = KeyGen(),
 	Val = ValueGen(),
-	Query = lists:concat(["UPDATE ", ColumnFamily, " SET '", Column, "' = ", bin_to_hexstr(Val), " WHERE KEY = '", Key, "';"]),
-	case erlcassa_client:cql_execute(C, Query, proplist) of
-		{result,ok} ->
+	Query = ["UPDATE ", ColumnFamily,
+             " SET ", Column, " = ", bin_to_hexstr(Val),
+             " WHERE KEY = '", Key, "';"],
+
+    case erlcql:q(C, Query, any) of
+        {ok,void} ->
+            {ok, State};
+		{ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
@@ -99,9 +120,11 @@ run(put, KeyGen, ValueGen,
 run(delete, KeyGen, _ValueGen,
     #state{client=C, columnfamily=ColumnFamily}=State) ->
 	Key = KeyGen(),
-	Query = lists:concat(["DELETE FROM ", ColumnFamily ," where KEY = '", Key ,"';"]),
-	case erlcassa_client:cql_execute(C, Query) of
-        {result, ok} ->
+	Query = ["DELETE FROM ", ColumnFamily ," WHERE KEY = '", Key ,"';"],
+    case erlcql:q(C, Query, any) of
+        {ok,void} ->
+            {ok, State};
+        {ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
@@ -113,14 +136,7 @@ hex(N) when N < 10 ->
     $0+N;
 hex(N) when N >= 10, N < 16 ->
     $a+(N-10).
-    
-to_hex(N) when N < 256 ->
-    [hex(N div 16), hex(N rem 16)].
- 
-list_to_hexstr([]) -> 
-    [];
-list_to_hexstr([H|T]) ->
-    to_hex(H) ++ list_to_hexstr(T).
 
 bin_to_hexstr(Bin) ->
-    lists:concat(["abcdef0123",list_to_hexstr(binary_to_list(Bin))]).
+    List = binary_to_list(Bin),
+    ["0x", [ [hex(N div 16), hex(N rem 16)] || N <- List, N < 256 ] ].
