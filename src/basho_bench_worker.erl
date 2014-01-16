@@ -40,6 +40,7 @@
                  shutdown_on_error,
                  ops,
                  ops_len,
+                 op,
                  rng_seed,
                  parent_pid,
                  worker_pid,
@@ -235,15 +236,23 @@ worker_idle_loop(State) ->
 worker_next_op2(State, OpTag) ->
    catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
                                   State#state.driver_state).
-worker_next_op(State) ->
-    Next = element(random:uniform(State#state.ops_len), State#state.ops),
-    {_Label, OpTag} = Next,
+worker_next_op(State0) ->
+    {State, OpTag} = 
+        case State0#state.op of
+            undefined ->
+                Op = element(crypto:rand_uniform(1, State0#state.ops_len), 
+                             State0#state.ops),
+                {_Label, Tag} = Op,
+                {State0#state{op = Op}, Tag};
+            {_Label, Tag} ->
+                {State0, Tag}
+        end,
     Start = os:timestamp(),
     Result = worker_next_op2(State, OpTag),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
     case Result of
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
-            basho_bench_stats:op_complete(Next, Res, ElapsedUs),
+            basho_bench_stats:op_complete(State#state.op, Res, ElapsedUs),
             {ok, State#state { driver_state = DriverState}};
 
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
@@ -251,7 +260,8 @@ worker_next_op(State) ->
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
-            basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+            basho_bench_stats:op_complete(State#state.op, 
+                                          {error, Reason}, ElapsedUs),
             State#state.shutdown_on_error andalso
                 erlang:send_after(500, basho_bench,
                                   {shutdown, "Shutdown on errors requested", 1}),
@@ -260,7 +270,8 @@ worker_next_op(State) ->
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
-            basho_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
+            basho_bench_stats:op_complete(State#state.op, 
+                                          {error, crash}, ElapsedUs),
 
             %% Give the driver a chance to cleanup
             (catch (State#state.driver):terminate({'EXIT', Reason}, State#state.driver_state)),
