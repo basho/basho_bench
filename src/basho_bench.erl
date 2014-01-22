@@ -63,9 +63,9 @@ main(Args) ->
     application:set_env(lager,
                         handlers,
                         [{lager_console_backend, ConsoleLagerLevel},
-                         {lager_file_backend,
-                          [ {ErrorLog, error, 10485760, "$D0", 5},
-                            {ConsoleLog, debug, 10485760, "$D0", 5} ]} ]),
+                         {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
+                         {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
+                        ]),
     application:set_env(lager, crash_log, CrashLog),
     lager:start(),
 
