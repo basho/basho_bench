@@ -24,7 +24,7 @@
 -export([new/1,
          run/4]).
 
--include_lib("include/basho_bench.hrl").
+-include_lib("basho_bench.hrl").
 
 -record(state, { client,
                  keyspace,
