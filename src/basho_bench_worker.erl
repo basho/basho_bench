@@ -236,6 +236,7 @@ worker_next_op2(State, OpTag) ->
    catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
                                   State#state.driver_state).
 worker_next_op(State) ->
+		?WARN("Next op, state: ~p\n", [State]),
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
     {_Label, OpTag} = Next,
     Start = os:timestamp(),
