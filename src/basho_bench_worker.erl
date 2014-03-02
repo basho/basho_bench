@@ -236,7 +236,6 @@ worker_next_op2(State, OpTag) ->
    catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,
                                   State#state.driver_state).
 worker_next_op(State) ->
-		?WARN("Next op, state: ~p\n", [State]),
     Next = element(random:uniform(State#state.ops_len), State#state.ops),
     {_Label, OpTag} = Next,
     Start = os:timestamp(),
@@ -253,7 +252,7 @@ worker_next_op(State) ->
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
-						?WARN("Error occured, state: ~p\n", [State]),
+						?DEBUG("Error occured, shutdown_on_error: ~p\n", [State#state.shutdown_on_error]),
 %%             State#state.shutdown_on_error andalso
 %%                 erlang:send_after(500, basho_bench,
 %%                                   {shutdown, "Shutdown on errors requested", 1}),
