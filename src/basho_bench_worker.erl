@@ -252,9 +252,10 @@ worker_next_op(State) ->
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
-            State#state.shutdown_on_error andalso
-                erlang:send_after(500, basho_bench,
-                                  {shutdown, "Shutdown on errors requested", 1}),
+						?WARN("Error occured, state: ~p\n", [State]),
+%%             State#state.shutdown_on_error andalso
+%%                 erlang:send_after(500, basho_bench,
+%%                                   {shutdown, "Shutdown on errors requested", 1}),
             {ok, State#state { driver_state = DriverState}};
 
         {'EXIT', Reason} ->
