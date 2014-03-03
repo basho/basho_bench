@@ -251,16 +251,17 @@ worker_next_op(State) ->
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
-            basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
-						?DEBUG("Error occured, shutdown_on_error: ~p\n", [State#state.shutdown_on_error]),
-%%             State#state.shutdown_on_error andalso
-%%                 erlang:send_after(500, basho_bench,
-%%                                   {shutdown, "Shutdown on errors requested", 1}),
+					?DEBUG("error, ~p", [Result]),
+					basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+            State#state.shutdown_on_error andalso
+                erlang:send_after(500, basho_bench,
+                                  {shutdown, "Shutdown on errors requested", 1}),
             {ok, State#state { driver_state = DriverState}};
 
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
+						?DEBUG("exit, ~p", [Result]),
             basho_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
 
             %% Give the driver a chance to cleanup
@@ -291,7 +292,10 @@ worker_next_op(State) ->
             %% Give the driver a chance to cleanup
             (catch (State#state.driver):terminate(normal, State#state.driver_state)),
 
-            normal
+            normal;
+				Other ->
+						?ERROR("Wrong message format returned from driver: ~p",[Other]),
+						crash
     end.
 
 needs_shutdown(State) ->
