@@ -64,7 +64,13 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-    gen_server:call(?MODULE, {op, Op, Result, ElapsedUs}).
+		?INFO("Worker is reporting error: ~p",[Result]),
+		try
+			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
+		catch
+			_Type:Error ->
+				?ERROR("Error during call to basho_bench_stats gen_server: ~p",[Error])
+		end.
 
 %% ====================================================================
 %% gen_server callbacks
@@ -136,6 +142,7 @@ handle_call(run, _From, State) ->
     timer:send_interval(State#state.report_interval, report),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
+		?INFO("Stats module has received info about error: ~p",[Reason]),
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
     {reply, ok, State#state { errors_since_last_report = true }}.
