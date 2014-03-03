@@ -64,12 +64,12 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-		?INFO("Worker is reporting error: ~p",[Result]),
+		?INFO("#Worker is reporting error: ~p",[Result]),
 		try
 			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
 		catch
 			_Type:Error ->
-				?ERROR("Error during call to basho_bench_stats gen_server: ~p",[Error])
+				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
 		end.
 
 %% ====================================================================
@@ -77,7 +77,8 @@ op_complete(Op, Result, ElapsedUs) ->
 %% ====================================================================
 
 init([]) ->
-    %% Trap exits so we have a chance to flush data
+	?INFO("#init"),
+	%% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
     process_flag(priority, high),
 
@@ -131,32 +132,40 @@ init([]) ->
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
-    {ok, #state{ ops = Ops ++ Measurements,
+		?INFO("#init finished"),
+		{ok, #state{ ops = Ops ++ Measurements,
                  report_interval = ReportInterval,
                  summary_file = SummaryFile,
                  errors_file = ErrorsFile}}.
 
 handle_call(run, _From, State) ->
+		?INFO("#handle_call run"),
     %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
+		?INFO("#handle_call run finished"),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
-		?INFO("Stats module has received info about error: ~p",[Reason]),
+		?INFO("#handle_call error ~p",[Reason]),
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
+		?INFO("#handle_call error finished"),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
 handle_cast(_, State) ->
+		?INFO("#handle_cast"),
     {noreply, State}.
 
 handle_info(report, State) ->
+		?INFO("#handle_info"),
     consume_report_msgs(),
     Now = os:timestamp(),
     process_stats(Now, State),
+		?INFO("#handle_info finished"),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
+		?INFO("#handle_terminate"),
     %% Do the final stats report and write the errors file
     process_stats(os:timestamp(), State),
     report_total_errors(State),
@@ -164,6 +173,7 @@ terminate(_Reason, State) ->
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
     ok = file:close(State#state.errors_file),
+		?INFO("#handle_terminate finished"),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
