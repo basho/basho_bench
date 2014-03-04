@@ -271,10 +271,12 @@ process_stats(Now, State) ->
     %% Time to report latency data to our CSV files
     {Oks, Errors, OkOpsRes} =
         lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
-                            {Oks, Errors} = report_latency(Elapsed, Window, Op),
-                            {TotalOks + Oks, TotalErrors + Errors,
-                             [{Op, Oks}|OpsResAcc]}
+%%                             {Oks, Errors} = report_latency(Elapsed, Window, Op),
+                            {0, 0,
+                             [{Op, 0}|OpsResAcc]}
                     end, {0,0,[]}, State#state.ops),
+
+		?INFO("#process_stats State#ops length: ~p",[length(State#state.ops)]),
 
 		?INFO("#process_stats 3",[]),
     %% Reset units
@@ -314,7 +316,9 @@ report_latency(Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
-    case proplists:get_value(n, Stats) > 0 of
+		?INFO("#report_latency Stats length: ~p",[length(Stats)]),
+
+	case proplists:get_value(n, Stats) > 0 of
         true ->
             P = proplists:get_value(percentile, Stats),
             Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~w, ~w, ~w, ~w, ~w, ~w\n",
