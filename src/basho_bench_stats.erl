@@ -265,11 +265,12 @@ process_stats(Now, State) ->
 
     %% Time to report latency data to our CSV files
     {Oks, Errors, OkOpsRes} =
-        lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
-                            {Oks, Errors} = report_latency(Elapsed, Window, Op),
-                            {TotalOks + Oks, TotalErrors + Errors,
-                             [{Op, Oks}|OpsResAcc]}
-                    end, {0,0,[]}, State#state.ops),
+			{100,2,[]},
+%%         lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
+%%                             {Oks, Errors} = report_latency(Elapsed, Window, Op),
+%%                             {TotalOks + Oks, TotalErrors + Errors,
+%%                              [{Op, Oks}|OpsResAcc]}
+%%                     end, {0,0,[]}, State#state.ops),
 
     %% Reset units
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
