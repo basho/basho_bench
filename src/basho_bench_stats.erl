@@ -66,7 +66,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
 op_complete(Op, Result, ElapsedUs) ->
 		?INFO("#Worker is reporting error: ~p",[Result]),
 		try
-			gen_server:cast(?MODULE, {op, Op, Result, ElapsedUs})
+			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
 		catch
 			_Type:Error ->
 				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
@@ -320,7 +320,6 @@ report_latency(Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
-	?INFO("#report_latency Stats length: ~p",[length(Stats)]),
 
     case proplists:get_value(n, Stats) > 0 of
         true ->
