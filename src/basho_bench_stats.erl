@@ -159,7 +159,9 @@ handle_cast(_, State) ->
 handle_info(report, State) ->
 		?INFO("#handle_info",[]),
     consume_report_msgs(),
+		?INFO("#handle_info consume_report_msgs_finished",[]),
     Now = os:timestamp(),
+		?INFO("#handle_info entering process_stats",[]),
     process_stats(Now, State),
 		?INFO("#handle_info finished",[]),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
@@ -260,20 +262,24 @@ process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-    Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
+		?INFO("#process_stats 1",[]),
+
+		Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
     Window  = timer:now_diff(Now, State#state.last_write_time) / 1000000,
 
+		?INFO("#process_stats 2",[]),
     %% Time to report latency data to our CSV files
     {Oks, Errors, OkOpsRes} =
-			{100,2,[]},
-%%         lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
-%%                             {Oks, Errors} = report_latency(Elapsed, Window, Op),
-%%                             {TotalOks + Oks, TotalErrors + Errors,
-%%                              [{Op, Oks}|OpsResAcc]}
-%%                     end, {0,0,[]}, State#state.ops),
+        lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
+                            {Oks, Errors} = report_latency(Elapsed, Window, Op),
+                            {TotalOks + Oks, TotalErrors + Errors,
+                             [{Op, Oks}|OpsResAcc]}
+                    end, {0,0,[]}, State#state.ops),
 
+		?INFO("#process_stats 3",[]),
     %% Reset units
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
+		?INFO("#process_stats 4",[]),
 
     %% Write summary
     file:write(State#state.summary_file,
@@ -283,6 +289,7 @@ process_stats(Now, State) ->
                               Oks + Errors,
                               Oks,
                               Errors])),
+		?INFO("#process_stats 5",[]),
 
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
@@ -290,10 +297,12 @@ process_stats(Now, State) ->
             ErrCounts = ets:tab2list(basho_bench_errors),
             true = ets:delete_all_objects(basho_bench_errors),
             ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
-            [ets_increment(basho_bench_total_errors, Err, Count) || 
+            [ets_increment(basho_bench_total_errors, Err, Count) ||
                               {Err, Count} <- ErrCounts],
+						?INFO("#process_stats 6.1",[]),
             ok;
         false ->
+						?INFO("#process_stats 6.2",[]),
             ok
     end.
 
