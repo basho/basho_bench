@@ -64,7 +64,6 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-		?INFO("#Worker is reporting error: ~p",[Result]),
 		try
 			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
 		catch
@@ -140,6 +139,9 @@ handle_call(run, _From, State) ->
     %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
+		%% Start infinite debug loop
+		timer:apply_interval(lager,debug,["Loop log~n"]),
+
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
 		?INFO("#handle_call error ~p",[Reason]),
