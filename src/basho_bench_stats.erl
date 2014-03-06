@@ -140,7 +140,7 @@ handle_call(run, _From, State) ->
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
 		%% Start infinite debug loop
-		timer:apply_interval(?LOOP_LOG_INTERVAL,lager,debug,["Loop log~n"]),
+		timer:apply_interval(?LOOP_LOG_INTERVAL,lager,debug,["Loop log~n",[]]),
 
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
