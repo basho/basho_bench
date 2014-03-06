@@ -146,28 +146,21 @@ handle_call(run, _From, State) ->
 
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
-		?INFO("#handle_call error ~p",[Reason]),
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
-		?INFO("#handle_call error finished",[]),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
-handle_cast({op, Op, {error, Reason}, _ElapsedUs}, State) ->
-		?INFO("#handle_cast error ~p",[Reason]),
-    increment_error_counter(Op),
-    increment_error_counter({Op, Reason}),
-		?INFO("#handle_cast error finished",[]),
-    {noreply, State#state { errors_since_last_report = true }};
+%% handle_cast({op, Op, {error, Reason}, _ElapsedUs}, State) ->
+%%     increment_error_counter(Op),
+%%     increment_error_counter({Op, Reason}),
+%%     {noreply, State#state { errors_since_last_report = true }};
 handle_cast(_, State) ->
     {noreply, State}.
 
 handle_info(report, State) ->
-		?INFO("#handle_info",[]),
     consume_report_msgs(),
     Now = os:timestamp(),
-		?INFO("#Previous: ~p, Now: ~p",[State#state.last_write_time, Now]),
     process_stats(Now, State),
-		?INFO("#handle_info finished",[]),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
