@@ -66,7 +66,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
 op_complete(Op, Result, ElapsedUs) ->
 		?INFO("#Worker is reporting error: ~p",[Result]),
 		try
-			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
+			gen_server:cast(?MODULE, {op, Op, Result, ElapsedUs})
 		catch
 			_Type:Error ->
 				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
@@ -139,11 +139,9 @@ init([]) ->
                  errors_file = ErrorsFile}}.
 
 handle_call(run, _From, State) ->
-		?INFO("#handle_call run",[]),
     %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
-		?INFO("#handle_call run finished",[]),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
 		?INFO("#handle_call error ~p",[Reason]),
@@ -153,10 +151,10 @@ handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     {reply, ok, State#state { errors_since_last_report = true }}.
 
 handle_cast({op, Op, {error, Reason}, _ElapsedUs}, State) ->
-		?INFO("#handle_call error ~p",[Reason]),
+		?INFO("#handle_cast error ~p",[Reason]),
     increment_error_counter(Op),
     increment_error_counter({Op, Reason}),
-		?INFO("#handle_call error finished",[]),
+		?INFO("#handle_cast error finished",[]),
     {noreply, State#state { errors_since_last_report = true }};
 handle_cast(_, State) ->
 		?INFO("#handle_cast",[]),
@@ -165,15 +163,13 @@ handle_cast(_, State) ->
 handle_info(report, State) ->
 		?INFO("#handle_info",[]),
     consume_report_msgs(),
-		?INFO("#handle_info consume_report_msgs_finished",[]),
     Now = os:timestamp(),
-		?INFO("#handle_info entering process_stats",[]),
+		?INFO("#Previous: ~p, Now: ~p, Diff: ~p",[State#state#last_write_time, Now, Now-State#state#last_write_time]),
     process_stats(Now, State),
 		?INFO("#handle_info finished",[]),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
 terminate(_Reason, State) ->
-		?INFO("#handle_terminate",[]),
     %% Do the final stats report and write the errors file
     process_stats(os:timestamp(), State),
     report_total_errors(State),
@@ -181,7 +177,6 @@ terminate(_Reason, State) ->
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
     ok = file:close(State#state.errors_file),
-		?INFO("#handle_terminate finished",[]),
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -268,12 +263,12 @@ process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-		?INFO("#process_stats 1",[]),
+%% 		?INFO("#process_stats 1",[]),
 
 		Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
     Window  = timer:now_diff(Now, State#state.last_write_time) / 1000000,
 
-		?INFO("#process_stats 2",[]),
+%% 		?INFO("#process_stats 2",[]),
     %% Time to report latency data to our CSV files
     {Oks, Errors, OkOpsRes} =
         lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
@@ -282,10 +277,10 @@ process_stats(Now, State) ->
                              [{Op, Oks}|OpsResAcc]}
                     end, {0,0,[]}, State#state.ops),
 
-		?INFO("#process_stats 3",[]),
+%% 		?INFO("#process_stats 3",[]),
     %% Reset units
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
-		?INFO("#process_stats 4",[]),
+%% 		?INFO("#process_stats 4",[]),
 
     %% Write summary
     file:write(State#state.summary_file,
@@ -295,7 +290,7 @@ process_stats(Now, State) ->
                               Oks + Errors,
                               Oks,
                               Errors])),
-		?INFO("#process_stats 5",[]),
+%% 		?INFO("#process_stats 5",[]),
 
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
@@ -305,10 +300,10 @@ process_stats(Now, State) ->
             ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
             [ets_increment(basho_bench_total_errors, Err, Count) ||
                               {Err, Count} <- ErrCounts],
-						?INFO("#process_stats 6.1",[]),
+%% 						?INFO("#process_stats 6.1",[]),
             ok;
         false ->
-						?INFO("#process_stats 6.2",[]),
+%% 						?INFO("#process_stats 6.2",[]),
             ok
     end.
 
