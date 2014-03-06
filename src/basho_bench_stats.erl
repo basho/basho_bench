@@ -60,7 +60,7 @@ op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
-    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+%%     folsom_metrics:notify({latencies, Op}, ElapsedUs), %todo repair
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
@@ -110,7 +110,7 @@ init([]) ->
     %% Setup a histogram and counter for each operation -- we only track latencies on
     %% successful operations
     [begin
-         folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
+%%          folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)), %todo repair
          folsom_metrics:new_counter({units, Op})
      end || Op <- Ops ++ Measurements],
 
@@ -263,12 +263,10 @@ process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-%% 		?INFO("#process_stats 1",[]),
 
 		Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
     Window  = timer:now_diff(Now, State#state.last_write_time) / 1000000,
 
-%% 		?INFO("#process_stats 2",[]),
     %% Time to report latency data to our CSV files
     {Oks, Errors, OkOpsRes} =
         lists:foldl(fun(Op, {TotalOks, TotalErrors, OpsResAcc}) ->
@@ -277,10 +275,8 @@ process_stats(Now, State) ->
                              [{Op, Oks}|OpsResAcc]}
                     end, {0,0,[]}, State#state.ops),
 
-%% 		?INFO("#process_stats 3",[]),
     %% Reset units
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
-%% 		?INFO("#process_stats 4",[]),
 
     %% Write summary
     file:write(State#state.summary_file,
@@ -290,7 +286,6 @@ process_stats(Now, State) ->
                               Oks + Errors,
                               Oks,
                               Errors])),
-%% 		?INFO("#process_stats 5",[]),
 
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
@@ -300,10 +295,8 @@ process_stats(Now, State) ->
             ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
             [ets_increment(basho_bench_total_errors, Err, Count) ||
                               {Err, Count} <- ErrCounts],
-%% 						?INFO("#process_stats 6.1",[]),
             ok;
         false ->
-%% 						?INFO("#process_stats 6.2",[]),
             ok
     end.
 
@@ -312,32 +305,32 @@ process_stats(Now, State) ->
 %% number of successful and failed ops in this window of time.
 %%
 report_latency(Elapsed, Window, Op) ->
-    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
+%%     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}), %todo repair
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    case proplists:get_value(n, Stats) > 0 of
-        true ->
-            P = proplists:get_value(percentile, Stats),
+%%     case proplists:get_value(n, Stats) > 0 of %todo repair
+%%         true ->
+%%             P = proplists:get_value(percentile, Stats),
             Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~w, ~w, ~w, ~w, ~w, ~w\n",
                                  [Elapsed,
                                   Window,
                                   Units,
-                                  proplists:get_value(min, Stats),
-                                  proplists:get_value(arithmetic_mean, Stats),
-                                  proplists:get_value(median, Stats),
-                                  proplists:get_value(95, P),
-                                  proplists:get_value(99, P),
-                                  proplists:get_value(999, P),
-                                  proplists:get_value(max, Stats),
-                                  Errors]);
-        false ->
-            ?WARN("No data for op: ~p\n", [Op]),
-            Line = io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n",
-                                 [Elapsed,
-                                  Window,
-                                  Errors])
-    end,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  0,
+                                  Errors]),
+%%         false -> %todo repair
+%%             ?WARN("No data for op: ~p\n", [Op]),
+%%             Line = io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n",
+%%                                  [Elapsed,
+%%                                   Window,
+%%                                   Errors])
+%%     end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
     {Units, Errors}.
 
