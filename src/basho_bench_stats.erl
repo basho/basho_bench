@@ -164,7 +164,7 @@ handle_info(report, State) ->
 		?INFO("#handle_info",[]),
     consume_report_msgs(),
     Now = os:timestamp(),
-		?INFO("#Previous: ~p, Now: ~p, Diff: ~p",[State#state#last_write_time, Now, Now-State#state#last_write_time]),
+		?INFO("#Previous: ~p, Now: ~p, Diff: ~p",[State#state.last_write_time, Now, Now-State#state.last_write_time]),
     process_stats(Now, State),
 		?INFO("#handle_info finished",[]),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
