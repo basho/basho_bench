@@ -66,7 +66,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
 op_complete(Op, Result, ElapsedUs) ->
 		?INFO("#Worker is reporting error: ~p",[Result]),
 		try
-			gen_server:cast(?MODULE, {op, Op, Result, ElapsedUs})
+			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
 		catch
 			_Type:Error ->
 				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
@@ -77,7 +77,6 @@ op_complete(Op, Result, ElapsedUs) ->
 %% ====================================================================
 
 init([]) ->
-	?INFO("#init",[]),
 	%% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
     process_flag(priority, high),
@@ -132,7 +131,6 @@ init([]) ->
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
-		?INFO("#init finished",[]),
 		{ok, #state{ ops = Ops ++ Measurements,
                  report_interval = ReportInterval,
                  summary_file = SummaryFile,
@@ -157,7 +155,6 @@ handle_cast({op, Op, {error, Reason}, _ElapsedUs}, State) ->
 		?INFO("#handle_cast error finished",[]),
     {noreply, State#state { errors_since_last_report = true }};
 handle_cast(_, State) ->
-		?INFO("#handle_cast",[]),
     {noreply, State}.
 
 handle_info(report, State) ->
