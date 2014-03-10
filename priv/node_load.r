@@ -17,8 +17,8 @@ legend("topright", c("CPU","Memory"), col=c("red", "blue"), lty=c(1,1), inset=c(
 max=max(data$input, data$output)
 min=min(data$input, data$output)
 
-plot(spline(data$elapsed, data$input, method="natural"), type="l", main=args[2], cex.main=1.5, col="red", xlab="Elapsed Secs", ylab="Amount of bytes", ylim=c(min,max), cex.lab=1.3)
+plot(spline(data$elapsed, data$input, method="natural"), type="l", main=args[3], cex.main=1.5, col="red", xlab="Elapsed Secs", ylab="Amount of bytes", ylim=c(min,max), cex.lab=1.3)
 lines(spline(data$elapsed, data$output, method="natural"), type="l", col="blue")
-legend("topright", c("received", "sent"), col=c("red","blue"), lty=c(1,1), , inset=c(-0.16,0.4), title="Legend", cex=1.3)
+legend("topright", c("Received", "Sent"), col=c("red","blue"), lty=c(1,1), , inset=c(-0.16,0.4), title="Legend", cex=1.3)
 
 dev.off()
