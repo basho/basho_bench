@@ -66,12 +66,13 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-		try
-			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
-		catch
-			_Type:Error ->
-				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
-		end.
+	ok.
+%% 		try %todo uncomment
+%% 			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
+%% 		catch
+%% 			_Type:Error ->
+%% 				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
+%% 		end.
 
 %% ====================================================================
 %% gen_server callbacks
@@ -166,7 +167,7 @@ handle_info(report, State) ->
 terminate(_Reason, State) ->
     %% Do the final stats report and write the errors file
     process_stats(os:timestamp(), State),
-    report_total_errors(State),
+%%     report_total_errors(State), %todo uncomment
 
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(State#state.summary_file),
@@ -279,20 +280,20 @@ process_stats(Now, State) ->
                               Window,
                               Oks + Errors,
                               Oks,
-                              Errors])),
+                              Errors])).
 
-    %% Dump current error counts to console
-    case (State#state.errors_since_last_report) of
-        true ->
-            ErrCounts = ets:tab2list(basho_bench_errors),
-            true = ets:delete_all_objects(basho_bench_errors),
-            ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
-            [ets_increment(basho_bench_total_errors, Err, Count) ||
-                              {Err, Count} <- ErrCounts],
-            ok;
-        false ->
-            ok
-    end.
+%%     %% Dump current error counts to console %todo uncomment
+%%     case (State#state.errors_since_last_report) of
+%%         true ->
+%%             ErrCounts = ets:tab2list(basho_bench_errors),
+%%             true = ets:delete_all_objects(basho_bench_errors),
+%%             ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
+%%             [ets_increment(basho_bench_total_errors, Err, Count) ||
+%%                               {Err, Count} <- ErrCounts],
+%%             ok;
+%%         false ->
+%%             ok
+%%     end.
 
 %%
 %% Write latency info for a given op to the appropriate CSV. Returns the
