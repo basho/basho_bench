@@ -62,7 +62,7 @@ op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
-%%     folsom_metrics:notify({latencies, Op}, ElapsedUs), %todo repair
+    folsom_metrics:notify({latencies, Op}, ElapsedUs),
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
@@ -110,7 +110,7 @@ init([]) ->
     %% Setup a histogram and counter for each operation -- we only track latencies on
     %% successful operations
     [begin
-%%          folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)), %todo repair
+         folsom_metrics:new_histogram({latencies, Op}, slide, basho_bench_config:get(report_interval)),
          folsom_metrics:new_counter({units, Op})
      end || Op <- Ops ++ Measurements],
 
@@ -141,8 +141,8 @@ handle_call(run, _From, State) ->
     %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
-		%% Start infinite debug loop
-		timer:apply_interval(?LOOP_LOG_INTERVAL,?MODULE,loop_log,[]),
+	%% Start infinite debug loop
+	timer:apply_interval(?LOOP_LOG_INTERVAL,?MODULE,loop_log,[]),
 
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
@@ -150,10 +150,6 @@ handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter({Op, Reason}),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
-%% handle_cast({op, Op, {error, Reason}, _ElapsedUs}, State) ->
-%%     increment_error_counter(Op),
-%%     increment_error_counter({Op, Reason}),
-%%     {noreply, State#state { errors_since_last_report = true }};
 handle_cast(_, State) ->
     {noreply, State}.
 
@@ -299,32 +295,32 @@ process_stats(Now, State) ->
 %% number of successful and failed ops in this window of time.
 %%
 report_latency(Elapsed, Window, Op) ->
-%%     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}), %todo repair
+    Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-%%     case proplists:get_value(n, Stats) > 0 of %todo repair
-%%         true ->
-%%             P = proplists:get_value(percentile, Stats),
+    case proplists:get_value(n, Stats) > 0 of
+        true ->
+            P = proplists:get_value(percentile, Stats),
             Line = io_lib:format("~w, ~w, ~w, ~w, ~.1f, ~w, ~w, ~w, ~w, ~w, ~w\n",
                                  [Elapsed,
                                   Window,
                                   Units,
-                                  0.0,
-                                  0.0,
-                                  0.0,
-                                  0.0,
-                                  0.0,
-                                  0.0,
-                                  0.0,
-                                  Errors]),
-%%         false -> %todo repair
-%%             ?WARN("No data for op: ~p\n", [Op]),
-%%             Line = io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n",
-%%                                  [Elapsed,
-%%                                   Window,
-%%                                   Errors])
-%%     end,
+                                  proplists:get_value(min, Stats),
+                                  proplists:get_value(arithmetic_mean, Stats),
+                                  proplists:get_value(median, Stats),
+                                  proplists:get_value(95, P),
+                                  proplists:get_value(99, P),
+                                  proplists:get_value(999, P),
+                                  proplists:get_value(max, Stats),
+                                  Errors]);
+        false ->
+            ?WARN("No data for op: ~p\n", [Op]),
+            Line = io_lib:format("~w, ~w, 0, 0, 0, 0, 0, 0, 0, 0, ~w\n",
+                                 [Elapsed,
+                                  Window,
+                                  Errors])
+    end,
     ok = file:write(erlang:get({csv_file, Op}), Line),
     {Units, Errors}.
 
