@@ -55,10 +55,8 @@ plot1 <- qplot(elapsed, successful / window, data = b$summary,
                 main = "Throughput") +
 
                 geom_smooth(aes(y = successful / window, colour = "ok"), size=0.5) +
-#                geom_point(aes(y = successful / window, colour = "ok"), size=2.0) +
 
                 geom_smooth(aes(y = failed / window, colour = "error"), size=0.5) +
-#                geom_point(aes(y = failed / window, colour = "error"), size=2.0) +
 
                 scale_colour_manual("Response", values = c("#FF665F", "#188125"))
 
@@ -71,13 +69,10 @@ latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
 # Plot median, mean and 95th percentiles
 plot2 <- latency_plot + opts(title = "Mean, Median, and 95th Percentile Latency") +
             geom_smooth(aes(y = median, color = "median"), size=0.5) +
-            geom_point(aes(y = median, color = "median"), size=2.0) +
 
             geom_smooth(aes(y = mean, color = "mean"), size=0.5) +
-            geom_point(aes(y = mean, color = "mean"), size=2.0) +
 
             geom_smooth(aes(y = X95th, color = "95th"), size=0.5) +
-            geom_point(aes(y = X95th, color = "95th"), size=2.0) +
 
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
             # scale_color_hue("Percentile",
@@ -87,7 +82,6 @@ plot2 <- latency_plot + opts(title = "Mean, Median, and 95th Percentile Latency"
 # Plot 99th percentile
 plot3 <- latency_plot + opts(title = "99th Percentile Latency") +
             geom_smooth(aes(y = X99th, color = "99th"), size=0.5) +
-            geom_point(aes(y = X99th, color = "99th"), size=2.0) +
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91"))
             # scale_color_hue("Percentile",
             #                 breaks = c("X99_9th","X99th" ),
@@ -96,13 +90,11 @@ plot3 <- latency_plot + opts(title = "99th Percentile Latency") +
 # Plot 99.9th percentile
 plot4 <- latency_plot + opts(title = "99.9th Percentile Latency") +
             geom_smooth(aes(y = X99_9th, color = "99.9th"), size=0.5) +
-            geom_point(aes(y = X99_9th, color = "99.9th"), size=2.0) +
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
 
 # Plot 100th percentile
 plot5 <- latency_plot + opts(title = "Maximum Latency") +
             geom_smooth(aes(y = max, color = "max"), size=0.5) +
-            geom_point(aes(y = max, color = "max"), size=2.0) +
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
 
 grid.newpage()
