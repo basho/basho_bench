@@ -33,6 +33,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+% periodic loop log
 -export([loop_log/0]).
 
 -include("basho_bench.hrl").
@@ -66,19 +67,19 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-		try
-			gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
-		catch
-			_Type:Error ->
-				?ERROR("#Error during call to basho_bench_stats gen_server: ~p",[Error])
-		end.
+    try
+      gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
+    catch
+      _Type:Error ->
+        ?ERROR("Error during call to basho_bench_stats gen_server: ~p",[Error])
+    end.
 
 %% ====================================================================
 %% gen_server callbacks
 %% ====================================================================
 
 init([]) ->
-	%% Trap exits so we have a chance to flush data
+    %% Trap exits so we have a chance to flush data
     process_flag(trap_exit, true),
     process_flag(priority, high),
 
@@ -132,7 +133,7 @@ init([]) ->
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
-		{ok, #state{ ops = Ops ++ Measurements,
+    {ok, #state{ ops = Ops ++ Measurements,
                  report_interval = ReportInterval,
                  summary_file = SummaryFile,
                  errors_file = ErrorsFile}}.
@@ -141,9 +142,8 @@ handle_call(run, _From, State) ->
     %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
-	%% Start infinite debug loop
-	timer:apply_interval(?LOOP_LOG_INTERVAL,?MODULE,loop_log,[]),
-
+    %% Start infinite debug loop
+    timer:apply_interval(?LOOP_LOG_INTERVAL,?MODULE,loop_log,[]),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
@@ -354,4 +354,4 @@ consume_report_msgs() ->
     end.
 
 loop_log() ->
-	?DEBUG("Loop log~n",[]).
+  ?DEBUG("Loop log~n",[]).

@@ -250,9 +250,9 @@ worker_next_op(State) ->
             {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->
-            %% Driver encountered a recoverable error
-					?DEBUG("error, ~p", [Result]),
-					basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+						%% Driver encountered a recoverable error
+						?DEBUG("Driver encountered error: ~p", [Result]),
+						basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
             State#state.shutdown_on_error andalso
                 erlang:send_after(500, basho_bench,
                                   {shutdown, "Shutdown on errors requested", 1}),
@@ -293,7 +293,7 @@ worker_next_op(State) ->
 
             normal;
 				Other ->
-						?ERROR("Wrong message format returned from driver: ~p",[Other]),
+						?ERROR("Wrong test result message returned from driver, invalid format: ~p",[Other]),
 						crash
     end.
 
