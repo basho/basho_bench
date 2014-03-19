@@ -16,7 +16,7 @@
 %% "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
 %% KIND, either express or implied.  See the License for the
 %% specific language governing permissions and limitations
-%% under the License.    
+%% under the License.
 %%
 %% -------------------------------------------------------------------
 -module(basho_bench_worker).
@@ -72,16 +72,16 @@ init([SupChild, Id]) ->
     %%
     %% NOTE: If the worker process dies, this obviously introduces some entroy
     %% into the equation since you'd be restarting the RNG all over.
-    %% 
+    %%
     %% The RNG_SEED is static by default for replicability of key size
-    %% and value size generation between test runs.  
+    %% and value size generation between test runs.
     process_flag(trap_exit, true),
-    {A1, A2, A3} = 
+    {A1, A2, A3} =
         case basho_bench_config:get(rng_seed, {42, 23, 12}) of
             {Aa, Ab, Ac} -> {Aa, Ab, Ac};
             now -> now()
         end,
-                       
+
     RngSeed = {A1+Id, A2+Id, A3+Id},
 
     %% Pull all config settings from environment
@@ -220,6 +220,9 @@ worker_idle_loop(State) ->
                 max ->
                     ?INFO("Starting max worker: ~p\n", [self()]),
                     max_worker_run_loop(State);
+                {rate, max} ->
+                    ?INFO("Starting max worker: ~p\n", [self()]),
+                    max_worker_run_loop(State);
                 {rate, Rate} ->
                     %% Calculate mean interarrival time in in milliseconds. A
                     %% fixed rate worker can generate (at max) only 1k req/sec.
@@ -247,8 +250,9 @@ worker_next_op(State) ->
             {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->
-            %% Driver encountered a recoverable error
-            basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+						%% Driver encountered a recoverable error
+						?DEBUG("Driver encountered error: ~p", [Result]),
+						basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
             State#state.shutdown_on_error andalso
                 erlang:send_after(500, basho_bench,
                                   {shutdown, "Shutdown on errors requested", 1}),
@@ -263,7 +267,21 @@ worker_next_op(State) ->
             (catch (State#state.driver):terminate({'EXIT', Reason}, State#state.driver_state)),
 
             ?DEBUG("Driver ~p crashed: ~p\n", [State#state.driver, Reason]),
-            crash;
+            case State#state.shutdown_on_error of
+                true ->
+                    %% Yes, I know this is weird, but currently this
+                    %% is how you tell Basho Bench to return a
+                    %% non-zero exit status.  Ideally this would all
+                    %% be done in the `handle_info' callback where it
+                    %% would check `Reason' and `shutdown_on_error'.
+                    %% Then I wouldn't have to return a bullshit "ok"
+                    %% here.
+                    erlang:send_after(500, basho_bench,
+                                      {shutdown, "Shutdown on errors requested", 2}),
+                    {ok, State};
+                false ->
+                    crash
+            end;
 
         {stop, Reason} ->
             %% Driver (or something within it) has requested that this worker
@@ -273,7 +291,10 @@ worker_next_op(State) ->
             %% Give the driver a chance to cleanup
             (catch (State#state.driver):terminate(normal, State#state.driver_state)),
 
-            normal
+            normal;
+				Other ->
+						?ERROR("Wrong test result message returned from driver, invalid format: ~p",[Other]),
+						crash
     end.
 
 needs_shutdown(State) ->
@@ -283,11 +304,11 @@ needs_shutdown(State) ->
             case Pid of
                 Parent ->
                     %% Give the driver a chance to cleanup
-                    (catch (State#state.driver):terminate(normal, 
+                    (catch (State#state.driver):terminate(normal,
                                                           State#state.driver_state)),
                     true;
-                _Else -> 
-                    %% catch this so that selective recieve doesn't kill us when running 
+                _Else ->
+                    %% catch this so that selective recieve doesn't kill us when running
                     %% the riakclient_driver
                     false
             end

@@ -33,6 +33,9 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
+% periodic loop log
+-export([loop_log/0]).
+
 -include("basho_bench.hrl").
 
 -record(state, { ops,
@@ -64,7 +67,12 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     folsom_metrics:notify({units, Op}, {inc, Units}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-    gen_server:call(?MODULE, {op, Op, Result, ElapsedUs}).
+    try
+      gen_server:call(?MODULE, {op, Op, Result, ElapsedUs})
+    catch
+      _Type:Error ->
+        ?ERROR("Error during call to basho_bench_stats gen_server: ~p",[Error])
+    end.
 
 %% ====================================================================
 %% gen_server callbacks
@@ -134,6 +142,8 @@ handle_call(run, _From, State) ->
     %% Schedule next report
     Now = os:timestamp(),
     timer:send_interval(State#state.report_interval, report),
+    %% Start infinite debug loop
+    timer:apply_interval(?LOOP_LOG_INTERVAL,?MODULE,loop_log,[]),
     {reply, ok, State#state { start_time = Now, last_write_time = Now}};
 handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter(Op),
@@ -243,7 +253,8 @@ process_stats(Now, State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
-    Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
+
+		Elapsed = timer:now_diff(Now, State#state.start_time) / 1000000,
     Window  = timer:now_diff(Now, State#state.last_write_time) / 1000000,
 
     %% Time to report latency data to our CSV files
@@ -272,7 +283,7 @@ process_stats(Now, State) ->
             ErrCounts = ets:tab2list(basho_bench_errors),
             true = ets:delete_all_objects(basho_bench_errors),
             ?INFO("Errors:~p\n", [lists:sort(ErrCounts)]),
-            [ets_increment(basho_bench_total_errors, Err, Count) || 
+            [ets_increment(basho_bench_total_errors, Err, Count) ||
                               {Err, Count} <- ErrCounts],
             ok;
         false ->
@@ -287,6 +298,7 @@ report_latency(Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
+
     case proplists:get_value(n, Stats) > 0 of
         true ->
             P = proplists:get_value(percentile, Stats),
@@ -340,3 +352,6 @@ consume_report_msgs() ->
     after 0 ->
             ok
     end.
+
+loop_log() ->
+  ?DEBUG("Loop log~n",[]).
