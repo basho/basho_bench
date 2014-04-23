@@ -26,3 +26,10 @@ kbyte_sec-results:
 
 mbyte_sec-results:
 	Rscript --vanilla priv/summary.r --ylabel1stgraph Mbyte/sec -i tests/current
+
+TARGETS := $(shell ls tests/ | grep -v current)
+JOBS := $(addprefix job,${TARGETS})
+.PHONY: all_results ${JOBS}
+
+all_results: ${JOBS} ; echo "$@ successfully generated."
+${JOBS}: job%: ; Rscript --vanilla priv/summary.r -i tests/$*
