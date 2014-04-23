@@ -154,6 +154,8 @@ run(get, KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
+        {error, disconnected} ->
+            run(get, KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -165,6 +167,8 @@ run(get_existing, KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, notfound} ->
             {error, {not_found, Key}, State};
+        {error, disconnected} ->
+            run(get_existing, KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -174,6 +178,8 @@ run(put, KeyGen, ValueGen, State) ->
                                                      {dw, State#state.dw}], State#state.timeout_write) of
         ok ->
             {ok, State};
+        {error, disconnected} ->
+            run(put, KeyGen, ValueGen, State);  % suboptimal, but ...
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -189,6 +195,8 @@ run(update, KeyGen, ValueGen, State) ->
                                                               {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
                     {ok, State};
+                {error, disconnected} ->
+                    run(update, KeyGen, ValueGen, State);  % suboptimal, but ...
                 {error, Reason} ->
                     {error, Reason, State}
             end;
@@ -198,9 +206,13 @@ run(update, KeyGen, ValueGen, State) ->
                                                              {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
                     {ok, State};
+                {error, disconnected} ->
+                    run(update, KeyGen, ValueGen, State);  % suboptimal, but ...
                 {error, Reason} ->
                     {error, Reason, State}
             end;
+        {error, disconnected} ->
+            run(update, KeyGen, ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -216,11 +228,15 @@ run(update_existing, KeyGen, ValueGen, State) ->
                                                               {dw, State#state.dw}], State#state.timeout_write) of
                 ok ->
                     {ok, State};
+                {error, disconnected} ->
+                    run(update_existing, KeyGen, ValueGen, State);  % suboptimal, but ...
                 {error, Reason} ->
                     {error, Reason, State}
             end;
         {error, notfound} ->
             {error, {not_found, Key}, State};
+        {error, disconnected} ->
+            run(update_existing, KeyGen, ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -232,6 +248,8 @@ run(delete, KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
+        {error, disconnected} ->
+            run(delete, KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -240,6 +258,8 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
     case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket, State#state.timeout_listkeys) of
         {ok, _Keys} ->
             {ok, State};
+        {error, disconnected} ->
+            run(listkeys, _KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -251,6 +271,8 @@ run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
     case riakc_pb_socket:search(NewState#state.pid, Index, Query, Options, NewState#state.timeout_read) of
           {ok, _Results} ->
               {ok, NewState};
+          {error, disconnected} ->
+              run(search, _KeyGen, _ValueGen, State);
           {error, Reason} ->
               {error, Reason, NewState}
     end;
@@ -268,6 +290,8 @@ run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_t
     case riakc_pb_socket:search(NewState#state.pid, Index, Query, Options, NewState#state.timeout_read) of
           {ok, _Results} ->
               {ok, NewState};
+          {error, disconnected} ->
+              run(search_interval, _KeyGen, _ValueGen, State);
           {error, Reason} ->
               {error, Reason, NewState}
     end;
@@ -292,6 +316,8 @@ run(counter_incr, KeyGen, ValueGen, State) ->
                                        {pw, State#state.pw}]) of
         ok ->
             {ok, State};
+        {error, disconnected} ->
+            run(counter_incr, KeyGen, ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -303,6 +329,8 @@ run(counter_val, KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
+        {error, disconnected} ->
+            run(counter_val, KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
     end.
@@ -321,6 +349,8 @@ mapred(State, Input, Query) ->
                 {error, Reason} ->
                     {error, Reason, State}
             end;
+        {error, disconnected} ->
+            mapred(State, Input, Query);
         {error, Reason} ->
             {error, Reason, State}
     end.
