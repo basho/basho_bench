@@ -84,7 +84,13 @@ get(Key, Default) ->
 
 load_config([]) ->
     ok;
-load_config([{Key, Value} | Rest]) ->
+load_config([{Key, Value0} | Rest]) ->
+    Value =
+        case Key of
+            crdt_list ->
+                basho_bench_crdt:instantiate(Value0);
+            _ -> Value0
+        end,
     ?MODULE:set(Key, Value),
     load_config(Rest);
 load_config([ Other | Rest]) ->

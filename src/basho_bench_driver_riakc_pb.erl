@@ -46,7 +46,8 @@
                  timeout_read,
                  timeout_write,
                  timeout_listkeys,
-                 timeout_mapreduce
+                 timeout_mapreduce,
+                 crdt_list
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -116,7 +117,8 @@ new(Id) ->
                           timeout_read = get_timeout(pb_timeout_read),
                           timeout_write = get_timeout(pb_timeout_write),
                           timeout_listkeys = get_timeout(pb_timeout_listkeys),
-                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce)
+                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce),
+                          crdt_list = CRDTList
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -333,12 +335,30 @@ run(counter_val, KeyGen, _ValueGen, State) ->
             run(counter_val, KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
-    end.
+    end;
+run(crdt_mutate, KeyGen, _ValueGen, State) ->
+    CRDT = get_one_crdt(State),
+    mutate_crdt(CRDT, State);
+run(crdt_create, KeyGen, _ValueGen, State) ->
+    CRDT = get_one_crdt(State#state.crdt_list),
+    create_crdt(CRDT, State);    
+run(crdt_delete, KeyGen, _ValueGen, State) ->
+    run(delete, KeyGen, _ValueGen, State);
+run(crdt_value, KeyGen, _ValueGen, State) ->
+    run(get, KeyGen, _ValueGen, State).
 
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+create_crdt({map, _TagLen, _SubList} = CRDT, State) ->
+    riakc_pb_socket:modify_type(Pid, create_map(CRDT),
+    
+
+mutate_crdt(CRDT, State) ->
+    ok.
+
 
 mapred(State, Input, Query) ->
     case riakc_pb_socket:mapred(State#state.pid, Input, Query, State#state.timeout_mapreduce) of
