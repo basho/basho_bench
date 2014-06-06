@@ -69,7 +69,7 @@ latency_plot <- ggplot(b$latencies, aes(x = elapsed)) +
                    labs(x = "Elapsed Secs", y = "Latency (ms)")
 
 # Plot median, mean and 95th percentiles
-plot2 <- latency_plot + opts(title = "Mean, Median, and 95th Percentile Latency") +
+plot2 <- latency_plot + theme(title = element_text('Mean, Median, and 95th Percentile Latency')) +
             geom_smooth(aes(y = median, color = "median"), size=0.5) +
             geom_point(aes(y = median, color = "median"), size=2.0) +
 
@@ -85,7 +85,7 @@ plot2 <- latency_plot + opts(title = "Mean, Median, and 95th Percentile Latency"
             #                 labels = c("95th", "Mean", "Median"))
 
 # Plot 99th percentile
-plot3 <- latency_plot + opts(title = "99th Percentile Latency") +
+plot3 <- latency_plot + theme(title = element_text('99th Percentile Latency')) +
             geom_smooth(aes(y = X99th, color = "99th"), size=0.5) +
             geom_point(aes(y = X99th, color = "99th"), size=2.0) +
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91"))
@@ -94,13 +94,13 @@ plot3 <- latency_plot + opts(title = "99th Percentile Latency") +
             #                 labels = c("99.9th", "99th"))
 
 # Plot 99.9th percentile
-plot4 <- latency_plot + opts(title = "99.9th Percentile Latency") +
+plot4 <- latency_plot + theme(title = element_text('99.9th Percentile Latency')) +
             geom_smooth(aes(y = X99_9th, color = "99.9th"), size=0.5) +
             geom_point(aes(y = X99_9th, color = "99.9th"), size=2.0) +
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
 
 # Plot 100th percentile
-plot5 <- latency_plot + opts(title = "Maximum Latency") +
+plot5 <- latency_plot + theme(title = element_text('Maximum Latency')) +
             geom_smooth(aes(y = max, color = "max"), size=0.5) +
             geom_point(aes(y = max, color = "max"), size=2.0) +
             scale_colour_manual("Percentile", values = c("#FF665F", "#009D91", "#FFA700"))
