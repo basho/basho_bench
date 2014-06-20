@@ -62,14 +62,16 @@ new({concat_binary, OneGen, TwoGen}, Id) ->
     fun() ->
             <<(Gen1())/binary, (Gen2())/binary>>
     end;
-new({sequential_int, MaxKey}, Id) ->
+new({sequential_int, MaxKey}, Id)
+  when is_integer(MaxKey), MaxKey > 0 ->
     Ref = make_ref(),
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     fun() -> sequential_int_generator(Ref, MaxKey, Id, DisableProgress) end;
 new({partitioned_sequential_int, MaxKey}, Id) ->
     new({partitioned_sequential_int, 0, MaxKey}, Id);
-new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
+new({partitioned_sequential_int, StartKey, NumKeys}, Id)
+  when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
     Workers = basho_bench_config:get(concurrent),
     Range = NumKeys div Workers,
     MinValue = StartKey + Range * (Id - 1),
@@ -81,18 +83,22 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id) ->
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
     fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
-new({uniform_int, MaxKey}, _Id) ->
+new({uniform_int, MaxKey}, _Id)
+  when is_integer(MaxKey), MaxKey > 0 ->
     fun() -> random:uniform(MaxKey) end;
-new({uniform_int, StartKey, NumKeys}, _Id) ->
+new({uniform_int, StartKey, NumKeys}, _Id)
+  when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
     fun() -> random:uniform(NumKeys) + StartKey - 1 end;
-new({pareto_int, MaxKey}, _Id) ->
+new({pareto_int, MaxKey}, _Id)
+  when is_integer(MaxKey), MaxKey > 0 ->
     pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE);
 new({truncated_pareto_int, MaxKey}, Id) ->
     Pareto = new({pareto_int, MaxKey}, Id),
     fun() -> erlang:min(MaxKey, Pareto()) end;
 new(uuid_v4, _Id) ->
     fun() -> uuid:v4() end;
-new({function, Module, Function, Args}, Id) ->
+new({function, Module, Function, Args}, Id)
+  when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
         {module, Module} ->
             erlang:apply(Module, Function, [Id] ++ Args);
@@ -106,7 +112,7 @@ new({valgen, ValGen}, Id) ->
 new(Bin, _Id) when is_binary(Bin) ->
     fun() -> Bin end;
 new(Other, _Id) ->
-    ?FAIL_MSG("Unsupported key generator requested: ~p\n", [Other]).
+    ?FAIL_MSG("Invalid key generator requested: ~p\n", [Other]).
 
 dimension({int_to_str, InputGen}) ->
     dimension(InputGen);
