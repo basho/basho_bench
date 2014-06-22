@@ -2,7 +2,7 @@ args <- commandArgs(trailingOnly = TRUE)
 
 data <- read.csv(file=sprintf("%s.csv", args[1]), header=TRUE, sep=",")
 
-png(sprintf("%s.png", args[1]), width=1024, height=768)
+png(sprintf("%s_summary.png", args[1]), width=1024, height=768)
 
 par(mfrow=c(2,2), oma=c(0,1,3,0))
 
