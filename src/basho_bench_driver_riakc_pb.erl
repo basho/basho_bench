@@ -146,6 +146,150 @@ warn_bucket_mr_correctness(_) ->
     %% preload is specified, so no warning necessary
     ok.
 
+%% Write information about the team.
+run({team, write}, KeyGen, _ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Result = riakc_pb_socket:modify_type(State#state.pid,
+                     fun(M) ->
+                             riakc_map:update(
+                                    {<<"name">>, register},
+                                    fun(R) ->
+                                        riakc_register:set(
+                                            list_to_binary("Team " ++ Key), R)
+                                    end, M)
+                     end,
+                     State#state.bucket, Key, [create]),
+    case Result of
+        ok ->
+            lager:info("Team write succeeded."),
+            {ok, State};
+        {ok, _} ->
+            lager:info("Team write succeeded."),
+            {ok, State};
+        {error, Reason} ->
+            lager:info("Team write failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+%% Read information about the team.
+run({team, read}, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
+    Result = riakc_pb_socket:fetch_type(State#state.pid,
+                                        State#state.bucket,
+                                        Key,
+                                        Options),
+    case Result of
+        {ok, _} ->
+            lager:info("Team read succeeded."),
+            {ok, State};
+        {error, {notfound, _}} ->
+            lager:info("Team does not exist yet."),
+            run({team, write}, KeyGen, ValueGen, State);
+        {error, Reason} ->
+            lager:info("Team read failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+%% Remove a player from the team.
+run({team, player, removal}, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
+    Result = riakc_pb_socket:fetch_type(State#state.pid,
+                                        State#state.bucket,
+                                        Key,
+                                        Options),
+    case Result of
+        {ok, M0} ->
+            M = riakc_map:value(M0),
+            Members = proplists:get_value({<<"members">>, set}, M, []),
+            case length(Members) > 0 of
+                true ->
+                    Value = hd(Members),
+                    lager:info("Team read succeeded"),
+                    Result2 = riakc_pb_socket:modify_type(State#state.pid,
+                                     fun(M2) ->
+                                             riakc_map:update(
+                                                    {<<"members">>, set},
+                                                    fun(R) ->
+                                                        riakc_set:del_element(
+                                                          Value, R)
+                                                    end, M2)
+                                     end,
+                                     State#state.bucket, Key, [create]),
+                    case Result2 of
+                        ok ->
+                            lager:info("Team player removal succeeded."),
+                            {ok, State};
+                        {ok, _} ->
+                            lager:info("Team player removal succeeded."),
+                            {ok, State};
+                        {error, Reason} ->
+                            lager:info("Team player removal failed, error: ~p", [Reason]),
+                            {error, Reason, State}
+                    end;
+            false ->
+                lager:info("Team player removal success, no members."),
+                {ok, State}
+            end;
+        {error, {notfound, _}} ->
+            lager:info("Team does not exist yet."),
+            run({team, write}, KeyGen, ValueGen, State);
+        {error, Reason} ->
+            lager:info("Team read failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+%% Add a player to the team.
+run({team, player, addition}, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Value = "Team member " ++ integer_to_list(ValueGen()),
+    Result = riakc_pb_socket:modify_type(State#state.pid,
+                     fun(M) ->
+                             riakc_map:update(
+                                    {<<"members">>, set},
+                                    fun(S) ->
+                                        riakc_set:add_element(list_to_binary(Value), S)
+                                    end, M)
+                     end,
+                     State#state.bucket, Key, [create]),
+    case Result of
+        ok ->
+            lager:info("Team player addition succeeded."),
+            {ok, State};
+        {ok, _} ->
+            lager:info("Team player addition succeeded."),
+            {ok, State};
+        {error, Reason} ->
+            lager:info("Team player addition failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+%% Mark a game as completed.
+run({game, completed}, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Value = ValueGen(),
+    Result = riakc_pb_socket:modify_type(State#state.pid,
+                     fun(M) ->
+                             riakc_map:update(
+                                    {<<"score">>, counter},
+                                    fun(C) ->
+                                        riakc_counter:increment(Value, C)
+                                    end, M)
+                     end,
+                     State#state.bucket, Key, [create]),
+    case Result of
+        ok ->
+            lager:info("Score change succeeded."),
+            {ok, State};
+        {ok, _} ->
+            lager:info("Score change succeeded."),
+            {ok, State};
+        {error, Reason} ->
+            lager:info("Score change failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
