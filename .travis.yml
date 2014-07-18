@@ -3,6 +3,8 @@ notifications:
   webhooks: http://basho-engbot.herokuapp.com/travis?key=480c77ff15f4a07db659862802cc3df9e7a5d5be
   email: eng@basho.com
 otp_release:
+  - R16B03-1
+  - R15B03-1
   - R15B01
   - R15B
   - R14B04
