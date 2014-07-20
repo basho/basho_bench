@@ -149,7 +149,7 @@ warn_bucket_mr_correctness(_) ->
 %% Write information about the team.
 run({team, write}, KeyGen, _ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
-    Result = riakc_pb_socket:modify_type(State#state.pid,
+    Result = riakc_pb_socket:update_type(State#state.pid,
                      fun(M) ->
                              riakc_map:update(
                                     {<<"name">>, register},
@@ -207,7 +207,7 @@ run({team, player, removal}, KeyGen, ValueGen, State) ->
                 true ->
                     Value = hd(Members),
                     lager:info("Team read succeeded"),
-                    Result2 = riakc_pb_socket:modify_type(State#state.pid,
+                    Result2 = riakc_pb_socket:update_type(State#state.pid,
                                      fun(M2) ->
                                              riakc_map:update(
                                                     {<<"members">>, set},
@@ -244,7 +244,7 @@ run({team, player, removal}, KeyGen, ValueGen, State) ->
 run({team, player, addition}, KeyGen, ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
     Value = "Team member " ++ integer_to_list(ValueGen()),
-    Result = riakc_pb_socket:modify_type(State#state.pid,
+    Result = riakc_pb_socket:update_type(State#state.pid,
                      fun(M) ->
                              riakc_map:update(
                                     {<<"members">>, set},
@@ -269,7 +269,7 @@ run({team, player, addition}, KeyGen, ValueGen, State) ->
 run({game, completed}, KeyGen, ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
     Value = ValueGen(),
-    Result = riakc_pb_socket:modify_type(State#state.pid,
+    Result = riakc_pb_socket:update_type(State#state.pid,
                      fun(M) ->
                              riakc_map:update(
                                     {<<"score">>, counter},
