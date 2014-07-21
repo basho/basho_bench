@@ -212,19 +212,14 @@ run({team, player, removal}, KeyGen, ValueGen, State) ->
                                      State#state.bucket, Key, riakc_map:to_op(M1)),
                     case Result2 of
                         ok ->
-                            lager:debug("Team player removal succeeded
-                                        ~p.", [Value]),
                             {ok, State};
                         {ok, _} ->
-                            lager:debug("Team player removal succeeded
-                                        ~p.", [Value]),
                             {ok, State};
                         {error, Reason} ->
                             lager:info("Team player removal failed, error: ~p", [Reason]),
                             {error, Reason, State}
                     end;
             false ->
-                lager:info("Team player removal success, no members."),
                 {ok, State}
             end;
         {error, {notfound, _}} ->
@@ -250,10 +245,8 @@ run({team, player, addition}, KeyGen, ValueGen, State) ->
                      State#state.bucket, Key, [create]),
     case Result of
         ok ->
-            lager:debug("Team player addition succeeded."),
             {ok, State};
         {ok, _} ->
-            lager:info("Team player addition succeeded."),
             {ok, State};
         {error, Reason} ->
             lager:info("Team player addition failed, error: ~p", [Reason]),
