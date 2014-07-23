@@ -35,18 +35,23 @@
 %% ====================================================================
 %% API
 %% ====================================================================
-new({int_to_bin, InputGen}, Id) ->
-    ?WARN("The int_to_bin key generator wrapper is deprecated, please use the "
+new({int_to_bin, _InputGen}, _Id) ->
+    ?WARN("The int_to_bin key generator wrapper is NO LONGER SUPPORTED.\n"
+          "Please use the "
           "int_to_bin_bigendian or int_to_bin_littleendian wrapper instead\n",
           []),
-    Gen = new(InputGen, Id),
-    fun() -> <<(Gen()):32/native>> end;
+    timer:sleep(1000),
+    exit({attempt_to_use_deprecated_key_generator,int_to_bin});
 new({int_to_bin_bigendian, InputGen}, Id) ->
+    new({{int_to_bin_bigendian, 32}, InputGen}, Id);
+new({{int_to_bin_bigendian, Bits}, InputGen}, Id) ->
     Gen = new(InputGen, Id),
-    fun() -> <<(Gen()):32/big>> end;
+    fun() -> <<(Gen()):Bits/big>> end;
 new({int_to_bin_littleendian, InputGen}, Id) ->
+    new({{int_to_bin_littleendian, 32}, InputGen}, Id);
+new({{int_to_bin_littleendian, Bits}, InputGen}, Id) ->
     Gen = new(InputGen, Id),
-    fun() -> <<(Gen()):32/little>> end;
+    fun() -> <<(Gen()):Bits/little>> end;
 new({int_to_str, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> integer_to_list(Gen()) end;
@@ -56,6 +61,11 @@ new({to_binstr, FmtStr, InputGen}, Id) ->
 new({base64, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> base64:encode(Gen()) end;
+new({{crypto_hash, Type}, InputGen}, Id)
+  when Type == md4; Type == md5; Type == ripemd160; Type == sha; Type == sha224;
+       Type == sha256; Type == sha384; Type == sha512 ->
+    Gen = new(InputGen, Id),
+    fun() -> crypto:hash(Type, Gen()) end;
 new({concat_binary, OneGen, TwoGen}, Id) ->
     Gen1 = new(OneGen, Id),
     Gen2 = new(TwoGen, Id),
@@ -64,6 +74,8 @@ new({concat_binary, OneGen, TwoGen}, Id) ->
     end;
 new({sequential_int, MaxKey}, Id)
   when is_integer(MaxKey), MaxKey > 0 ->
+    ?WARN("Are you sure that you want to use 'sequential_int'?\n"
+          "For most use cases, 'partitioned_sequential_int' is the better choice.\n", []),
     Ref = make_ref(),
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
