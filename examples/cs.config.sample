@@ -13,12 +13,24 @@
 
 {driver, basho_bench_driver_cs}.
 
-%% Replace this with a user you have created.
-%% Instructions to create a user are here:
-%% https://github.com/basho/riak_cs/wiki/Creating-a-User
+%% Two ways of user configuration
+%% 1. Set cs_access_key and cs_secret_key for existing user.
+%%    Replace this with a user you have created.
+%%    Instructions to create a user are here:
+%%    https://github.com/basho/riak_cs/wiki/Creating-a-User
 {cs_access_key, "ZG7SS3ZPECF-8LZOEBMA"}.
 {cs_secret_key, "21HoIRdeO617nJrIbam9mKH2MBxmcsMEwESvmQ=="}.
-{cs_bucket, "test"}. % create this with s3cmd before running basho_bench!
+
+%% 2. Let the driver create or retrieve user
+%%    In this case, you should
+%%    - setup riak-cs with {admin_auth_enabled, false} and
+%%    - comment out cs_access_key and cs_secret_key above
+%%    cs_display_name is used to identify user.
+%% {cs_display_name, "test-user"}.
+
+%% CS Bucket, it will be created if needed
+{cs_bucket, "test-bucket"}.
+
 {cs_disconnect_frequency, 5}.    % # ops before disconnecting HTTP socket
 {cs_raw_ip, "s3.amazonaws.com"}. % DO NOT CHANGE
 {cs_raw_port, 80}.               % DO NOT CHANGE
@@ -46,3 +58,4 @@
 %% bad idea: {operations, [{insert, 1}, {get, 1}]}.
 {operations, [{insert, 1}]}.
 %{operations, [{get, 1}]}.
+%{operations, [{delete, 1}]}.

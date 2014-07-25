@@ -120,10 +120,15 @@ new(ID) ->
     lager:log(info, self(), "ID ~p Proxy host ~p TCP port ~p\n",
               [ID, ProxyH, ProxyP]),
 
-    {ok, #state{client_id=ID, hosts=Hosts,
-                bucket = basho_bench_config:get(cs_bucket, "test"),
-                report_fun = ReportFun,
-                http_proxy_host = ProxyH, http_proxy_port = ProxyP}}.
+    State = #state{client_id=ID, hosts=Hosts,
+                   bucket = basho_bench_config:get(cs_bucket, "test"),
+                   report_fun = ReportFun,
+                   http_proxy_host = ProxyH, http_proxy_port = ProxyP},
+    case ID of
+        1 -> ok = setup_user_and_bucket(State);
+        _ -> ok
+    end,
+    {ok, State}.
 
 %% This module does some crazy stuff, but it's there for a reason.
 %% The reason is that basho_bench is expecting the run() function to
@@ -278,10 +283,12 @@ insert(KeyGen, ValueGen, {Host, Port}, Bucket, State) ->
     do_put({Host, Port}, Url, [{"content-length", integer_to_list(CL)}], ValueT,
            State).
 
+url(Host, Port, Bucket, undefined) ->
+    UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket]),
+    ibrowse_lib:parse_url(UnparsedUrl);
 url(Host, Port, Bucket, Key) ->
     UnparsedUrl = lists:concat(["http://", Host, ":", Port, "/", Bucket, "/", Key]),
-    Url = ibrowse_lib:parse_url(UnparsedUrl),
-    Url.
+    ibrowse_lib:parse_url(UnparsedUrl).
 
 -spec next_host(term()) -> {term(), term()}.
 %% TODO:
@@ -494,7 +501,9 @@ uppercase_verb(put) ->
 uppercase_verb(get) ->
     'GET';
 uppercase_verb(delete) ->
-    'DELETE'.
+    'DELETE';
+uppercase_verb(post) ->
+    'POST'.
 
 to_list(A) when is_atom(A) ->
     atom_to_list(A);
@@ -512,9 +521,100 @@ initiate_request(Host, Url, Headers0, Method, Body, Options) ->
     Uri = element(7, Url),
     Sig = stanchion_auth:request_signature(
             uppercase_verb(Method), Headers, Uri,
-            basho_bench_config:get(cs_secret_key)),
-    AuthStr = ["AWS ", basho_bench_config:get(cs_access_key), ":", Sig],
+            basho_bench_config:get(cs_secret_key, "undefined")),
+    AuthStr = ["AWS ", basho_bench_config:get(cs_access_key, "undefined"), ":", Sig],
     HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
     Timeout = basho_bench_config:get(cs_request_timeout, 5000),
     ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
                                  Body, Options, Timeout).
+
+%% Setup user, not related to load operations
+
+setup_user_and_bucket(State) ->
+    case basho_bench_config:get(cs_access_key, undefined) of
+        undefined ->
+            DisplayName = basho_bench_config:get(cs_display_name, "test-user"),
+            ok = maybe_create_user(DisplayName, State),
+            {ok, {_DisplayName, KeyId, KeySecret}} = fetch_user_info(DisplayName, State),
+            lager:info("Target User: ~p", [{DisplayName, KeyId, KeySecret}]),
+            ok = basho_bench_config:set(cs_access_key, KeyId),
+            ok = basho_bench_config:set(cs_secret_key, KeySecret);
+        _ ->
+            ok
+    end,
+    ok = maybe_create_bucket(State#state.bucket, State).
+
+maybe_create_user(DisplayName, #state{hosts=Hosts} = State) ->
+    {Host, Port} = hd(Hosts),
+    Json = io_lib:format("{\"email\": \"~s@example.com\", \"name\": \"~s\"}",
+                         [DisplayName, DisplayName]),
+    Url = url(Host, Port, "riak-cs", "user"),
+    Headers = [{'Content-Type', 'application/json'}],
+    case send_request({Host, Port}, Url, Headers, post, Json, proxy_opts(State)) of
+        {ok, "201", _Header, Body} ->
+            lager:debug("User created: ~p~n", [Body]),
+            ok;
+        {ok, "409", _Header, Body} ->
+            lager:debug("User already exists: ~p~n", [Body]),
+            ok;
+        {ok, Code, Header, Body} ->
+            {error, {user_creation, Code, Header, Body}};
+        {error, Reason} ->
+            {error, {user_creation, Reason}}
+    end.
+
+fetch_user_info(DisplayName, State) ->
+    case list_users(State) of
+        {ok, UserList} ->
+            {ok, lists:keyfind(DisplayName, 1, UserList)};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+list_users(#state{hosts=Hosts} = State) ->
+    {Host, Port} = hd(Hosts),
+    Url = url(Host, Port, "riak-cs", "users"),
+    case send_request({Host, Port}, Url, [{'Accept', 'application/json'}], get,
+                       [], proxy_opts(State)) of
+        {ok, "200", _Headers, Body} ->
+            {ok, parse_user_info(Body)};
+        {error, Reason} ->
+            {error, {list_users, Reason}}
+    end.
+
+parse_user_info(Output) ->
+    [Boundary | Tokens] = string:tokens(binary_to_list(Output), "\r\n"),
+    parse_user_info(Tokens, Boundary, []).
+
+parse_user_info([_LastToken], _, Users) ->
+    ordsets:from_list(Users);
+parse_user_info(["Content-Type: application/json", RawJson | RestTokens],
+                 Boundary, Users) ->
+    UpdUsers = parse_user_records(RawJson, json) ++ Users,
+    parse_user_info(RestTokens, Boundary, UpdUsers);
+parse_user_info([_ | RestTokens], Boundary, Users) ->
+    parse_user_info(RestTokens, Boundary, Users).
+
+parse_user_records(Output, json) ->
+    JsonData = mochijson2:decode(Output),
+    [begin
+         KeyId = binary_to_list(proplists:get_value(<<"key_id">>, UserJson)),
+         KeySecret = binary_to_list(proplists:get_value(<<"key_secret">>, UserJson)),
+         Name = binary_to_list(proplists:get_value(<<"name">>, UserJson)),
+         {Name, KeyId, KeySecret}
+     end || {struct, UserJson} <- JsonData].
+
+maybe_create_bucket(Bucket, #state{hosts=Hosts} = State) ->
+    {Host, Port} = hd(Hosts),
+    Url = url(Host, Port, Bucket, undefined),
+    case send_request({Host, Port}, Url, [], put, [], proxy_opts(State)) of
+        {ok, "200", _Headers, _Body} ->
+            lager:debug("Bucket created (maybe): ~p~n", [Bucket]),
+            ok;
+        {ok, Code, Header, Body} ->
+            lager:error("Create bucket: ~p~n", [{Code, Header, Body}]),
+            {error, {bucket_creation, Code, Header, Body}};
+        {error, Reason} ->
+            lager:error("Create bucket: ~p~n", [Reason]),
+            {error, {bucket_creation, Reason}}
+    end.
