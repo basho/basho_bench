@@ -191,6 +191,19 @@ run2(delete, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
         {error, Reason} ->
             {error, Reason, S2}
     end;
+run2(copy, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
+    {NextHost, S2} = next_host(State),
+    {Host, Port} = NextHost,
+    SourceKey = KeyGen(),
+    DestKey = SourceKey ++ basho_bench_config:get(cs_copy_suffix, "-copy"),
+    Url = url(Host, Port, Bucket, DestKey),
+    Headers = [{"x-amz-copy-source", "/" ++ Bucket ++ "/" ++ SourceKey}],
+    case do_copy({Host, Port}, Url, Headers, State) of
+        ok ->
+            {ok, S2};
+        {error, Reason} ->
+            {error, Reason, S2}
+    end;
 run2(Op, _KeyGen, _ValueGen, State) ->
     {error, {unknown_op, Op}, State}.
 
@@ -422,6 +435,16 @@ do_delete(Host, Url, Headers, State) ->
             {error, Reason}
     end.
 
+do_copy(Host, Url, Headers, State) ->
+    case send_request(Host, Url, Headers, put, <<>>, proxy_opts(State)) of
+        {ok, "200", _Header, _Body} ->
+            ok;
+        {ok, Code, _Header, _Body} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 do_get_first_unit(Host, Url, Headers, State) ->
     BufSize = 128*1024,
     Opts = [{max_pipeline_size, 9999999},
@@ -516,19 +539,40 @@ initiate_request(Host, Url, Headers0, Method, Body, Options) ->
                                'Content-Type', Headers0,
                                'application/octet-stream')),
     Date = httpd_util:rfc1123_date(),
+    Uri = element(7, Url),
     Headers = [{'Content-Type', ContentTypeStr},
                {'Date', Date}|lists:keydelete('Content-Type', 1, Headers0)],
-    Uri = element(7, Url),
-    Sig = stanchion_auth:request_signature(
-            uppercase_verb(Method), Headers, Uri,
-            basho_bench_config:get(cs_secret_key, "undefined")),
-    AuthStr = ["AWS ", basho_bench_config:get(cs_access_key, "undefined"), ":", Sig],
-    HeadersWithAuth = [{'Authorization', AuthStr}|Headers],
+    HeadersWithAuth =
+        case basho_bench_config:get(cs_access_key, undefined) of
+            undefined ->
+                Headers;
+            AccessKey ->
+                AuthSig = auth_sig(AccessKey, basho_bench_config:get(cs_secret_key),
+                                   uppercase_verb(Method), ContentTypeStr, Date,
+                                   Headers, Uri),
+                [{'Authorization', AuthSig}|Headers]
+        end,
     Timeout = basho_bench_config:get(cs_request_timeout, 5000),
     ibrowse_http_client:send_req(Pid, Url, HeadersWithAuth, Method,
                                  Body, Options, Timeout).
 
-%% Setup user, not related to load operations
+%% S3 utilities
+
+auth_sig(AccessKey, SecretKey, Method, ContentType, Date, Headers, Resource) ->
+    AmzHeaders = lists:filter(fun ({"x-amz-" ++ _, V}) when V =/= undefined -> true; (_) -> false end, Headers),
+    CanonizedAmzHeaders =
+        [[Name, $:, Value, $\n] || {Name, Value} <- lists:sort(AmzHeaders)],
+    StringToSign = [string:to_upper(atom_to_list(Method)), $\n,
+                    "", $\n,  % Content-MD5
+                    ContentType, $\n,
+                    Date, $\n,
+                    CanonizedAmzHeaders,
+                    Resource
+                   ],
+    Signature = base64:encode(stanchion_utils:sha_mac(SecretKey, StringToSign)),
+    ["AWS ", AccessKey, $:, Signature].
+
+%% CS utilities
 
 setup_user_and_bucket(State) ->
     case basho_bench_config:get(cs_access_key, undefined) of
