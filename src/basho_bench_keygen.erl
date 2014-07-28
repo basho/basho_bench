@@ -108,7 +108,7 @@ new({truncated_pareto_int, MaxKey}, Id) ->
     Pareto = new({pareto_int, MaxKey}, Id),
     fun() -> erlang:min(MaxKey, Pareto()) end;
 new(uuid_v4, _Id) ->
-    fun() -> uuid:v4() end;
+    fun() -> basho_uuid:v4() end;
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
