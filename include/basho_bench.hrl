@@ -1,5 +1,5 @@
 
--define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), basho_bench_app:halt_or_kill()).
+-define(FAIL_MSG(Str, Args), ?ERROR(Str, Args), basho_bench_app:stop_or_kill()).
 -define(STD_ERR(Str, Args), io:format(standard_error, Str, Args)).
 
 -define(CONSOLE(Str, Args), lager:info(Str, Args)).
