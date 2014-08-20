@@ -27,7 +27,7 @@
 -export([start/0,
          stop/0,
          is_running/0,
-         halt_or_kill/0]).
+         stop_or_kill/0]).
 
 %% Application callbacks
 -export([start/2, stop/1]).
@@ -64,14 +64,14 @@ stop() ->
 is_running() ->
     application:get_env(basho_bench_app, is_running) == {ok, true}.
 
-halt_or_kill() ->
+stop_or_kill() ->
     %% If running standalone, halt and kill node.  Otherwise, just
     %% kill top supervisor.
     case application:get_env(basho_bench,app_run_mode) of
         {ok, included} ->
             exit(whereis(basho_bench_sup),kill);
         _ ->
-            init:stop()
+            init:stop(1)
     end.
 
 %% ===================================================================
