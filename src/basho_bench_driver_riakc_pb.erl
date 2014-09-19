@@ -437,6 +437,25 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
     Keylist = make_keylist(State#state.bucket, KeyGen,
                            State#state.keylist_length),
     mapred(State, Keylist, ?JS_MR);
+
+run({counter, increment}, KeyGen, ValueGen, State) ->
+    Amt = ValueGen(),
+    Key = KeyGen(),
+    Result = riakc_pb_socket:modify_type(State#state.pid,
+                                         fun(C) ->
+                                                 riakc_counter:increment(Amt, C)
+                                         end,
+                                         State#state.bucket, Key, [create]),
+    case Result of
+        ok ->
+            {ok, State};
+        {ok, _} ->
+            {ok, State};
+        {error, Reason} ->
+            lager:info("Score change failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
 run(counter_incr, KeyGen, ValueGen, State) ->
     Amt = ValueGen(),
     Key = KeyGen(),
