@@ -452,7 +452,7 @@ run({counter, increment}, KeyGen, ValueGen, State) ->
         {ok, _} ->
             {ok, State};
         {error, Reason} ->
-            lager:info("Score change failed, error: ~p", [Reason]),
+            lager:info("Counter increment failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
