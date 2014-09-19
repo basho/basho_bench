@@ -438,6 +438,23 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
                            State#state.keylist_length),
     mapred(State, Keylist, ?JS_MR);
 
+run({counter, value}, KeyGen, _ValueGen, State) ->
+    Key = KeyGen(),
+    Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
+    Result = riakc_pb_socket:fetch_type(State#state.pid,
+                                        State#state.bucket,
+                                        Key,
+                                        Options),
+    case Result of
+        {ok, _} ->
+            {ok, State};
+        {error, {notfound, _}} ->
+            {ok, State};
+        {error, Reason} ->
+            lager:info("Team read failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
 run({counter, increment}, KeyGen, ValueGen, State) ->
     Amt = ValueGen(),
     Key = KeyGen(),
