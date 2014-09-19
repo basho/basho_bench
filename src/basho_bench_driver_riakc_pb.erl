@@ -276,6 +276,49 @@ run({game, completed}, KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 
+%% Write device information initially.
+run({events_devices, write}, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Values = integer_to_list(ValueGen()),
+    Map = write_map_with_values(Values, riakc_map:new()),
+    Result = riakc_pb_socket:update_type(State#state.pid,
+             State#state.bucket, Key, riakc_map:to_op(Map)),
+    case Result of
+        ok ->
+            lager:info("Device write succeeded."),
+            {ok, State};
+        {ok, _} ->
+            lager:info("Device write succeeded."),
+            {ok, State};
+        {error, Reason} ->
+            lager:info("Device write failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+%% Update device information.
+run({events_devices, update}, KeyGen, ValueGen, State) ->
+    run({events_devices, write}, KeyGen, ValueGen, State);
+
+%% Read device information.
+run({events_devices, read}, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
+    Result = riakc_pb_socket:fetch_type(State#state.pid,
+                                        State#state.bucket,
+                                        Key,
+                                        Options),
+    case Result of
+        {ok, _} ->
+            lager:info("Device read succeeded."),
+            {ok, State};
+        {error, {notfound, _}} ->
+            lager:info("Device does not exist yet, creating."),
+            run({events_devices, write}, KeyGen, ValueGen, State);
+        {error, Reason} ->
+            lager:info("Device read failed, error: ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
 run(get, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
@@ -609,3 +652,23 @@ get_timeout(Name) when Name == pb_timeout_read;
 
 get_connect_options() ->
     basho_bench_config:get(pb_connect_options, [{auto_reconnect, true}]).
+
+write_map_with_values([H|T], Map0) ->
+    Key = term_to_binary(H),
+    Map = case H rem 2 =:= 0 of
+        true ->
+            lager:info(" - Updating register."),
+            riakc_map:update(
+                {Key, register},
+                fun(R) -> riakc_register:set(Key, R) end,
+             Map0);
+        false ->
+            lager:info(" - Updating counter."),
+            riakc_map:update(
+                {Key, counter},
+                fun(C) -> riakc_counter:increment(H, C) end,
+             Map0)
+    end,
+    write_map_with_values(T, Map);
+write_map_with_values([], Map) ->
+    Map.
