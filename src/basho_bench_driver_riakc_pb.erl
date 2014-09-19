@@ -440,13 +440,16 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
 
 run({counter, value}, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
+    lager:info("Counter value called for key: ~p", [Key]),
     Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket,
                                         Key,
                                         Options),
     case Result of
-        {ok, _} ->
+        {ok, C0} ->
+            C = riakc_counter:value(C0),
+            lager:info("Counter value is: ~p", [C]),
             {ok, State};
         {error, {notfound, _}} ->
             {ok, State};
@@ -458,6 +461,7 @@ run({counter, value}, KeyGen, _ValueGen, State) ->
 run({counter, increment}, KeyGen, ValueGen, State) ->
     Amt = ValueGen(),
     Key = KeyGen(),
+    lager:info("Counter value called for key: ~p", [Key]),
     Result = riakc_pb_socket:modify_type(State#state.pid,
                                          fun(C) ->
                                                  riakc_counter:increment(Amt, C)
