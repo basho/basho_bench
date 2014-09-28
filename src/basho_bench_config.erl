@@ -36,7 +36,7 @@
 -export([start_link/0]).
 
 % Gen server callbacks
--export([code_change/3, init/1, terminate/2, handle_call/3]).
+-export([code_change/3, init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2]).
 
 -include("basho_bench.hrl").
 
@@ -139,6 +139,12 @@ handle_call({get, Key}, _From, State) ->
   Value = application:get_env(basho_bench, Key),
   {reply, Value, State}.
 
+handle_cast(_Cast, State) ->
+  {noreply, State}.
+
+handle_info(_Info, State) ->
+  {noreply, State}.
+  
 set_keys_from_files(Files) ->
     KVs = [ case file:consult(File) of
           {ok, Terms} ->
