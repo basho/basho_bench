@@ -259,6 +259,7 @@ load_source_files(Dir) ->
                         case compile:file(F, [report, binary]) of
                             {ok, Mod, Bin} ->
                                 {module, Mod} = code:load_binary(Mod, F, Bin),
+                                deploy_module(Mod),
                                 ?INFO("Loaded ~p (~s)\n", [Mod, F]),
                                 ok;
                             Error ->
@@ -307,14 +308,19 @@ setup_distributed_work() ->
     CodePaths = code:get_path(),
     rpc:multicall(SlaveNames, code, set_path, [CodePaths]),
     Apps = [lager, basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, velvet, goldrush],
-    [distribute_app(App, SlaveNames) || App <- Apps].
+    [distribute_app(App) || App <- Apps].
 
 
-deploy_module(Module, Nodes) ->
-    {Module, Binary, Filename} = code:get_object_code(Module),
-    rpc:multicall(Nodes, code, load_binary, [Module, Filename, Binary]).
+deploy_module(Module) ->
+    case basho_bench_config:get(distribute_work, false) of 
+        true -> 
+            Nodes = nodes(),
+            {Module, Binary, Filename} = code:get_object_code(Module),
+            rpc:multicall(Nodes, code, load_binary, [Module, Filename, Binary]);
+        false -> ok
+    end.
 
-distribute_app(App, Nodes) ->
+distribute_app(App) ->
     % :(. This is super hackish, it depends on a bunch of assumptions
     % But, unfortunately there are negative interactions with escript and slave nodes
     CodeExtension = code:objfile_extension(),
@@ -334,7 +340,7 @@ distribute_app(App, Nodes) ->
         {ok, Beams} = erl_prim_loader:list_dir(EbinDir),
         Modules = lists:filtermap(StripEndFun, Beams),
         ModulesLoaded = [code:load_abs(filename:join(EbinDir, ModFileName)) || ModFileName <- Modules],
-        lists:foreach(fun({module, Module}) -> deploy_module(Module, Nodes) end, ModulesLoaded)
+        lists:foreach(fun({module, Module}) -> deploy_module(Module) end, ModulesLoaded)
     end,
     lists:foreach(EbinDirDistributeFun, EbinsDir),    
     ok.
