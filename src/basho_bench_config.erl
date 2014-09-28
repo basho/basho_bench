@@ -129,31 +129,32 @@ terminate(_Reason, _State) ->
     ok.
 
 handle_call({load_files, FileNames}, _From, State) ->
-  set_keys_from_files(FileNames),
-  {reply, ok, State};
+    set_keys_from_files(FileNames),
+    {reply, ok, State};
 
 handle_call({set, Key, Value}, _From, State) ->
-  application:set_env(basho_bench, Key, Value), 
-  {reply, ok, State};
+    application:set_env(basho_bench, Key, Value), 
+    {reply, ok, State};
 handle_call({get, Key}, _From, State) ->
-  Value = application:get_env(basho_bench, Key),
-  {reply, Value, State}.
+    Value = application:get_env(basho_bench, Key),
+    {reply, Value, State}.
 
 handle_cast(_Cast, State) ->
-  {noreply, State}.
+    {noreply, State}.
 
 handle_info(_Info, State) ->
-  {noreply, State}.
-  
+    {noreply, State}.
+
 set_keys_from_files(Files) ->
-    KVs = [ case file:consult(File) of
-          {ok, Terms} ->
-              Terms;
-          {error, Reason} ->
-              ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason]),
-              throw(invalid_config),
-              notokay
-      end || File <- Files ],
+    KVs = [ 
+    case file:consult(File) of
+        {ok, Terms} ->
+            Terms;
+        {error, Reason} ->
+            ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason]),
+            throw(invalid_config),
+            notokay
+    end || File <- Files ],
     FlatKVs = lists:flatten(KVs),
     [application:set_env(basho_bench, Key, Value) || {Key, Value} <- FlatKVs].
 
