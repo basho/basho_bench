@@ -141,6 +141,7 @@ maybe_net_node(Opts) ->
     case lists:keyfind(net_node, 1, Opts) of
         {_, Node} ->
             {_, Cookie} = lists:keyfind(net_cookie, 1, Opts),
+            os:cmd("epmd -daemon"),
             net_kernel:start([Node, longnames]),
             erlang:set_cookie(Node, Cookie),
             ok;
