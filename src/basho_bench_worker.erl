@@ -64,7 +64,6 @@ start_link(SupChild, Id) ->
     end.
 
 start_link_distributed(SupChild, Id) ->
-    io:format("Bootstrapped pool ~p~n", [pool:get_nodes()]),
     Node = pool:get_node(),
     rpc:block_call(Node, ?MODULE, start_link_local, [SupChild, Id]).
 

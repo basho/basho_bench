@@ -283,10 +283,10 @@ get_addr_args() ->
     {ok, IfAddrs} = inet:getifaddrs(),
     FlattAttrib = lists:flatten([IfAttrib || {_Ifname, IfAttrib} <- IfAddrs]),
     Addrs = proplists:get_all_values(addr, FlattAttrib),
-    StrAddrs = lists:map(fun(X) -> inet:ntoa(X) end, Addrs),
+    % If inet:ntoa is unavailable, it probably means that you're running <R16
+    StrAddrs = [inet:ntoa(Addr) || Addr <- Addrs],
     string:join(StrAddrs, " ").
 setup_distributed_work() ->
-    io:format("Using cookie: ~p~n", [erlang:get_cookie()]),
     case node() of 
         'nonode@nohost' -> 
             ?STD_ERR("Basho bench not started in distributed mode, and distribute_work = true~n", []),
@@ -301,7 +301,6 @@ setup_distributed_work() ->
     RemoteSpec = basho_bench_config:get(remote_nodes, []),
     Cookie = lists:flatten(erlang:atom_to_list(erlang:get_cookie())),
     Args = "-setcookie " ++ Cookie ++ " -loader inet -hosts " ++ get_addr_args(),
-    [io:format("Starting slave {~p, ~p, ~p}~n", [Host, Name, Args]) || {Host, Name} <- RemoteSpec],
     Slaves = [ slave:start_link(Host, Name, Args) || {Host, Name} <- RemoteSpec],
     SlaveNames = [SlaveName || {ok, SlaveName} <- Slaves],
     [pool:attach(SlaveName) || SlaveName <- SlaveNames],
@@ -309,24 +308,6 @@ setup_distributed_work() ->
     rpc:multicall(SlaveNames, code, set_path, [CodePaths]),
     Apps = [lager, basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, velvet, goldrush],
     [distribute_app(App, SlaveNames) || App <- Apps].
-  %  io:format("Running escript: ~p~n", [escript:script_name()]),
-    %% Assumes I'm running basho_bench from an escript, otherwise the behaviour is undefined
-%    EscriptFileName = escript:script_name(),
-%    {ok, Sections} = escript:extract(EscriptFileName, [compile_source]),
-%    io:format("Sections: ~p~n", [Sections]),
-
-%    Libdir = code:lib_dir(basho_bench),
- %   LibdirLen = string:len(Libdir), 
-  %  BashoBenchLibs = lists:filter(fun(X) -> string:substr(X, 1, LibdirLen) == Libdir end, code:get_path()), 
-   % io:format("Basho Bench Library Directoryies: ~p~n", [BashoBenchLibs]),
-%    io:format("Basho_bench lib dir: ~p~n", [Libdir]),
-%    io:format("Libdir: ~p~n", [erl_prim_loader:list_dir(Libdir)]),
-%    io:format("Code Path: ~p~n", [code:get_path()]),
-
-%    io:format("Files? ~p~n", [erl_prim_loader:list_dir("/Users/sdhillon/repos/basho_bench/basho_bench/basho_bench/ebin")]),
-%    io:format("Remote nodes: ~p~n", [nodes()]),
-%    RemoteFiles = rpc:call('bb25@3c075477e55e-2.local', erl_prim_loader, list_dir, ["/Users/sdhillon/repos/basho_bench/basho_bench/basho_bench/ebin"]),  
-%    io:format("Remote files: ~p~n", [RemoteFiles]),
 
 
 deploy_module(Module, Nodes) ->
@@ -352,7 +333,7 @@ distribute_app(App, Nodes) ->
     EbinDirDistributeFun = fun(EbinDir) ->
         {ok, Beams} = erl_prim_loader:list_dir(EbinDir),
         Modules = lists:filtermap(StripEndFun, Beams),
-        ModulesLoaded = lists:map(fun(X) -> code:load_abs(filename:join(EbinDir, X)) end, Modules),
+        ModulesLoaded = [code:load_abs(filename:join(EbinDir, ModFileName)) || ModFileName <- Modules],
         lists:foreach(fun({module, Module}) -> deploy_module(Module, Nodes) end, ModulesLoaded)
     end,
     lists:foreach(EbinDirDistributeFun, EbinsDir),    

@@ -79,6 +79,8 @@ stop_or_kill() ->
 %%===================================================================
 
 start(_StartType, _StartArgs) ->
+    %% TODO: Move into a proper supervision tree, janky for now
+    basho_bench_config:start_link(),
     {ok, Pid} = basho_bench_sup:start_link(),
     application:set_env(basho_bench_app, is_running, true),
     ok = basho_bench_stats:run(),

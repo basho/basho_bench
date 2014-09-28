@@ -129,7 +129,7 @@ terminate(_Reason, _State) ->
     ok.
 
 handle_call({load_files, FileNames}, _From, State) ->
-  TermsList = get_keys_from_files(FileNames),
+  set_keys_from_files(FileNames),
   {reply, ok, State};
 
 handle_call({set, Key, Value}, _From, State) ->
@@ -139,7 +139,7 @@ handle_call({get, Key}, _From, State) ->
   Value = application:get_env(basho_bench, Key),
   {reply, Value, State}.
 
-get_keys_from_files(Files) ->
+set_keys_from_files(Files) ->
     KVs = [ case file:consult(File) of
           {ok, Terms} ->
               Terms;
@@ -148,5 +148,6 @@ get_keys_from_files(Files) ->
               throw(invalid_config),
               notokay
       end || File <- Files ],
-    [application:set_env(basho_bench, Key, Value) || {Key, Value} <- KVs].
+    FlatKVs = lists:flatten(KVs),
+    [application:set_env(basho_bench, Key, Value) || {Key, Value} <- FlatKVs].
 
