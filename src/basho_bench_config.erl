@@ -40,13 +40,14 @@
 
 -include("basho_bench.hrl").
 
--record(basho_bench_config_state, {config_keys}).
+-record(basho_bench_config_state, {}).
 
 -type state() :: #basho_bench_config_state{}.
 %% ===================================================================
 %% Public API
 %% ===================================================================
 
+%% Todo: ensure_started before calling on any gen_server APIs.
 ensure_started() -> 
     start_link().
 
@@ -65,7 +66,7 @@ get(Key) ->
     case gen_server:call({global, ?MODULE}, {get, Key}) of
         {ok, Value} ->
             Value;
-        error ->
+        undefined ->
             erlang:error("Missing configuration key", [Key])
     end.
 
@@ -73,7 +74,7 @@ get(Key, Default) ->
     case gen_server:call({global, ?MODULE}, {get, Key}) of
         {ok, Value} ->
             Value;
-        error ->
+        undefined ->
             Default
     end.
 
@@ -116,7 +117,7 @@ normalize_ip_entry(IP, Normalized, DefaultPort) ->
 
 -spec init(term()) -> {ok, state()}.  
 init(_Args) ->
-    State = #basho_bench_config_state{config_keys = base_config()},
+    State = #basho_bench_config_state{},
     {ok, State}.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
@@ -129,141 +130,23 @@ terminate(_Reason, _State) ->
 
 handle_call({load_files, FileNames}, _From, State) ->
   TermsList = get_keys_from_files(FileNames),
-  ConfigKeys2 = load_termlist(TermsList, State#basho_bench_config_state.config_keys),
-  State2 = State#basho_bench_config_state{config_keys = ConfigKeys2},
-  {reply, ok, State2};
-handle_call({set, app_run_mode, Value}, _From, State) ->
-  application:set_env(basho_bench_app, app_run_mode, Value),
   {reply, ok, State};
-handle_call({get, app_run_mode}, _From, State) ->
-  case application:get_env(basho_bench_app, app_run_mode) of
-    {ok, Value} ->
-      {reply, {ok, Value}, State};
-    undefined ->
-      {reply, error, State}
-  end;
+
 handle_call({set, Key, Value}, _From, State) ->
-  NewKVs = orddict:store(Key, Value, State#basho_bench_config_state.config_keys),
-  State2 = State#basho_bench_config_state{config_keys = NewKVs},
-  {reply, ok, State2};
+  application:set_env(basho_bench, Key, Value), 
+  {reply, ok, State};
 handle_call({get, Key}, _From, State) ->
-  Value = orddict:find(Key, State#basho_bench_config_state.config_keys),
+  Value = application:get_env(basho_bench, Key),
   {reply, Value, State}.
+
 get_keys_from_files(Files) ->
-    [ case file:consult(File) of
+    KVs = [ case file:consult(File) of
           {ok, Terms} ->
               Terms;
           {error, Reason} ->
               ?FAIL_MSG("Failed to parse config file ~s: ~p\n", [File, Reason]),
               throw(invalid_config),
               notokay
-      end || File <- Files ].
+      end || File <- Files ],
+    [application:set_env(basho_bench, Key, Value) || {Key, Value} <- KVs].
 
-
-load_termlist(TermList, ExistingConfig) ->
-    NewKVs = lists:flatten(TermList),
-    FoldFun = fun({Key, Value}, Accum) ->
-        orddict:store(Key, Value, Accum)
-    end,
-    lists:foldl(FoldFun, ExistingConfig, NewKVs).
-
-base_config() ->
-  orddict:from_list([
-        %% Run mode: How should basho_bench started as a separate node, or part of an 
-        %% other node. The default is standalone, other option is included.
-   
-         %%
-         %% Mode of load generation:
-         %% max - Generate as many requests as possible per worker
-         %% {rate, Rate} - Exp. distributed Mean reqs/sec
-         %%
-         {mode, {rate, 5}},
-
-         %%
-         %% Default log level
-         %%
-         {log_level, debug},
-
-         %%
-         %% Base test output directory
-         %%
-         {test_dir, "tests"},
-
-         %%
-         %% Test duration (minutes)
-         %%
-         {duration, 5},
-
-         %%
-         %% Number of concurrent workers
-         %%
-         {concurrent, 3},
-
-         %%
-         %% Driver module for the current test
-         %%
-         {driver, basho_bench_driver_http_raw},
-
-         %%
-         %% Operations (and associated mix). Note that
-         %% the driver may not implement every operation.
-         %%
-         {operations, [{get, 4},
-                       {put, 4},
-                       {delete, 1}]},
-
-         %%
-         %% Interval on which to report latencies and status (seconds)
-         %%
-         {report_interval, 10},
-
-         %%
-         %% Key generators
-         %%
-         %% {uniform_int, N} - Choose a uniformly distributed integer between 0 and N
-         %%
-         {key_generator, {uniform_int, 100000}},
-
-         %%
-         %% Value generators
-         %%
-         %% {fixed_bin, N} - Fixed size binary blob of N bytes
-         %%
-         {value_generator, {fixed_bin, 100}}
-        ]).
--ifdef(TEST).
-load_files_test() ->
-  %% Extracted from bitcask, and null test.
-  KVs = [[{mode,max},
-       {duration,1},
-       {report_interval,1},
-       {concurrent,8},
-       {driver,basho_bench_driver_null},
-       {key_generator,{partitioned_sequential_int,5000000}},
-       {disable_sequential_int_progress_report,true},
-       {value_generator,{fixed_bin,10248}},
-       {operations,[{do_something,7},{an_error,1},{another_error,2}]}],
-      [{mode,max},
-       {duration,10},
-       {concurrent,1},
-       {driver,basho_bench_driver_bitcask},
-       {key_generator,{int_to_bin_bigendian,{uniform_int,5000000}}},
-       {value_generator,{fixed_bin,10000}},
-       {operations,[{get,1},{put,1}]},
-       {code_paths,["../../public/bitcask"]},
-       {bitcask_dir,"/tmp/bitcask.bench"},
-       {bitcask_flags,[o_sync]}]],
-  KVOrdDict = [{bitcask_dir,"/tmp/bitcask.bench"},
-      {bitcask_flags,[o_sync]},
-      {code_paths,["../../public/bitcask"]},
-      {concurrent,1},
-      {disable_sequential_int_progress_report,true},
-      {driver,basho_bench_driver_bitcask},
-      {duration,10},
-      {key_generator,{int_to_bin_bigendian,{uniform_int,5000000}}},
-      {mode,max},
-      {operations,[{get,1},{put,1}]},
-      {report_interval,1},
-      {value_generator,{fixed_bin,10000}}],
-  ?assertEqual(KVOrdDict, load_termlist(KVs, [])).
--endif.
