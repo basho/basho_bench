@@ -48,23 +48,24 @@
 %% ====================================================================
 
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
 exponential(Lambda) ->
     -math:log(random:uniform()) / Lambda.
 
 run() ->
-    gen_server:call(?MODULE, run).
+    gen_server:call({global, ?MODULE}, run).
 
 op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
-    folsom_metrics:notify({latencies, Op}, ElapsedUs),
-    folsom_metrics:notify({units, Op}, {inc, Units}),
+    %folsom_metrics:notify({latencies, Op}, ElapsedUs),
+    %folsom_metrics:notify({units, Op}, {inc, Units}),
+    gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs}),
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-    gen_server:call(?MODULE, {op, Op, Result, ElapsedUs}).
+    gen_server:call({global, ?MODULE}, {op, Op, Result, ElapsedUs}).
 
 %% ====================================================================
 %% gen_server callbacks
@@ -140,6 +141,10 @@ handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter({Op, Reason}),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
+handle_cast({Op, {ok, Units}, ElapsedUs}, State) ->
+    folsom_metrics:notify({latencies, Op}, ElapsedUs),
+    folsom_metrics:notify({units, Op}, {inc, Units}),
+    {noreply, State};
 handle_cast(_, State) ->
     {noreply, State}.
 
