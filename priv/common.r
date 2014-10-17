@@ -21,7 +21,8 @@ load_latency_frame <- function(File)
 load_benchmark <- function(Dir, Tstart, Tend)
   {
     ## Load up summary data
-    summary <- read.csv(sprintf("%s/%s", Dir, "summary.csv"))
+    summary <- read.csv(sprintf("%s/%s", Dir, "summary.csv"),
+                        colClasses=rep("numeric", 5))
 
     ## Get a list of latency files
     latencies <- lapply(list.files(path = Dir, pattern = "_latencies.csv",
