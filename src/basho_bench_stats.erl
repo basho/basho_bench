@@ -41,8 +41,10 @@
                  report_interval,
                  errors_since_last_report = false,
                  summary_file,
-                 errors_file}).
+                 errors_file,
+                 last_warn = {0,0,0}}).
 
+-define(WARN_INTERVAL, 1000). % Warn once a second
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -60,9 +62,14 @@ op_complete(Op, ok, ElapsedUs) ->
     op_complete(Op, {ok, 1}, ElapsedUs);
 op_complete(Op, {ok, Units}, ElapsedUs) ->
     %% Update the histogram and units counter for the op in question
-    %folsom_metrics:notify({latencies, Op}, ElapsedUs),
-    %folsom_metrics:notify({units, Op}, {inc, Units}),
-    gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs}),
+   % io:format("Get distributed: ~p~n", [get_distributed()]),
+    case get_distributed() of
+        true ->
+            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs});
+        false ->
+            folsom_metrics:notify({latencies, Op}, ElapsedUs),
+            folsom_metrics:notify({units, Op}, {inc, Units})
+    end,
     ok;
 op_complete(Op, Result, ElapsedUs) ->
     gen_server:call({global, ?MODULE}, {op, Op, Result, ElapsedUs}).
@@ -141,10 +148,21 @@ handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     increment_error_counter({Op, Reason}),
     {reply, ok, State#state { errors_since_last_report = true }}.
 
-handle_cast({Op, {ok, Units}, ElapsedUs}, State) ->
+handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, report_interval = RI}) ->
+    TimeSinceLastReport = timer:now_diff(os:timestamp(), LWT) / 1000, %% To get the diff in seconds
+    TimeSinceLastWarn = timer:now_diff(os:timestamp(), State#state.last_warn) / 1000,
+    if
+        TimeSinceLastReport > (RI * 2) andalso TimeSinceLastWarn > ?WARN_INTERVAL  ->
+            ?WARN("basho_bench_stats has not reported in ~.2f milliseconds", [TimeSinceLastReport]),
+            {message_queue_len, QLen} = process_info(self(), message_queue_len),
+            ?WARN("stats process mailbox size = ~w", [QLen]),
+            NewState = State#state{last_warn = os:timestamp()};
+        true ->
+            NewState = State
+    end,
     folsom_metrics:notify({latencies, Op}, ElapsedUs),
     folsom_metrics:notify({units, Op}, {inc, Units}),
-    {noreply, State};
+    {noreply, NewState};
 handle_cast(_, State) ->
     {noreply, State}.
 
@@ -172,6 +190,21 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+%% Uses the process dictionary to memoize checks
+%% for checking if we're running in distributed mode
+%% as constantly checking in with a centralized gen_server
+%% would impede progress
+
+get_distributed() ->
+    case erlang:get(distribute_work) of
+        undefined ->
+            DistributeWork = basho_bench_config:get(distribute_work, false),
+            erlang:put(distribute_work, DistributeWork),
+            DistributeWork;
+        DistributeWork ->
+            DistributeWork
+    end.
 
 op_csv_file({Label, _Op}) ->
     Fname = normalize_label(Label) ++ "_latencies.csv",
