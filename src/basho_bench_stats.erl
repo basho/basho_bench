@@ -153,9 +153,9 @@ handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, 
     TimeSinceLastWarn = timer:now_diff(os:timestamp(), State#state.last_warn) / 1000,
     if
         TimeSinceLastReport > (RI * 2) andalso TimeSinceLastWarn > ?WARN_INTERVAL  ->
-            ?WARN("basho_bench_stats has not reported in ~.2f milliseconds", [TimeSinceLastReport]),
+            ?WARN("basho_bench_stats has not reported in ~.2f milliseconds\n", [TimeSinceLastReport]),
             {message_queue_len, QLen} = process_info(self(), message_queue_len),
-            ?WARN("stats process mailbox size = ~w", [QLen]),
+            ?WARN("stats process mailbox size = ~w\n", [QLen]),
             NewState = State#state{last_warn = os:timestamp()};
         true ->
             NewState = State
