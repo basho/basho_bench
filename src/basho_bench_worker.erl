@@ -25,6 +25,7 @@
 
 %% API
 -export([start_link/2,
+         start_link_local/2,
          run/1,
          stop/1]).
 
@@ -52,6 +53,21 @@
 %% ====================================================================
 
 start_link(SupChild, Id) ->
+
+%    {Module, Binary, Filename} = code:get_object_code(basho_bench_worker),
+ %   rpc:multicall(nodes(), code, load_binary, [Module, Filename, Binary]).
+    case basho_bench_config:get(distribute_work, false) of 
+        true -> 
+            start_link_distributed(SupChild, Id);
+        false -> 
+            start_link_local(SupChild, Id)
+    end.
+
+start_link_distributed(SupChild, Id) ->
+    Node = pool:get_node(),
+    rpc:block_call(Node, ?MODULE, start_link_local, [SupChild, Id]).
+
+start_link_local(SupChild, Id) ->
     gen_server:start_link(?MODULE, [SupChild, Id], []).
 
 run(Pids) ->
@@ -218,16 +234,16 @@ worker_idle_loop(State) ->
         run ->
             case basho_bench_config:get(mode) of
                 max ->
-                    ?INFO("Starting max worker: ~p\n", [self()]),
+                    ?INFO("Starting max worker: ~p on ~p~n", [self(), node()]),
                     max_worker_run_loop(State);
                 {rate, max} ->
-                    ?INFO("Starting max worker: ~p\n", [self()]),
+                    ?INFO("Starting max worker: ~p on ~p~n", [self(), node()]),
                     max_worker_run_loop(State);
                 {rate, Rate} ->
                     %% Calculate mean interarrival time in in milliseconds. A
                     %% fixed rate worker can generate (at max) only 1k req/sec.
                     MeanArrival = 1000 / Rate,
-                    ?INFO("Starting ~w ms/req fixed rate worker: ~p\n", [MeanArrival, self()]),
+                    ?INFO("Starting ~w ms/req fixed rate worker: ~p on ~p\n", [MeanArrival, self(), node()]),
                     rate_worker_run_loop(State, 1 / MeanArrival)
             end
     end.

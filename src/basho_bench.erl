@@ -22,7 +22,6 @@
 -module(basho_bench).
 
 -export([main/1, md5/1]).
-
 -include("basho_bench.hrl").
 
 %% ====================================================================
@@ -53,6 +52,8 @@ main(Args) ->
         {error, {already_loaded, basho_bench}} -> ok
     end,
     register(basho_bench, self()),
+    %% TODO: Move into a proper supervision tree, janky for now
+    {ok, _Pid} = basho_bench_config:start_link(),
     basho_bench_config:set(test_id, BenchName),
 
     application:load(lager),
@@ -93,15 +94,16 @@ main(Args) ->
     %% Copy the config into the test dir for posterity
     [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
       || Config <- Configs ],
-
+    case basho_bench_config:get(distribute_work, false) of 
+        true -> setup_distributed_work();
+        false -> ok
+    end,
     %% Set our CWD to the test dir
     ok = file:set_cwd(TestDir),
-
     log_dimensions(),
 
     %% Run pre_hook for user code preconditions
     run_pre_hook(),
-
     %% Spin up the application
     ok = basho_bench_app:start(),
 
@@ -139,6 +141,7 @@ maybe_net_node(Opts) ->
     case lists:keyfind(net_node, 1, Opts) of
         {_, Node} ->
             {_, Cookie} = lists:keyfind(net_cookie, 1, Opts),
+            os:cmd("epmd -daemon"),
             net_kernel:start([Node, longnames]),
             erlang:set_cookie(Node, Cookie),
             ok;
@@ -256,6 +259,7 @@ load_source_files(Dir) ->
                         case compile:file(F, [report, binary]) of
                             {ok, Mod, Bin} ->
                                 {module, Mod} = code:load_binary(Mod, F, Bin),
+                                deploy_module(Mod),
                                 ?INFO("Loaded ~p (~s)\n", [Mod, F]),
                                 ok;
                             Error ->
@@ -276,6 +280,70 @@ run_hook({Module, Function}) ->
 run_hook(no_op) ->
     no_op.
 
+get_addr_args() ->
+    {ok, IfAddrs} = inet:getifaddrs(),
+    FlattAttrib = lists:flatten([IfAttrib || {_Ifname, IfAttrib} <- IfAddrs]),
+    Addrs = proplists:get_all_values(addr, FlattAttrib),
+    % If inet:ntoa is unavailable, it probably means that you're running <R16
+    StrAddrs = [inet:ntoa(Addr) || Addr <- Addrs],
+    string:join(StrAddrs, " ").
+setup_distributed_work() ->
+    case node() of 
+        'nonode@nohost' -> 
+            ?STD_ERR("Basho bench not started in distributed mode, and distribute_work = true~n", []),
+            halt(1);
+        _ -> ok
+    end,
+    {ok, _Pid} = erl_boot_server:start([]),
+    %% Allow anyone to boot from me...I might want to lock this down this down at some point
+    erl_boot_server:add_subnet({0,0,0,0}, {0,0,0,0}),
+    %% This is cheating, horribly, but it's the only simple way to bypass net_adm:host_file()
+    gen_server:start({global, pool_master}, pool, [], []),
+    RemoteSpec = basho_bench_config:get(remote_nodes, []),
+    Cookie = lists:flatten(erlang:atom_to_list(erlang:get_cookie())),
+    Args = "-setcookie " ++ Cookie ++ " -loader inet -hosts " ++ get_addr_args(),
+    Slaves = [ slave:start_link(Host, Name, Args) || {Host, Name} <- RemoteSpec],
+    SlaveNames = [SlaveName || {ok, SlaveName} <- Slaves],
+    [pool:attach(SlaveName) || SlaveName <- SlaveNames],
+    CodePaths = code:get_path(),
+    rpc:multicall(SlaveNames, code, set_path, [CodePaths]),
+    Apps = [lager, basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, velvet, goldrush],
+    [distribute_app(App) || App <- Apps].
+
+
+deploy_module(Module) ->
+    case basho_bench_config:get(distribute_work, false) of 
+        true -> 
+            Nodes = nodes(),
+            {Module, Binary, Filename} = code:get_object_code(Module),
+            rpc:multicall(Nodes, code, load_binary, [Module, Filename, Binary]);
+        false -> ok
+    end.
+
+distribute_app(App) ->
+    % :(. This is super hackish, it depends on a bunch of assumptions
+    % But, unfortunately there are negative interactions with escript and slave nodes
+    CodeExtension = code:objfile_extension(),
+    LibDir = code:lib_dir(App),
+    % Get what paths are in the code path that start with LibDir
+    LibDirLen = string:len(LibDir),
+    EbinsDir = lists:filter(fun(CodePathDir) -> string:substr(CodePathDir, 1, LibDirLen) ==  LibDir end, code:get_path()),
+    StripEndFun = fun(Path) ->
+        PathLen = string:len(Path),
+        case string:substr(Path, PathLen - string:len(CodeExtension) + 1, string:len(Path)) of 
+            CodeExtension ->
+                {true, string:substr(Path, 1, PathLen - string:len(CodeExtension))};
+            _ -> false
+        end
+    end, 
+    EbinDirDistributeFun = fun(EbinDir) ->
+        {ok, Beams} = erl_prim_loader:list_dir(EbinDir),
+        Modules = lists:filtermap(StripEndFun, Beams),
+        ModulesLoaded = [code:load_abs(filename:join(EbinDir, ModFileName)) || ModFileName <- Modules],
+        lists:foreach(fun({module, Module}) -> deploy_module(Module) end, ModulesLoaded)
+    end,
+    lists:foreach(EbinDirDistributeFun, EbinsDir),    
+    ok.
 %% just a utility, should be in basho_bench_utils.erl
 %% but 's' is for multiple utilities, and so far this
 %% is the only one.
