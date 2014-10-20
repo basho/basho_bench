@@ -149,14 +149,15 @@ handle_call({op, Op, {error, Reason}, _ElapsedUs}, _From, State) ->
     {reply, ok, State#state { errors_since_last_report = true }}.
 
 handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, report_interval = RI}) ->
-    TimeSinceLastReport = timer:now_diff(os:timestamp(), LWT) / 1000, %% To get the diff in seconds
-    TimeSinceLastWarn = timer:now_diff(os:timestamp(), State#state.last_warn) / 1000,
+    Now = os:timestamp(),
+    TimeSinceLastReport = timer:now_diff(Now, LWT) / 1000, %% To get the diff in seconds
+    TimeSinceLastWarn = timer:now_diff(Now, State#state.last_warn) / 1000,
     if
         TimeSinceLastReport > (RI * 2) andalso TimeSinceLastWarn > ?WARN_INTERVAL  ->
             ?WARN("basho_bench_stats has not reported in ~.2f milliseconds\n", [TimeSinceLastReport]),
             {message_queue_len, QLen} = process_info(self(), message_queue_len),
             ?WARN("stats process mailbox size = ~w\n", [QLen]),
-            NewState = State#state{last_warn = os:timestamp()};
+            NewState = State#state{last_warn = Now};
         true ->
             NewState = State
     end,
