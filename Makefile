@@ -10,13 +10,13 @@ REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 
 
-.PHONY: deps
-
-rel: deps compile
-	./rebar skip_deps=true escriptize
-
 all: deps compile
 	./rebar skip_deps=true escriptize
+
+.PHONY: deps compile rel
+
+rel: deps compile
+	cd rel && ../rebar generate skip_deps=true $(OVERLAY_VARS)
 
 deps:
 	./rebar get-deps
