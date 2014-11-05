@@ -72,7 +72,7 @@ dist: package.src
 	cp package/$(PKG_ID).tar.gz .
 
 package: package.src
-	${MAKE} -C package -f $(PKG_ID)/deps/node_package/Makefile
+	${MAKE} -d -C package -f $(PKG_ID)/deps/node_package/Makefile
 
 pkgclean: distclean
 	rm -rf package
