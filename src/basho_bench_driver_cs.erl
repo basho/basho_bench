@@ -574,6 +574,10 @@ auth_sig(AccessKey, SecretKey, Method, ContentType, Date, Headers, Resource) ->
 
 %% CS utilities
 
+%% @doc copied from stanchion_utils
+sha_mac(KeyData, STS) ->
+    crypto:hmac(sha, KeyData, STS).
+
 setup_user_and_bucket(State) ->
     case basho_bench_config:get(cs_access_key, undefined) of
         undefined ->

@@ -307,7 +307,7 @@ setup_distributed_work() ->
     [pool:attach(SlaveName) || SlaveName <- SlaveNames],
     CodePaths = code:get_path(),
     rpc:multicall(SlaveNames, code, set_path, [CodePaths]),
-    Apps = [lager, basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, velvet, goldrush],
+    Apps = [lager, basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, goldrush],
     [distribute_app(App) || App <- Apps].
 
 
