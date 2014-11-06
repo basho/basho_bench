@@ -2,7 +2,7 @@ REPO            ?= basho_bench
 
 PKG_REVISION    ?= $(shell git describe --tags)
 PKG_VERSION     ?= $(shell git describe --tags | tr - .)
-PKG_ID           = bashobench-$(PKG_VERSION)
+PKG_ID           = basho-bench-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
@@ -72,7 +72,7 @@ dist: package.src
 	cp package/$(PKG_ID).tar.gz .
 
 package: package.src
-	${MAKE} -d -C package -f $(PKG_ID)/deps/node_package/Makefile
+	${MAKE} -C package -f $(PKG_ID)/deps/node_package/Makefile
 
 pkgclean: distclean
 	rm -rf package

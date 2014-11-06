@@ -569,7 +569,7 @@ auth_sig(AccessKey, SecretKey, Method, ContentType, Date, Headers, Resource) ->
                     CanonizedAmzHeaders,
                     Resource
                    ],
-    Signature = base64:encode(stanchion_utils:sha_mac(SecretKey, StringToSign)),
+    Signature = base64:encode(sha_mac(SecretKey, StringToSign)),
     ["AWS ", AccessKey, $:, Signature].
 
 %% CS utilities
