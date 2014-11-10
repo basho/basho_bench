@@ -569,10 +569,14 @@ auth_sig(AccessKey, SecretKey, Method, ContentType, Date, Headers, Resource) ->
                     CanonizedAmzHeaders,
                     Resource
                    ],
-    Signature = base64:encode(stanchion_utils:sha_mac(SecretKey, StringToSign)),
+    Signature = base64:encode(sha_mac(SecretKey, StringToSign)),
     ["AWS ", AccessKey, $:, Signature].
 
 %% CS utilities
+
+%% @doc copied from stanchion_utils
+sha_mac(KeyData, STS) ->
+    crypto:hmac(sha, KeyData, STS).
 
 setup_user_and_bucket(State) ->
     case basho_bench_config:get(cs_access_key, undefined) of

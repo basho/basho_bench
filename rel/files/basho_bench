@@ -1,0 +1,9 @@
+#!/bin/sh
+
+# Pull environment for this install
+. "{{runner_base_dir}}/lib/env.sh"
+
+# Make sure CWD is set to runner run dir
+cd $RUNNER_BASE_DIR/lib/basho_bench*/ebin
+
+ERL_LIBS=$RUNNER_BASE_DIR $ERTS_PATH/escript basho_bench.beam "$@"
