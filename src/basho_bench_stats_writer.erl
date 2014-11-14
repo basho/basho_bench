@@ -46,13 +46,17 @@ new({csv}, Ops, Measurements) ->
     {ok, ErrorsFile} = file:open("errors.csv", [raw, binary, write]),
     file:write(ErrorsFile, <<"\"error\",\"count\"\n">>),
 
-    {SummaryFile, ErrorsFile}.
+    {SummaryFile, ErrorsFile};
+new({riemann}, _, _) ->
+    katja:start().
 
 terminate({{csv}, {SummaryFile, ErrorsFile}}) ->
     [ok = file:close(F) || {{csv_file, _}, F} <- erlang:get()],
     ok = file:close(SummaryFile),
     ok = file:close(ErrorsFile),
-
+    ok;
+terminate({{riemann}, _}) ->
+    katja:stop(),
     ok.
 
 process_summary({{csv}, {SummaryFile, _ErrorsFile}},
@@ -63,13 +67,23 @@ process_summary({{csv}, {SummaryFile, _ErrorsFile}},
                               Window,
                               Oks + Errors,
                               Oks,
-                              Errors])).
+                              Errors]));
+process_summary({{riemann}, _},
+                _Elapsed, _Window, Oks, Errors) ->
+    katja:send_entities([{events, [[{service, "basho_bench summary ok"},
+                                    {metric, Oks}],
+                                   [{service, "basho_bench summary errors"},
+                                    {metric, Errors}]]}]).
 
 report_error({{csv}, {_SummaryFile, ErrorsFile}},
              Key, Count) ->
     file:write(ErrorsFile,
                io_lib:format("\"~w\",\"~w\"\n",
-                             [Key, Count])).
+                             [Key, Count]));
+report_error({{riemann}, _},
+            Key, Count) ->
+   katja:send_event([{service, io_lib:format("basho_bench error for key ~p", [Key])},
+                     {metric, Count}]).
 
 report_latency({{csv}, {_SummaryFile, _ErrorsFile}},
                Elapsed, Window, Op,
@@ -96,7 +110,16 @@ report_latency({{csv}, {_SummaryFile, _ErrorsFile}},
                                   Window,
                                   Errors])
     end,
-    file:write(erlang:get({csv_file, Op}), Line).
+    file:write(erlang:get({csv_file, Op}), Line);
+report_latency({{riemann}, _},
+               _Elapsed, _Window, Op,
+               Stats, Errors, Units) ->
+    case proplists:get_value(n, Stats) > 0 of
+        true ->
+            katja:send_entities([{events, riemann_op_latencies(Op, Stats, Errors, Units)}]);
+        false ->
+            ?WARN("No data for op: ~p\n", [Op])
+    end.
 
 %% ====================================================================
 %% Internal functions
@@ -135,3 +158,26 @@ replace_special_chars([_|T]) ->
     [$-|replace_special_chars(T)];
 replace_special_chars([]) ->
     [].
+
+riemann_op_latencies({Label, _Op}, Stats, Errors, Units) ->
+    P = proplists:get_value(percentile, Stats),
+    Service = normalize_label(Label),
+
+    [[{service, io_lib:format("basho_bench op ~s latency min", [Service])},
+      {metric, proplists:get_value(min, Stats)}],
+     [{service, io_lib:format("basho_bench op ~s latency max", [Service])},
+      {metric, proplists:get_value(max, Stats)}],
+     [{service, io_lib:format("basho_bench op ~s latency mean", [Service])},
+      {metric, proplists:get_value(arithmetic_mean, Stats)}],
+     [{service, io_lib:format("basho_bench op ~s latency median", [Service])},
+      {metric, proplists:get_value(median, Stats)}],
+     [{service, io_lib:format("basho_bench op ~s latency 95%", [Service])},
+      {metric, proplists:get_value(95, P)}],
+     [{service, io_lib:format("basho_bench op ~s latency 99%", [Service])},
+      {metric, proplists:get_value(99, P)}],
+     [{service, io_lib:format("basho_bench op ~s latency 99.9%", [Service])},
+      {metric, proplists:get_value(999, P)}],
+     [{service, io_lib:format("basho_bench op ~s #", [Service])},
+      {metric, Units}],
+     [{service, io_lib:format("basho_bench op ~s error#", [Service])},
+      {metric, Errors}]].
