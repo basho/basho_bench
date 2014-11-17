@@ -19,6 +19,39 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+%% HOWTO:
+%%
+%% * To run basho_bench with the default CSV writer, nothing needs to
+%%   be done. But if wanting to override a former setting, then
+%%   writing the following in the benchmark config file will switch
+%%   the stats writer to CSV:
+%%
+%%    {stats, {csv}}.
+%%
+%% * To run basho_bench with statistics sent to [Riemann][1], in the
+%%   benchmark config file the following needs to be written:
+%%
+%%    {stats, {riemann}}.
+%%
+%%   This will, by default, try to connect to a Riemann server on
+%%   localhost, port 5555, and will not set any TTL or tags. To
+%%   configure the writer, an app config needs to be written. For
+%%   that, one needs to add "-config app.config" (the filename can be
+%%   anything) to escript_emu_args in rebar.config, recompile
+%%   basho_bench, and add the necessary configuration to app.config,
+%%   something along these lines:
+%%
+%%    [
+%%      {katja, [
+%%        {host, "127.0.0.1"},
+%%        {port, 5555},
+%%        {transport, detect},
+%%        {pool, []},
+%%        {defaults, [{host, "myhost.local"},
+%%                    {tags, ["basho_bench"]},
+%%                    {ttl, 5.0}]}
+%%      ]}
+%%    ].
 
 -module(basho_bench_stats_writer).
 
