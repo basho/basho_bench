@@ -25,6 +25,7 @@
          run/4]).
 
 -include("basho_bench.hrl").
+-include("deps/cqerl/include/cqerl.hrl").
 
 -record(state, { client,
                  keyspace,
@@ -41,11 +42,12 @@ new(Id) ->
     Host    = basho_bench_config:get(cassandra_host, "localhost"),
     Port     = basho_bench_config:get(cassandra_port, 9042),
     Keyspace = basho_bench_config:get(cassandra_keyspace, "Keyspace1"),
-	ColumnFamily = basho_bench_config:get(cassandra_columnfamily, "ColumnFamily1"),
-	Column = basho_bench_config:get(cassandra_column, "Column"),
+    ColumnFamily = basho_bench_config:get(cassandra_columnfamily, "ColumnFamily1"),
+    Column = basho_bench_config:get(cassandra_column, "Column"),
 
-	% connect to client
-	{ok, C} = erlcql:start_link(Host, [{port, Port}]),
+    %% connect to client
+    application:ensure_all_started(cqerl),
+    {ok, C} = cqerl:new_client({Host, Port}),
     error_logger:info_msg("Id: ~p, "
         "Connected to Cassandra at Host ~p and Port ~p\n", [Id, Host, Port]),
 
@@ -57,13 +59,13 @@ new(Id) ->
 						  columnfamily = ColumnFamily,
 						  column = Column}};
         {error, Reason} ->
-			error_logger:error_msg("Failed to get a erlcql client for ~p: ~p\n",
+			error_logger:error_msg("Failed to get a cqerl client for ~p: ~p\n",
                                    [Host, Reason])
     end.
 
 
 ksbarrier(C, Keyspace) ->
-    case erlcql:q(C, lists:concat(["USE ", Keyspace, ";"])) of
+    case cqerl:run_query(C, lists:concat(["USE ", Keyspace, ";"])) of
 		{ok, _KSBin} -> ok;
         {error, not_ready} ->
             %% Not ready yet, try again
@@ -77,7 +79,8 @@ run(get, KeyGen, _ValueGen,
 	#state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
 	Key = KeyGen(),
 	Query = ["SELECT ", Column ," FROM ", ColumnFamily ," where KEY = '", Key ,"';"],
-    case erlcql:q(C, Query, one) of
+    case cqerl:run_query(C, #cql_query{statement = Query,
+                                       consistency = ?CQERL_CONSISTENCY_ONE}) of
         {ok,void} ->
             {ok, State};
         {ok, {_Rows, _Cols}} ->
@@ -93,7 +96,8 @@ run(insert, KeyGen, ValueGen,
                " (KEY, ", Column, ") VALUES "
                "('", Key ,"', ", bin_to_hexstr(Val) ,");"],
 
-    case erlcql:q(C, Query, any) of
+    case cqerl:run_query(C, #cql_query{statement = Query,
+                                       consistency = ?CQERL_CONSISTENCY_ANY}) of
         {ok,void} ->
             {ok, State};
         {ok, {_Rows, _Cols}} ->
@@ -109,7 +113,8 @@ run(put, KeyGen, ValueGen,
              " SET ", Column, " = ", bin_to_hexstr(Val),
              " WHERE KEY = '", Key, "';"],
 
-    case erlcql:q(C, Query, any) of
+    case cqerl:run_query(C, #cql_query{statement = Query,
+                                       consistency = ?CQERL_CONSISTENCY_ANY}) of
         {ok,void} ->
             {ok, State};
 		{ok, {_Rows, _Cols}} ->
@@ -121,7 +126,8 @@ run(delete, KeyGen, _ValueGen,
     #state{client=C, columnfamily=ColumnFamily}=State) ->
 	Key = KeyGen(),
 	Query = ["DELETE FROM ", ColumnFamily ," WHERE KEY = '", Key ,"';"],
-    case erlcql:q(C, Query, any) of
+    case cqerl:run_query(C, #cql_query{statement = Query,
+                                       consistency = ?CQERL_CONSISTENCY_ANY}) of
         {ok,void} ->
             {ok, State};
         {ok, {_Rows, _Cols}} ->
