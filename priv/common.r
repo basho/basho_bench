@@ -4,8 +4,10 @@ packages.to.install <- c("plyr", "grid", "getopt", "proto", "ggplot2")
 for(p in packages.to.install)
   {
         print(p)
-        if (suppressWarnings(!require(p, character.only = TRUE))) install.packages(p, repos = "http://lib.stat.cmu.edu/R/CRAN")
-        if (p == "ggplot2") suppressWarnings(library(ggplot2))
+        if (suppressWarnings(!require(p, character.only = TRUE))) {
+            install.packages(p, repos = "http://lib.stat.cmu.edu/R/CRAN")
+            library(p, character.only=TRUE)
+        }
   }
 
 # Load a latency file and ensure that it is appropriately tagged
