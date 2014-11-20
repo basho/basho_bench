@@ -13,7 +13,7 @@ for(p in packages.to.install)
 # Load a latency file and ensure that it is appropriately tagged
 load_latency_frame <- function(File)
   {
-    op <- strsplit(basename(File), "_")[[1]][1]
+    op <- gsub("_latencies.csv", "", basename(File))
     frame <- read.csv(File)
     frame$op = rep(op, nrow(frame))
     return (frame)
