@@ -57,9 +57,6 @@ new(ID) ->
     %% problems at the server side.
     timer:sleep(basho_bench_config:get(cs_new_delay, 10) * (ID - 1)),
 
-    application:start(ibrowse),
-    application:start(crypto),
-
     %% The IP, port and path we'll be testing
 
     %% TODO:
@@ -81,6 +78,8 @@ new(ID) ->
             _             -> {op_sec, fun(_) -> 1.0 end}
         end,
     if ID == 1 ->
+            application:start(ibrowse),
+            application:start(crypto),
             lager:log(info, self(), "Reporting factor = ~p\n", [RF_name]);
        true ->
             ok
