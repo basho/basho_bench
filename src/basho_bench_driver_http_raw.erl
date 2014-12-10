@@ -71,8 +71,6 @@ new(Id) ->
 
     %% Setup client ID by base-64 encoding the ID
     ClientId = {'X-Riak-ClientId', base64:encode(<<Id:32/unsigned>>)},
-    ?DEBUG("Client ID: ~p\n", [ClientId]),
-    ?INFO("CWD: ~p~n", [file:get_cwd()]),
 
     application:start(ibrowse),
 
@@ -347,7 +345,8 @@ do_get(Url) ->
     do_get(Url, []).
 
 do_get(Url, Opts) ->
-    case send_request(Url, [], get, [], [{response_format, binary}]) of
+    SockOpts = [{reuseaddr, true}, {nodelay, true}, {delay_send, false}],
+    case send_request(Url, [], get, [], [{response_format, binary}, {socket_options, SockOpts}]) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
         {ok, "300", Headers, _Body} ->
