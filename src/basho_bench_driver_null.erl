@@ -47,5 +47,27 @@ run(an_error, KeyGen, _ValueGen, State) ->
     {error, went_wrong, State};
 run(another_error, KeyGen, _ValueGen, State) ->
     _Key = KeyGen(),
-    {error, {bad, things, happened}, State}.
-
+    {error, {bad, things, happened}, State};
+run(print_key, KeyGen, _ValueGen, State) ->
+    Key = KeyGen(),
+    io:format(user, "~p\n", [Key]),
+    {ok, State};
+run(print_value, _KeyGen, ValueGen, State) ->
+    Value = ValueGen(),
+    io:format(user, "~p\n", [Value]),
+    {ok, State};
+run({print_value, PrintDepth}, _KeyGen, ValueGen, State) ->
+    Value = ValueGen(),
+    io:format(user, "~P\n", [Value, PrintDepth]),
+    {ok, State};
+run(print_key_and_value, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    Value = ValueGen(),
+    io:format(user, "~p ~p\n", [Key, Value]),
+    {ok, State};
+run({print_key_and_value, KeyPrintDepth, ValuePrintDepth}, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    Value = ValueGen(),
+    io:format(user, "~P ~P\n", [Key, KeyPrintDepth,
+                                Value, ValuePrintDepth]),
+    {ok, State}.
