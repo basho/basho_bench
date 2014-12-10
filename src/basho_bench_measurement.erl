@@ -50,7 +50,7 @@ run() ->
     gen_server:cast(?MODULE, run).
 
 take_measurement(Measurement) ->
-    gen_server:call(?MODULE, {take_measurement, Measurement}).
+    gen_server:call(?MODULE, {take_measurement, Measurement}, infinity).
 
 %% ====================================================================
 %% gen_server callbacks

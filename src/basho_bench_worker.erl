@@ -68,11 +68,11 @@ start_link_local(SupChild, Id) ->
     gen_server:start_link(?MODULE, [SupChild, Id], []).
 
 run(Pids) ->
-    [ok = gen_server:call(Pid, run) || Pid <- Pids],
+    [ok = gen_server:call(Pid, run, infinity) || Pid <- Pids],
     ok.
 
 stop(Pids) ->
-    [ok = gen_server:call(Pid, stop) || Pid <- Pids],
+    [ok = gen_server:call(Pid, stop, infinity) || Pid <- Pids],
     ok.
 
 %% ====================================================================
