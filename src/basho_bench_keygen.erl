@@ -61,6 +61,9 @@ new({bin_to_str, InputGen}, Id) ->
 new({to_binstr, FmtStr, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> list_to_binary(io_lib:format(FmtStr, [Gen()])) end;
+new({to_str, FmtStr, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> lists:flatten(io_lib:format(FmtStr, [Gen()])) end;
 new({base64, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> base64:encode(Gen()) end;
