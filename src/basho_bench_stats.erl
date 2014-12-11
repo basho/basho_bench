@@ -64,7 +64,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
    % io:format("Get distributed: ~p~n", [get_distributed()]),
     case get_distributed() of
         true ->
-            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs}, infinity);
+            gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs});
         false ->
             folsom_metrics:notify({latencies, Op}, ElapsedUs),
             folsom_metrics:notify({units, Op}, {inc, Units})
