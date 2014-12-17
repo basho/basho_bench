@@ -132,10 +132,16 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                    {ok, FileH} = file:open(Path, Opts),
                    FileH
            end,
+    Chomp = fun(LineBin) ->
+                    WantedLen = byte_size(LineBin) - 1,
+                    <<Chomped:WantedLen/binary, _/binary>>
+                        = LineBin,
+                    Chomped
+            end,
     Loop = fun(L, FH) ->
                    {Line, FH2}  = case file:read_line(FH) of
                                       {ok, LineBin} ->
-                                          {LineBin, FH};
+                                          {Chomp(LineBin), FH};
                                       eof when DoRepeat /= repeat ->
                                           {empty_keygen, FH};
                                       eof ->
@@ -143,12 +149,7 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                                           file:close(FH),
                                           FH_ = Open(),
                                           {ok, LineBin} = file:read_line(FH_),
-                                          %% Line will always include
-                                          %% the trailing newline.
-                                          WantedLen = byte_size(LineBin) - 1,
-                                          <<Chomped:WantedLen/binary, _/binary>>
-                                              = LineBin,
-                                          {Chomped, FH_}
+                                          {Chomp(LineBin), FH_}
                                   end,
                    receive
                        {key_req, From} ->
