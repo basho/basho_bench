@@ -364,8 +364,7 @@ do_get(Url, S) ->
     do_get(Url, [], S).
 
 do_get(Url, Opts, S) ->
-    SockOpts = [{reuseaddr, true}, {nodelay, true}, {delay_send, false}],
-    case send_request(Url, [], get, [], [{response_format, binary}, {socket_options, SockOpts}], S) of
+    case send_request(Url, [], get, [], [{response_format, binary}], S) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
         {ok, "300", Headers, _Body} ->
@@ -500,7 +499,9 @@ send_request(_Url, _Headers, _Method, _Body, _Options, 0, _S) ->
     {error, max_retries};
 send_request(Url, Headers, Method, Body, Options, Count, S) ->
     Pid = connect(Url),
-    Options2 = [S#state.opt_ssl_options | Options],
+    SockOpts = [{reuseaddr, true}, {nodelay, true}, {delay_send, false},
+                S#state.opt_ssl_options],
+    Options2 = Options ++ SockOpts,
     case catch(ibrowse_http_client:send_req(Pid, Url, Headers ++ S#state.opt_raw_headers, Method, Body, Options2, S#state.opt_request_timeout)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Url),
