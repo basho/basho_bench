@@ -97,10 +97,22 @@ new(Id) ->
                 _ -> filelib:wildcard(FileDir ++ "/*")
             end,
 
+    Warn = fun(X) ->
+                   if Id == 1 ->
+                           Msg = "Warning: {http_raw_disconnect_frequency, ~w}: ibrowse client can bottleneck on inet_gethost_native service when using disconnecting mode; 'infinity' is recommended\n",
+                           io:format(user, "\n\n" ++ Msg ++ "\n\n", [X]),
+                           error_logger:warning_msg(Msg, [X]),
+                           timer:sleep(2*1000);
+                      true ->
+                           ok
+                   end
+           end,
     case Disconnect of
         infinity -> ok;
-        Seconds when is_integer(Seconds) -> ok;
-        {ops, Ops} when is_integer(Ops) -> ok;
+        0 -> ok;
+        Seconds when is_integer(Seconds) -> Warn(Seconds), ok;
+        {ops, 0} -> ok;
+        {ops, Ops}=OpsT when is_integer(Ops) -> Warn(OpsT), ok;
         _ -> ?FAIL_MSG("Invalid configuration for http_raw_disconnect_frequency: ~p~n", [Disconnect])
     end,
 
@@ -111,7 +123,8 @@ new(Id) ->
     %% through them.
     Targets = basho_bench_config:normalize_ips(Ips, DefaultPort),
     BaseUrls = list_to_tuple([#url{host=IP, port=Port, path=Path}
-                              || {IP, Port} <- Targets]),
+                              || {IP, Port} <- Targets,
+                                 sanity_check_hostname(IP)]),
     BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
 
     SSL_options = case basho_bench_config:get(http_use_ssl, false) of
@@ -529,3 +542,10 @@ should_retry(_)                          -> false.
 normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
+
+sanity_check_hostname(Str) when is_list(Str) ->
+    true;
+sanity_check_hostname(T) when is_tuple(T) ->
+    error_logger:warning_msg("Error: ~w: ibrowse client cannot handle Erlang tuple-style IP addresses, please use hostname/IP as a string\n", [T]),
+    timer:sleep(1000),
+    exit(bad_config).
