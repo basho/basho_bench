@@ -31,6 +31,7 @@
 -define(REPORTFUN_APPKEY, report_fun).
 -define(START_KEY, {?MODULE, start}).
 -define(BLOCKSIZE_KEY, {?MODULE, block_size}).
+-define(PERHAPS_KEY, perhaps_sleep_done_yet).
 
 -export([new/1,
          run/4]).
@@ -52,16 +53,6 @@
 
 -spec new(integer()) -> {ok, term()}.
 new(ID) ->
-    %% For large numbers of load generators, it's a good idea to
-    %% stagger things out a little bit to avoid thundering herd
-    %% problems at the server side.
-    timer:sleep(basho_bench_config:get(cs_new_delay, 10) * (ID - 1)),
-
-    application:start(ibrowse),
-    application:start(crypto),
-
-    %% The IP, port and path we'll be testing
-
     %% TODO:
     %% We'll start with a single
     %% IP for now
@@ -81,6 +72,8 @@ new(ID) ->
             _             -> {op_sec, fun(_) -> 1.0 end}
         end,
     if ID == 1 ->
+            application:start(ibrowse),
+            application:start(crypto),
             lager:log(info, self(), "Reporting factor = ~p\n", [RF_name]);
        true ->
             ok
@@ -89,6 +82,7 @@ new(ID) ->
     %% way to pass ReportFun to the necessary place in a purely
     %% functional way.
     application:set_env(?MODULE, ?REPORTFUN_APPKEY, ReportFun),
+    put(?PERHAPS_KEY, ID),
 
     OpsList = basho_bench_config:get(operations, []),
     case RF_name /= op_sec andalso
@@ -117,8 +111,15 @@ new(ID) ->
     ProxyPort = basho_bench_config:get(cs_http_proxy_port, 8080),
     ProxyTargets = basho_bench_config:normalize_ips(ProxyHosts, ProxyPort),
     {ProxyH, ProxyP} = lists:nth((ID rem length(ProxyTargets)+1), ProxyTargets),
-    lager:log(info, self(), "ID ~p Proxy host ~p TCP port ~p\n",
-              [ID, ProxyH, ProxyP]),
+    ID_max = 30,
+    if ID == ID_max ->
+            lager:log(info, self(), "Suppressing additional proxy info", []);
+       ID < ID_max ->
+            lager:log(info, self(), "ID ~p Proxy host ~p TCP port ~p\n",
+                      [ID, ProxyH, ProxyP]);
+       true ->
+            ok
+    end,
 
     State = #state{client_id=ID, hosts=Hosts,
                    bucket = basho_bench_config:get(cs_bucket, "test"),
@@ -151,6 +152,7 @@ new(ID) ->
 
 run(get, KeyGen, _ValueGen, #state{working_op = undefined,
                                    bucket = Bucket} = State) ->
+    perhaps_sleep(),
     {NextHost, S2} = next_host(State),
     {Host, Port} = NextHost,
     Key = KeyGen(),
@@ -162,6 +164,7 @@ run(get, KeyGen, _ValueGen, #state{working_op = undefined,
             Else
     end;
 run(_, _KeyGen, _ValueGen, #state{working_op = get} = State) ->
+    perhaps_sleep(),
     case do_get_loop(State) of
         {ok, S2} ->
             {{silent, ok}, S2};
@@ -169,6 +172,7 @@ run(_, _KeyGen, _ValueGen, #state{working_op = get} = State) ->
             Else
     end;
 run(Op, KeyGen, ValueGen, State) ->
+    perhaps_sleep(),
     run2(Op, KeyGen, ValueGen, State).
 
 run2(insert, KeyGen, ValueGen, #state{bucket = Bucket} = State) ->
@@ -206,6 +210,18 @@ run2(copy, KeyGen, _ValueGen, #state{bucket = Bucket} = State) ->
     end;
 run2(Op, _KeyGen, _ValueGen, State) ->
     {error, {unknown_op, Op}, State}.
+
+perhaps_sleep() ->
+    case get(?PERHAPS_KEY) of
+        ID when is_integer(ID) ->
+            %% For large numbers of load generators, it's a good idea to
+            %% stagger things out a little bit to avoid thundering herd
+            %% problems at the server side.
+            put(?PERHAPS_KEY, yes_we_slept),
+            timer:sleep(basho_bench_config:get(cs_new_delay, 25) * (ID - 1));
+        _ ->
+            ok
+    end.
 
 %% The ibrowse client can take a {fun-arity-1, Arg::term()} tuple for
 %% a value and use the fun to generate body bytes on-the-fly.

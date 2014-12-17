@@ -55,9 +55,15 @@ new({{int_to_bin_littleendian, Bits}, InputGen}, Id) ->
 new({int_to_str, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> integer_to_list(Gen()) end;
+new({bin_to_str, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> binary_to_list(Gen()) end;
 new({to_binstr, FmtStr, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> list_to_binary(io_lib:format(FmtStr, [Gen()])) end;
+new({to_str, FmtStr, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> lists:flatten(io_lib:format(FmtStr, [Gen()])) end;
 new({base64, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> base64:encode(Gen()) end;
@@ -117,12 +123,66 @@ new({function, Module, Function, Args}, Id)
         _Error ->
             ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
     end;
+new({file_line_bin, Path}, Id) ->
+    new({file_line_bin, Path, repeat}, Id);
+new({file_line_bin, Path, DoRepeat}, Id) ->
+    Open = fun() ->
+                   Opts = [read, raw, binary,
+                           {read_ahead, 16*1024*1024}],
+                   {ok, FileH} = file:open(Path, Opts),
+                   FileH
+           end,
+    Chomp = fun(LineBin) ->
+                    WantedLen = byte_size(LineBin) - 1,
+                    <<Chomped:WantedLen/binary, _/binary>>
+                        = LineBin,
+                    Chomped
+            end,
+    Loop = fun(L, FH) ->
+                   {Line, FH2}  = case file:read_line(FH) of
+                                      {ok, LineBin} ->
+                                          {Chomp(LineBin), FH};
+                                      eof when DoRepeat /= repeat ->
+                                          {empty_keygen, FH};
+                                      eof ->
+                                          ?INFO("EOF", []),
+                                          file:close(FH),
+                                          FH_ = Open(),
+                                          {ok, LineBin} = file:read_line(FH_),
+                                          {Chomp(LineBin), FH_}
+                                  end,
+                   receive
+                       {key_req, From} ->
+                           From ! {key_reply, Line}
+                   end,
+                   L(L, FH2)
+           end,
+    if Id == 1 ->
+            spawn(fun() ->
+                          register(file_keygen, self()),
+                          FH = Open(),
+                          Loop(Loop, FH)
+                  end);
+       true ->
+            ok
+    end,
+    fun() ->
+            file_keygen ! {key_req, self()},
+            receive
+                {key_reply, empty_keygen} ->
+                    throw({stop, empty_keygen});
+                {key_reply, Bin} ->
+                    Bin
+            end
+    end;
 %% Adapt a value generator. The function keygen would work if Id was added as 
 %% the last parameter. But, alas, it is added as the first.
 new({valgen, ValGen}, Id) ->
     basho_bench_valgen:new(ValGen, Id);
 new(Bin, _Id) when is_binary(Bin) ->
     fun() -> Bin end;
+new(List, _Id) when is_list(List) ->
+    fun() -> List end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid key generator requested: ~p\n", [Other]).
 

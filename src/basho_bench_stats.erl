@@ -71,7 +71,7 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
     end,
     ok;
 op_complete(Op, Result, ElapsedUs) ->
-    gen_server:call({global, ?MODULE}, {op, Op, Result, ElapsedUs}).
+    gen_server:call({global, ?MODULE}, {op, Op, Result, ElapsedUs}, infinity).
 
 %% ====================================================================
 %% gen_server callbacks

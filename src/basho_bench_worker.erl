@@ -53,9 +53,6 @@
 %% ====================================================================
 
 start_link(SupChild, Id) ->
-
-%    {Module, Binary, Filename} = code:get_object_code(basho_bench_worker),
- %   rpc:multicall(nodes(), code, load_binary, [Module, Filename, Binary]).
     case basho_bench_config:get(distribute_work, false) of 
         true -> 
             start_link_distributed(SupChild, Id);
@@ -71,11 +68,11 @@ start_link_local(SupChild, Id) ->
     gen_server:start_link(?MODULE, [SupChild, Id], []).
 
 run(Pids) ->
-    [ok = gen_server:call(Pid, run) || Pid <- Pids],
+    [ok = gen_server:call(Pid, run, infinity) || Pid <- Pids],
     ok.
 
 stop(Pids) ->
-    [ok = gen_server:call(Pid, stop) || Pid <- Pids],
+    [ok = gen_server:call(Pid, stop, infinity) || Pid <- Pids],
     ok.
 
 %% ====================================================================

@@ -34,7 +34,11 @@
                  files,              % List of files to put
                  path_params,        % Params to append on the path
                  solr_path,          % SOLR path for searches
-                 searchgen }).       % Search generator
+                 searchgen,          % Search generator
+                 opt_ssl_options,
+                 opt_raw_headers,
+                 opt_request_timeout
+               }).
 
 
 -define(NOT_EXPECTED(Qry, Expected, Actual),
@@ -71,8 +75,6 @@ new(Id) ->
 
     %% Setup client ID by base-64 encoding the ID
     ClientId = {'X-Riak-ClientId', base64:encode(<<Id:32/unsigned>>)},
-    ?DEBUG("Client ID: ~p\n", [ClientId]),
-    ?INFO("CWD: ~p~n", [file:get_cwd()]),
 
     application:start(ibrowse),
 
@@ -95,10 +97,22 @@ new(Id) ->
                 _ -> filelib:wildcard(FileDir ++ "/*")
             end,
 
+    Warn = fun(X) ->
+                   if Id == 1 ->
+                           Msg = "Warning: {http_raw_disconnect_frequency, ~w}: ibrowse client can bottleneck on inet_gethost_native service when using disconnecting mode; 'infinity' is recommended\n",
+                           io:format(user, "\n\n" ++ Msg ++ "\n\n", [X]),
+                           error_logger:warning_msg(Msg, [X]),
+                           timer:sleep(2*1000);
+                      true ->
+                           ok
+                   end
+           end,
     case Disconnect of
         infinity -> ok;
-        Seconds when is_integer(Seconds) -> ok;
-        {ops, Ops} when is_integer(Ops) -> ok;
+        0 -> ok;
+        Seconds when is_integer(Seconds) -> Warn(Seconds), ok;
+        {ops, 0} -> ok;
+        {ops, Ops}=OpsT when is_integer(Ops) -> Warn(OpsT), ok;
         _ -> ?FAIL_MSG("Invalid configuration for http_raw_disconnect_frequency: ~p~n", [Disconnect])
     end,
 
@@ -109,8 +123,20 @@ new(Id) ->
     %% through them.
     Targets = basho_bench_config:normalize_ips(Ips, DefaultPort),
     BaseUrls = list_to_tuple([#url{host=IP, port=Port, path=Path}
-                              || {IP, Port} <- Targets]),
+                              || {IP, Port} <- Targets,
+                                 sanity_check_hostname(IP)]),
     BaseUrlsIndex = random:uniform(tuple_size(BaseUrls)),
+
+    SSL_options = case basho_bench_config:get(http_use_ssl, false) of
+                      false ->
+                          [];
+                      true ->
+                          [{is_ssl, true}, {ssl_options, []}];
+                      SSLOpts when is_list(SSLOpts) ->
+                          [{is_ssl, true}, {ssl_options, SSLOpts}]
+                  end,
+    RawHeaders = basho_bench_config:get(http_raw_append_headers,[]),
+    RequestTimeout = basho_bench_config:get(http_raw_request_timeout, 5000),
 
     {ok, #state { client_id = ClientId,
                   base_urls = BaseUrls,
@@ -118,11 +144,15 @@ new(Id) ->
                   files = Files,
                   path_params = Params,
                   solr_path = SolrPath,
-                  searchgen = SearchGen }}.
+                  searchgen = SearchGen,
+                  opt_ssl_options = SSL_options,
+                  opt_raw_headers = RawHeaders,
+                  opt_request_timeout = RequestTimeout
+                }}.
 
 run(stat, _, _, State) ->
     {Url, S2} = next_url(State),
-    case do_stat(stat_url(Url)) of
+    case do_stat(stat_url(Url), State) of
         {ok, _, _} ->
             {ok, S2};
         {error, Reason} ->
@@ -131,7 +161,7 @@ run(stat, _, _, State) ->
 
 run(get, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State) of
         {not_found, _Url} ->
             {ok, S2};
         {ok, _Url, _Headers} ->
@@ -141,7 +171,7 @@ run(get, KeyGen, _ValueGen, State) ->
     end;
 run(get_existing, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State) of
         {not_found, Url} ->
             {error, {not_found, Url}, S2};
         {ok, _Url, _Headers} ->
@@ -151,12 +181,12 @@ run(get_existing, KeyGen, _ValueGen, State) ->
     end;
 run(update, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State) of
         {error, Reason} ->
             {error, Reason, S2};
 
         {not_found, Url} ->
-            case do_put(Url, [], ValueGen) of
+            case do_put(Url, [], ValueGen, State) of
                 ok ->
                     {ok, S2};
                 {error, Reason} ->
@@ -165,7 +195,7 @@ run(update, KeyGen, ValueGen, State) ->
 
         {ok, Url, Headers} ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
-            case do_put(Url, [State#state.client_id, Vclock], ValueGen) of
+            case do_put(Url, [State#state.client_id, Vclock], ValueGen, State) of
                 ok ->
                     {ok, S2};
                 {error, Reason} ->
@@ -174,7 +204,7 @@ run(update, KeyGen, ValueGen, State) ->
     end;
 run(update_existing, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
-    case do_get(url(NextUrl, KeyGen, State#state.path_params)) of
+    case do_get(url(NextUrl, KeyGen, State#state.path_params), State) of
         {error, Reason} ->
             {error, Reason, S2};
 
@@ -183,7 +213,7 @@ run(update_existing, KeyGen, ValueGen, State) ->
 
         {ok, Url, Headers} ->
             Vclock = lists:keyfind("X-Riak-Vclock", 1, Headers),
-            case do_put(Url, [State#state.client_id, Vclock], ValueGen) of
+            case do_put(Url, [State#state.client_id, Vclock], ValueGen, State) of
                 ok ->
                     {ok, S2};
                 {error, Reason} ->
@@ -197,7 +227,7 @@ run(insert, KeyGen, ValueGen, State) ->
     %% output of the keygen is ignored.
     KeyGen(),
     {NextUrl, S2} = next_url(State),
-    case do_post(url(NextUrl, State#state.path_params), [], ValueGen) of
+    case do_post(url(NextUrl, State#state.path_params), [], ValueGen, State) of
         ok ->
             {ok, S2};
         {error, Reason} ->
@@ -206,7 +236,7 @@ run(insert, KeyGen, ValueGen, State) ->
 run(put, KeyGen, ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     Url = url(NextUrl, KeyGen, State#state.path_params),
-    case do_put(Url, [State#state.client_id], ValueGen) of
+    case do_put(Url, [State#state.client_id], ValueGen, State) of
         ok ->
             {ok, S2};
         {error, Reason} ->
@@ -215,7 +245,7 @@ run(put, KeyGen, ValueGen, State) ->
 run(delete, KeyGen, _ValueGen, State) ->
     {NextUrl, S2} = next_url(State),
     Url = url(NextUrl, KeyGen, State#state.path_params),
-    case do_delete(Url, [State#state.client_id]) of
+    case do_delete(Url, [State#state.client_id], State) of
         ok ->
             {ok, S2};
         {error, Reason} ->
@@ -232,7 +262,7 @@ run(put_file, _, _, State) ->
     Key = filename:basename(File),
     {ok, Val} = file:read_file(File),
     Url = url(NextUrl, Key, State#state.path_params),
-    case do_put(Url, [State#state.client_id], Val) of
+    case do_put(Url, [State#state.client_id], Val, State) of
         ok -> {ok, S3};
         {error, Reason} -> {error, Reason, S3}
     end;
@@ -242,7 +272,7 @@ run({search, {Qry, Expected}}, _, _, State) ->
     SolrPath = State#state.solr_path,
     Encoded = mochiweb_util:urlencode([{q, Qry}, {wt, "json"}, {fl, "id"}]),
     SearchUrl = search_url(NextUrl, SolrPath, Encoded),
-    Res = do_get(SearchUrl, [{body_on_success, true}]),
+    Res = do_get(SearchUrl, [{body_on_success, true}], State),
     case Res of
         {ok, _, _, Body} ->
             Struct = mochijson2:decode(Body),
@@ -264,7 +294,7 @@ run(search, _KeyGen, _ValueGen, State) ->
     %% Handle missing searchgen
     {NextUrl, S2} = next_url(State),
     SearchUrl = search_url(NextUrl, State#state.solr_path, State#state.searchgen),
-    SearchRes = do_get(SearchUrl),
+    SearchRes = do_get(SearchUrl, State),
     case SearchRes of
         {ok, _Url, _Headers} ->
             {ok, S2};
@@ -333,8 +363,8 @@ search_url(BaseUrl, SolrPath, SearchGen) ->
 stat_url(BaseUrl) ->
     BaseUrl#url{path="/stats"}.
 
-do_stat(Url) ->
-    case send_request(Url, [], get, [], [{response_format, binary}]) of
+do_stat(Url, S) ->
+    case send_request(Url, [], get, [], [{response_format, binary}], S) of
         {ok, "200", Headers, _Body} ->
             {ok, Url, Headers};
         {ok, Code, _, _} ->
@@ -343,11 +373,11 @@ do_stat(Url) ->
             {error, Reason}
     end.
 
-do_get(Url) ->
-    do_get(Url, []).
+do_get(Url, S) ->
+    do_get(Url, [], S).
 
-do_get(Url, Opts) ->
-    case send_request(Url, [], get, [], [{response_format, binary}]) of
+do_get(Url, Opts, S) ->
+    case send_request(Url, [], get, [], [{response_format, binary}], S) of
         {ok, "404", _Headers, _Body} ->
             {not_found, Url};
         {ok, "300", Headers, _Body} ->
@@ -363,14 +393,14 @@ do_get(Url, Opts) ->
             {error, Reason}
     end.
 
-do_put(Url, Headers, ValueGen) ->
+do_put(Url, Headers, ValueGen, S) ->
     Val = if is_function(ValueGen) ->
                   ValueGen();
              true ->
                   ValueGen
           end,
     case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      put, Val, [{response_format, binary}]) of
+                      put, Val, [{response_format, binary}], S) of
         {ok, "204", _Header, _Body} ->
             ok;
         {ok, Code, _Header, _Body} ->
@@ -379,9 +409,9 @@ do_put(Url, Headers, ValueGen) ->
             {error, Reason}
     end.
 
-do_post(Url, Headers, ValueGen) ->
+do_post(Url, Headers, ValueGen, S) ->
     case send_request(Url, Headers ++ [{'Content-Type', 'application/octet-stream'}],
-                      post, ValueGen(), [{response_format, binary}]) of
+                      post, ValueGen(), [{response_format, binary}], S) of
         {ok, "201", _Header, _Body} ->
             ok;
         {ok, "204", _Header, _Body} ->
@@ -392,8 +422,8 @@ do_post(Url, Headers, ValueGen) ->
             {error, Reason}
     end.
 
-do_delete(Url, Headers) ->
-    case send_request(Url, Headers, delete, [], []) of
+do_delete(Url, Headers, S) ->
+    case send_request(Url, Headers, delete, [], [], S) of
         {ok, "204", _Header, _Body} ->
             ok;
         {ok, "404", _Header, _Body} ->
@@ -475,22 +505,17 @@ clear_disconnect_freq(Url) ->
         _Seconds -> erlang:put({last_disconnect, Url#url.host}, erlang:now())
     end.
 
-send_request(Url, Headers, Method, Body, Options) ->
-    send_request(Url, Headers, Method, Body, Options, 3).
+send_request(Url, Headers, Method, Body, Options, S) ->
+    send_request(Url, Headers, Method, Body, Options, 3, S).
 
-send_request(_Url, _Headers, _Method, _Body, _Options, 0) ->
+send_request(_Url, _Headers, _Method, _Body, _Options, 0, _S) ->
     {error, max_retries};
-send_request(Url, Headers, Method, Body, Options, Count) ->
+send_request(Url, Headers, Method, Body, Options, Count, S) ->
     Pid = connect(Url),
-    Options2 = case basho_bench_config:get(http_use_ssl, false) of
-                   false ->
-                       Options;
-                   true ->
-                       [{is_ssl, true}, {ssl_options, []} | Options];
-                   SSLOpts when is_list(SSLOpts) ->
-                       [{is_ssl, true}, {ssl_options, SSLOpts} | Options]
-               end,
-    case catch(ibrowse_http_client:send_req(Pid, Url, Headers ++ basho_bench_config:get(http_raw_append_headers,[]), Method, Body, Options2, basho_bench_config:get(http_raw_request_timeout, 5000))) of
+    SockOpts = [{reuseaddr, true}, {nodelay, true}, {delay_send, false},
+                S#state.opt_ssl_options],
+    Options2 = Options ++ SockOpts,
+    case catch(ibrowse_http_client:send_req(Pid, Url, Headers ++ S#state.opt_raw_headers, Method, Body, Options2, S#state.opt_request_timeout)) of
         {ok, Status, RespHeaders, RespBody} ->
             maybe_disconnect(Url),
             {ok, Status, RespHeaders, RespBody};
@@ -500,7 +525,7 @@ send_request(Url, Headers, Method, Body, Options, Count) ->
             disconnect(Url),
             case should_retry(Error) of
                 true ->
-                    send_request(Url, Headers, Method, Body, Options, Count-1);
+                    send_request(Url, Headers, Method, Body, Options, Count-1, S);
 
                 false ->
                     normalize_error(Method, Error)
@@ -517,3 +542,10 @@ should_retry(_)                          -> false.
 normalize_error(Method, {'EXIT', {timeout, _}})  -> {error, {Method, timeout}};
 normalize_error(Method, {'EXIT', Reason})        -> {error, {Method, 'EXIT', Reason}};
 normalize_error(Method, {error, Reason})         -> {error, {Method, Reason}}.
+
+sanity_check_hostname(Str) when is_list(Str) ->
+    true;
+sanity_check_hostname(T) when is_tuple(T) ->
+    error_logger:warning_msg("Error: ~w: ibrowse client cannot handle Erlang tuple-style IP addresses, please use hostname/IP as a string\n", [T]),
+    timer:sleep(1000),
+    exit(bad_config).
