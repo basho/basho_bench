@@ -180,6 +180,8 @@ new({valgen, ValGen}, Id) ->
     basho_bench_valgen:new(ValGen, Id);
 new(Bin, _Id) when is_binary(Bin) ->
     fun() -> Bin end;
+new(List, _Id) when is_list(List) ->
+    fun() -> List end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid key generator requested: ~p\n", [Other]).
 
