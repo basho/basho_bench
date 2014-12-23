@@ -17,7 +17,7 @@
 %% 1. Set cs_access_key and cs_secret_key for existing user.
 %%    Replace this with a user you have created.
 %%    Instructions to create a user are here:
-%%    https://github.com/basho/riak_cs/wiki/Creating-a-User
+%%    http://docs.basho.com/riakcs/latest/cookbooks/Account-Management/#Creating-a-User-Account
 {cs_access_key, "ZG7SS3ZPECF-8LZOEBMA"}.
 {cs_secret_key, "21HoIRdeO617nJrIbam9mKH2MBxmcsMEwESvmQ=="}.
 
