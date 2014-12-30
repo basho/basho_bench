@@ -30,7 +30,11 @@
 -record(state, { client,
                  keyspace,
                  columnfamily,
-                 column
+                 column,
+                 get_query,
+                 insert_query,
+                 put_query,
+                 delete_query
                }).
 
 
@@ -46,18 +50,39 @@ new(Id) ->
     Column = basho_bench_config:get(cassandra_column, "Column"),
 
     %% connect to client
-    application:ensure_all_started(cqerl),
-    {ok, C} = cqerl:new_client({Host, Port}),
+        application:ensure_all_started(cqerl),
+        {ok, C} = cqerl:new_client({Host, Port}),
     error_logger:info_msg("Id: ~p, "
         "Connected to Cassandra at Host ~p and Port ~p\n", [Id, Host, Port]),
 
 
     case ksbarrier(C, Keyspace) of
         ok ->
+            %% Build parameterized, reusable queries as we assume a typical
+            %% high-volume Cassandra application would.
+            GetQueryText = iolist_to_binary(["SELECT ", Column ," FROM ", ColumnFamily ," where KEY = :key"]),
+            GetQuery = #cql_query{statement = GetQueryText,
+                consistency = ?CQERL_CONSISTENCY_ONE},
+            InsertQueryText = iolist_to_binary(["INSERT INTO ", ColumnFamily ,
+                " (KEY, ", Column, ") VALUES "
+                "(:key, :val);"]),
+            InsertQuery = #cql_query{statement = InsertQueryText,
+                consistency = ?CQERL_CONSISTENCY_ANY},
+            PutQueryText = iolist_to_binary(["UPDATE ", ColumnFamily,
+                " SET ", Column, " = :val WHERE KEY = :key;"]),
+            PutQuery = #cql_query{statement = PutQueryText,
+                consistency = ?CQERL_CONSISTENCY_ANY},
+            DeleteQueryText = ["DELETE FROM ", ColumnFamily ," WHERE KEY = :key;"],
+            DeleteQuery = #cql_query{statement = DeleteQueryText,
+                consistency = ?CQERL_CONSISTENCY_ANY},
 			{ok, #state { client = C,
 						  keyspace = Keyspace,
 						  columnfamily = ColumnFamily,
-						  column = Column}};
+						  column = Column,
+                          get_query = GetQuery,
+                          insert_query = InsertQuery,
+                          put_query = PutQuery,
+                          delete_query = DeleteQuery}};
         {error, Reason} ->
 			error_logger:error_msg("Failed to get a cqerl client for ~p: ~p\n",
                                    [Host, Reason])
@@ -76,73 +101,46 @@ ksbarrier(C, Keyspace) ->
 	end.
 
 run(get, KeyGen, _ValueGen,
-	#state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
+	#state{client=C, get_query=CqlQuery}=State) ->
 	Key = KeyGen(),
-	Query = ["SELECT ", Column ," FROM ", ColumnFamily ," where KEY = '", Key ,"';"],
-    case cqerl:run_query(C, #cql_query{statement = Query,
-                                       consistency = ?CQERL_CONSISTENCY_ONE}) of
-        {ok,void} ->
-            {ok, State};
-        {ok, {_Rows, _Cols}} ->
+    ParameterizedQuery = CqlQuery#cql_query{values = [{key, Key}]},
+    case cqerl:run_query(C, ParameterizedQuery) of
+        {ok, #cql_result{cql_query=ParameterizedQuery} = _Result} ->
             {ok, State};
         Error ->
             {error, Error, State}
     end;
 run(insert, KeyGen, ValueGen,
-    #state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
+    #state{client=C, insert_query=InsertQuery}=State) ->
     Key = KeyGen(),
     Val = ValueGen(),
-    Query = ["INSERT INTO ", ColumnFamily ,
-               " (KEY, ", Column, ") VALUES "
-               "('", Key ,"', ", bin_to_hexstr(Val) ,");"],
+    ParameterizedQuery = InsertQuery#cql_query{values = [{key, Key}, {val, Val}]},
 
-    case cqerl:run_query(C, #cql_query{statement = Query,
-                                       consistency = ?CQERL_CONSISTENCY_ANY}) of
+    case cqerl:run_query(C, ParameterizedQuery) of
         {ok,void} ->
-            {ok, State};
-        {ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
     end;
 run(put, KeyGen, ValueGen,
-	#state{client=C, columnfamily=ColumnFamily, column=Column}=State) ->
+	#state{client=C, put_query = PutQuery}=State) ->
 	Key = KeyGen(),
 	Val = ValueGen(),
-	Query = ["UPDATE ", ColumnFamily,
-             " SET ", Column, " = ", bin_to_hexstr(Val),
-             " WHERE KEY = '", Key, "';"],
+	ParameterizedQuery = PutQuery#cql_query{values = [{key, Key}, {val, Val}]},
 
-    case cqerl:run_query(C, #cql_query{statement = Query,
-                                       consistency = ?CQERL_CONSISTENCY_ANY}) of
+    case cqerl:run_query(C, ParameterizedQuery) of
         {ok,void} ->
-            {ok, State};
-		{ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
     end;
 run(delete, KeyGen, _ValueGen,
-    #state{client=C, columnfamily=ColumnFamily}=State) ->
+    #state{client=C, delete_query=DeleteQuery}=State) ->
 	Key = KeyGen(),
-	Query = ["DELETE FROM ", ColumnFamily ," WHERE KEY = '", Key ,"';"],
-    case cqerl:run_query(C, #cql_query{statement = Query,
-                                       consistency = ?CQERL_CONSISTENCY_ANY}) of
+    ParameterizedQuery = DeleteQuery#cql_query{values = [{key, Key}]},
+    case cqerl:run_query(C, ParameterizedQuery) of
         {ok,void} ->
-            {ok, State};
-        {ok, {_Rows, _Cols}} ->
             {ok, State};
         Error ->
             {error, Error, State}
     end.
-
-%% Internal Functions
-
-hex(N) when N < 10 ->
-    $0+N;
-hex(N) when N >= 10, N < 16 ->
-    $a+(N-10).
-
-bin_to_hexstr(Bin) ->
-    List = binary_to_list(Bin),
-    ["0x", [ [hex(N div 16), hex(N rem 16)] || N <- List, N < 256 ] ].
