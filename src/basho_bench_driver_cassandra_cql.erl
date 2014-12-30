@@ -144,14 +144,3 @@ run(delete, KeyGen, _ValueGen,
         Error ->
             {error, Error, State}
     end.
-
-%% Internal Functions
-
-hex(N) when N < 10 ->
-    $0+N;
-hex(N) when N >= 10, N < 16 ->
-    $a+(N-10).
-
-bin_to_hexstr(Bin) ->
-    List = binary_to_list(Bin),
-    ["0x", [ [hex(N div 16), hex(N rem 16)] || N <- List, N < 256 ] ].
