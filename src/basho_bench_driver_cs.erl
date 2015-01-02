@@ -68,12 +68,17 @@ new(ID) ->
         %% Use standard IEC units for KB/s, KiB/s, MB/s, MiB/s.
         %% See http://en.wikipedia.org/wiki/Mebibyte for more information.
         case (catch basho_bench_config:get(cs_measurement_units)) of
-            N = ops_sec  -> {N, fun(X) -> 1.0 end};
+            N = ops_sec  -> {N, fun(_) -> 1.0 end};
             N = byte_sec -> {N, fun(X) -> X / 1 end};
             N = kb_sec   -> {N, fun(X) -> X / 1000 end};
             N = kib_sec  -> {N, fun(X) -> X / 1024 end};
             N = mb_sec   -> {N, fun(X) -> X / (1000 * 1000) end};
             N = mib_sec  -> {N, fun(X) -> X / (1024 * 1024) end};
+            _ ->
+                lager:log(
+                  error, self(),
+                  "Unrecognized value for cs_measurement_units.\n", []),
+                exit(unrecognized_value)
         end,
     if ID == 1 ->
             application:start(ibrowse),
@@ -89,7 +94,7 @@ new(ID) ->
     put(?PERHAPS_KEY, ID),
 
     OpsList = basho_bench_config:get(operations, []),
-    case RF_name /= op_sec andalso
+    case RF_name /= ops_sec andalso
          lists:keymember(delete, 1, OpsList) andalso
          length(OpsList) > 1 of
         true ->

@@ -36,7 +36,7 @@ if (is.null(opt$width))   { opt$width   = 1280 }
 if (is.null(opt$height))  { opt$height  = 960 }
 if (is.null(opt$indir))   { opt$indir  = "current"}
 if (is.null(opt$outfile)) { opt$outfile = file.path(opt$indir, "summary.png") }
-if (is.null(opt$ylabel1stgraph)) { opt$ylabel1stgraph = "Op/sec" }
+if (is.null(opt$ylabel1stgraph)) { opt$ylabel1stgraph = "Ops/sec" }
 if (is.null(opt$title)) { opt$title = "Throughput" }
 
 # Load the benchmark data, passing the time-index range we're interested in

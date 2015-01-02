@@ -35,6 +35,8 @@ distclean: clean
 results:
 	Rscript --vanilla priv/summary.r -i tests/current
 
+ops_sec-results: results
+
 byte_sec-results:
 	Rscript --vanilla priv/summary.r --ylabel1stgraph byte/sec -i tests/current
 
