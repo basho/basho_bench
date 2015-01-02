@@ -61,15 +61,19 @@ new(ID) ->
     Disconnect = basho_bench_config:get(cs_disconnect_frequency, infinity),
     erlang:put(disconnect_freq, Disconnect),
 
-    %% Get our measurement units: op/sec, Byte/sec, KByte/sec, MByte/sec
+    %% Get our measurement units: ops/sec, Byte/sec, KB/sec, KiB/sec, MB/sec, MiB/sec.
+    %% Throw a run-time exception if the config file has cs_measurement_units set 
+    %% to an unrecognized value.
     {RF_name, ReportFun} =
-        %% We need to be really careful with these custom units things.
-        %% Use floats for everything.
+        %% Use standard IEC units for KB/s, KiB/s, MB/s, MiB/s.
+        %% See http://en.wikipedia.org/wiki/Mebibyte for more information.
         case (catch basho_bench_config:get(cs_measurement_units)) of
-            N = byte_sec  -> {N,      fun(X) -> X / 1 end};
-            N = kbyte_sec -> {N,      fun(X) -> X / 1024 end};
-            N = mbyte_sec -> {N,      fun(X) -> X / (1024 * 1024) end};
-            _             -> {op_sec, fun(_) -> 1.0 end}
+            N = ops_sec  -> {N, fun(X) -> 1.0 end};
+            N = byte_sec -> {N, fun(X) -> X / 1 end};
+            N = kb_sec   -> {N, fun(X) -> X / 1000 end};
+            N = kib_sec  -> {N, fun(X) -> X / 1024 end};
+            N = mb_sec   -> {N, fun(X) -> X / (1000 * 1000) end};
+            N = mib_sec  -> {N, fun(X) -> X / (1024 * 1024) end};
         end,
     if ID == 1 ->
             application:start(ibrowse),
