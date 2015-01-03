@@ -38,10 +38,12 @@
 {cs_http_proxy_host, [{"localhost", 8080}, {"127.0.0.1", 8080}, {{127,0,0,1}, 8080}]}.
 {cs_http_proxy_port, 8080}.
 {cs_request_timeout, 999999000}.
+% Valid values for cs_measurement_units are ops_sec, byte_sec, kb_sec, 
+% kib_sec, mb_sec, or mib_sec.
 % If using the cs_measurement_units option, you need to change
 % any R graph's labels of the Y axis, e.g. basho_bench's Makefile target
-% "make mbyte_sec-results"
-{cs_measurement_units, mbyte_sec}.
+% "make mb_sec-results"
+{cs_measurement_units, mb_sec}.
 
 {key_generator, {int_to_str, {partitioned_sequential_int, 1000}}}.
 %{key_generator, {int_to_str, {uniform_int, 1000}}}.

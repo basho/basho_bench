@@ -35,14 +35,22 @@ distclean: clean
 results:
 	Rscript --vanilla priv/summary.r -i tests/current
 
+ops_sec-results: results
+
 byte_sec-results:
 	Rscript --vanilla priv/summary.r --ylabel1stgraph byte/sec -i tests/current
 
-kbyte_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph Kbyte/sec -i tests/current
+kb_sec-results:
+	Rscript --vanilla priv/summary.r --ylabel1stgraph KB/sec -i tests/current
 
-mbyte_sec-results:
-	Rscript --vanilla priv/summary.r --ylabel1stgraph Mbyte/sec -i tests/current
+kib_sec-results:
+	Rscript --vanilla priv/summary.r --ylabel1stgraph KiB/sec -i tests/current
+
+mb_sec-results:
+	Rscript --vanilla priv/summary.r --ylabel1stgraph MB/sec -i tests/current
+
+mib_sec-results:
+	Rscript --vanilla priv/summary.r --ylabel1stgraph MiB/sec -i tests/current
 
 TARGETS := $(shell ls tests/ | grep -v current)
 JOBS := $(addprefix job,${TARGETS})
