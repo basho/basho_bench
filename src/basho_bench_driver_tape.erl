@@ -98,7 +98,8 @@ new(Id) ->
     end.
 
 
-run(put, _KeyGen, _ValueGen, #state{tape_data = []}) ->
+run(put, _KeyGen, _ValueGen, #state{first_post = T0, tape_data = []}) ->
+    ?INFO("All data inserted in ~p msec\n", [timer:now_diff(os:timestamp(), T0) div 1000]),
     {stop, eof};
 
 run(put, _, _, State = #state{first_post = T0,
