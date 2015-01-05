@@ -69,10 +69,10 @@ new(Id) ->
     TapeDataConverted =
         case CT of
             "application/octet-stream" ->
-                [{TS, {term_to_binary(K), term_to_binary(V)}}
+                [{TS, {list_to_binary(K), V}}
                  || {TS, {K, V}} <- TapeData];
             "application/json" ->
-                [{TS, {term_to_binary(K), mochijson2:encode(V)}}
+                [{TS, {list_to_binary(K), V}}
                  || {TS, {K, V}} <- TapeData];
             _Unsupported ->
                 ?FAIL_MSG("Unsupported content type: ~p\n", [_Unsupported])
