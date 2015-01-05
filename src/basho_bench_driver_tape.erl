@@ -107,7 +107,7 @@ run(put, _, _, State = #state{first_post = T0,
                          Key, Value,
                          State#state.content_type),
     ThisRecordDue = advance_now(T0, TS),
-    case timer:now_diff(os:timestamp(), ThisRecordDue) of
+    case timer:now_diff(ThisRecordDue, os:timestamp()) of
         UsecToSleep when UsecToSleep > 0 ->
             timer:sleep(round(UsecToSleep / 1000));
             % apply_after() may blow things up, so sleep() is appropriate here
