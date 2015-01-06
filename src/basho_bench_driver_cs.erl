@@ -374,13 +374,17 @@ maybe_disconnect(Url) ->
         Seconds -> should_disconnect_secs(Seconds,Url) andalso disconnect(Url)
     end.
 
+should_disconnect_ops(Count, _) when Count =< 0 ->
+    false;
+should_disconnect_ops(Count, _) when Count =:= 1 ->
+    true;
 should_disconnect_ops(Count, {Host, Port}) ->
     Key = {ops_since_disconnect, {Host, Port}},
     case erlang:get(Key) of
         undefined ->
             erlang:put(Key, 1),
             false;
-        Count ->
+        CountUntilLastOne when CountUntilLastOne =:= Count - 1 ->
             erlang:put(Key, 0),
             true;
         Incr ->
