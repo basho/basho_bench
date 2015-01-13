@@ -55,6 +55,9 @@ new({{int_to_bin_littleendian, Bits}, InputGen}, Id) ->
 new({int_to_str, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> integer_to_list(Gen()) end;
+new({str_to_bin, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> list_to_binary(Gen()) end;
 new({bin_to_str, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> binary_to_list(Gen()) end;
