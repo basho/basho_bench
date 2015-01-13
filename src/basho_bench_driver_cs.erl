@@ -42,6 +42,7 @@
                  bucket,
                  report_fun,
                  working_op,
+                 current_host,
                  req_id,
                  http_proxy_host,
                  http_proxy_port
@@ -335,22 +336,22 @@ url(Host, Port, Bucket, Key) ->
 %% that
 next_host(State=#state{hosts=Hosts}) ->
     [Host] = Hosts,
-    {Host, State}.
+    {Host, State#state{current_host = Host}}.
 
 %% This is ripped from basho_bench_driver_http_raw.erl
-connect(Url={Host, Port}) ->
-    case erlang:get({ibrowse_pid, Url}) of
+connect(Host) ->
+    case erlang:get({ibrowse_pid, Host}) of
         undefined ->
-            {ok, Pid} = ibrowse_http_client:start({Host, Port}),
-            erlang:put({ibrowse_pid, Url}, Pid),
+            {ok, Pid} = ibrowse_http_client:start(Host),
+            erlang:put({ibrowse_pid, Host}, Pid),
             Pid;
         Pid ->
             case is_process_alive(Pid) of
                 true ->
                     Pid;
                 false ->
-                    erlang:erase({ibrowse_pid, Url}),
-                    connect(Url)
+                    erlang:erase({ibrowse_pid, Host}),
+                    connect(Host)
             end
     end.
 
@@ -373,13 +374,17 @@ maybe_disconnect(Url) ->
         Seconds -> should_disconnect_secs(Seconds,Url) andalso disconnect(Url)
     end.
 
+should_disconnect_ops(Count, _) when Count =< 0 ->
+    false;
+should_disconnect_ops(Count, _) when Count =:= 1 ->
+    true;
 should_disconnect_ops(Count, {Host, Port}) ->
     Key = {ops_since_disconnect, {Host, Port}},
     case erlang:get(Key) of
         undefined ->
             erlang:put(Key, 1),
             false;
-        Count ->
+        CountUntilLastOne when CountUntilLastOne =:= Count - 1 ->
             erlang:put(Key, 0),
             true;
         Incr ->
@@ -507,7 +512,7 @@ do_get_loop(#state{req_id = ReqId} = State) ->
     do_get_loop(0, os:timestamp(), State).
 
 do_get_loop(Sum, StartT,
-            #state{req_id = ReqId, report_fun = ReportFun} = State) ->
+            #state{req_id = ReqId, report_fun = ReportFun, current_host = Host} = State) ->
     receive
         {ibrowse_async_response, ReqId, Bin} ->
             ibrowse:stream_next(ReqId),
@@ -521,6 +526,7 @@ do_get_loop(Sum, StartT,
                     do_get_loop(NewSum, StartT, State)
             end;
         {ibrowse_async_response_end, ReqId} ->
+            maybe_disconnect(Host),
             DiffT = timer:now_diff(os:timestamp(), StartT),
             basho_bench_stats:op_complete(
               {get,get}, {ok, ReportFun(Sum)}, DiffT),
