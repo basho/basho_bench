@@ -48,7 +48,8 @@ new(Id) ->
     Keyspace = basho_bench_config:get(cassandra_keyspace, "Keyspace1"),
     ColumnFamily = basho_bench_config:get(cassandra_columnfamily, "ColumnFamily1"),
     Column = basho_bench_config:get(cassandra_column, "Column"),
-
+    ReadConsistency = basho_bench_config:get(cassandra_read_consistency, ?CQERL_CONSISTENCY_ONE),
+    WriteConsistency = basho_bench_config:get(cassandra_write_consistency, ?CQERL_CONSISTENCY_THREE),
     %% connect to client
         application:ensure_all_started(cqerl),
         {ok, C} = cqerl:new_client({Host, Port}),
@@ -61,20 +62,17 @@ new(Id) ->
             %% Build parameterized, reusable queries as we assume a typical
             %% high-volume Cassandra application would.
             GetQueryText = iolist_to_binary(["SELECT ", Column ," FROM ", ColumnFamily ," where KEY = :key"]),
-            GetQuery = #cql_query{statement = GetQueryText,
-                consistency = ?CQERL_CONSISTENCY_ONE},
+            GetQuery = #cql_query{statement = GetQueryText, consistency = ReadConsistency},
             InsertQueryText = iolist_to_binary(["INSERT INTO ", ColumnFamily ,
                 " (KEY, ", Column, ") VALUES "
                 "(:key, :val);"]),
-            InsertQuery = #cql_query{statement = InsertQueryText,
-                consistency = ?CQERL_CONSISTENCY_ANY},
+            InsertQuery = #cql_query{statement = InsertQueryText, consistency = WriteConsistency},
             PutQueryText = iolist_to_binary(["UPDATE ", ColumnFamily,
                 " SET ", Column, " = :val WHERE KEY = :key;"]),
-            PutQuery = #cql_query{statement = PutQueryText,
-                consistency = ?CQERL_CONSISTENCY_ANY},
+            PutQuery = #cql_query{statement = PutQueryText, consistency = WriteConsistency},
             DeleteQueryText = ["DELETE FROM ", ColumnFamily ," WHERE KEY = :key;"],
-            DeleteQuery = #cql_query{statement = DeleteQueryText,
-                consistency = ?CQERL_CONSISTENCY_ANY},
+            DeleteQuery = #cql_query{statement = DeleteQueryText, consistency = WriteConsistency},
+
 			{ok, #state { client = C,
 						  keyspace = Keyspace,
 						  columnfamily = ColumnFamily,
