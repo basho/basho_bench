@@ -43,19 +43,20 @@
 %% ====================================================================
 
 new(Id) ->
-    Host    = basho_bench_config:get(cassandra_host, "localhost"),
-    Port     = basho_bench_config:get(cassandra_port, 9042),
+    Ips = basho_bench_config:get(cassandra_ips, [{"localhost", 9042}]),
+    Port = basho_bench_config:get(cassandra_port, 9042),
     Keyspace = basho_bench_config:get(cassandra_keyspace, "Keyspace1"),
     ColumnFamily = basho_bench_config:get(cassandra_columnfamily, "ColumnFamily1"),
     Column = basho_bench_config:get(cassandra_column, "Column"),
     ReadConsistency = basho_bench_config:get(cassandra_read_consistency, ?CQERL_CONSISTENCY_ONE),
     WriteConsistency = basho_bench_config:get(cassandra_write_consistency, ?CQERL_CONSISTENCY_THREE),
     %% connect to client
+        %% Choose the target node using our ID as a modulus
+        Targets = basho_bench_config:normalize_ips(Ips, Port),
+        {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
+        ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
         application:ensure_all_started(cqerl),
-        {ok, C} = cqerl:new_client({Host, Port}),
-    error_logger:info_msg("Id: ~p, "
-        "Connected to Cassandra at Host ~p and Port ~p\n", [Id, Host, Port]),
-
+        {ok, C} = cqerl:new_client({TargetIp, TargetPort}),
 
     case ksbarrier(C, Keyspace) of
         ok ->
@@ -83,7 +84,7 @@ new(Id) ->
                           delete_query = DeleteQuery}};
         {error, Reason} ->
 			error_logger:error_msg("Failed to get a cqerl client for ~p: ~p\n",
-                                   [Host, Reason])
+                                   [TargetIp, Reason])
     end.
 
 
