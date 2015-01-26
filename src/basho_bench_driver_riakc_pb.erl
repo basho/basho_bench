@@ -524,26 +524,19 @@ maybe_delete_key({ok, State}, Key) ->
         {error, Reason} ->
             {error, Reason, State}
     end,
-    maybe_durable_get(Result, Key, 2);
+    maybe_durable_get(Result, Key);
 maybe_delete_key({error, Reason, State}, _Key) ->
     {error, Reason, State}.
 
-maybe_durable_get({ok, State}, Key, RequestedOps) ->
-    maybe_durable_get({ok, State}, Key, 0, RequestedOps);
-maybe_durable_get({error, Reason, State}, _Key, _RequestedOps) ->
-    {error, Reason, State}.
-
-maybe_durable_get({ok, State}, Key, NumOps, RequestedOps) when NumOps < RequestedOps ->
+maybe_durable_get({ok, State}, Key) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
                              [{r, all}, {pr, all}], State#state.timeout_read) of
         ok ->
-            maybe_durable_get({ok, State}, Key, NumOps + 1, RequestedOps);
+            {ok, State};
         {error, Reason} ->
             {error, Reason}
     end;
-maybe_durable_get({ok, State}, _Key, NumOps, RequestedOps) when NumOps >= RequestedOps ->
-    {ok, State};
-maybe_durable_get({error, Reason, State}, _Key, _NumOps, _RequestedOps) ->
+maybe_durable_get({error, Reason, State}, _Key) ->
     {error, Reason, State}.
 
 maybe_put_key({ok, State}, Key, ValueGen) ->
