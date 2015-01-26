@@ -383,6 +383,13 @@ run(delete, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(delete_create, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+
+    PutResult = maybe_put_key(Key, ValueGen, State),
+    DeleteResult = maybe_delete_key(PutResult, Key),
+    maybe_put_key(DeleteResult, Key, ValueGen);
+
 run(listkeys, _KeyGen, _ValueGen, State) ->
     %% Pass on rw
     case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket, State#state.timeout_listkeys) of
@@ -509,6 +516,48 @@ run(counter_val, KeyGen, _ValueGen, State) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+maybe_delete_key({ok, State}, Key) ->
+    Result = case riakc_pb_socket:delete(State#state.pid, State#state.bucket, Key,
+                                [{w, all}, {pw, all}, {dw, all}], State#state.timeout_write) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end,
+    maybe_durable_get(Result, Key, 2);
+maybe_delete_key({error, Reason, State}, _Key) ->
+    {error, Reason, State}.
+
+maybe_durable_get({ok, State}, Key, RequestedOps) ->
+    maybe_durable_get({ok, State}, Key, 0, RequestedOps);
+maybe_durable_get({error, Reason, State}, _Key, _RequestedOps) ->
+    {error, Reason, State}.
+
+maybe_durable_get({ok, State}, Key, NumOps, RequestedOps) when NumOps < RequestedOps ->
+    case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                             [{r, all}, {pr, all}], State#state.timeout_read) of
+        ok ->
+            maybe_durable_get({ok, State}, Key, NumOps + 1, RequestedOps);
+        {error, Reason} ->
+            {error, Reason}
+    end;
+maybe_durable_get({ok, State}, _Key, NumOps, RequestedOps) when NumOps >= RequestedOps ->
+    {ok, State};
+maybe_durable_get({error, Reason, State}, _Key, _NumOps, _RequestedOps) ->
+    {error, Reason, State}.
+
+maybe_put_key({ok, State}, Key, ValueGen) ->
+    Robj = riakc_obj:new(State#state.bucket, Key, ValueGen(), State#state.content_type),
+    case riakc_pb_socket:put(State#state.pid, Robj, [{w, all}, {dw, all}], State#state.timeout_write) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+maybe_put_key({error, Reason, State}, _Key, _ValueGen) ->
+    {error, Reason, State};
+maybe_put_key(Key, ValueGen, State) ->
+    maybe_put_key({ok, State}, Key, ValueGen).
 
 mapred(State, Input, Query) ->
     case riakc_pb_socket:mapred(State#state.pid, Input, Query, State#state.timeout_mapreduce) of
