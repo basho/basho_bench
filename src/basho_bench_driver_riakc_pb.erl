@@ -531,26 +531,29 @@ maybe_delete_key({error, Reason, State}, _Key) ->
 maybe_durable_get({ok, State}, Key) ->
     case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
                              [{r, all}, {pr, all}], State#state.timeout_read) of
-        ok ->
+        {ok, _} ->
+            {ok, State};
+        {error, notfound} ->
             {ok, State};
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason, State}
     end;
 maybe_durable_get({error, Reason, State}, _Key) ->
     {error, Reason, State}.
 
+
 maybe_put_key({ok, State}, Key, ValueGen) ->
+    maybe_put_key(Key, ValueGen, State);
+maybe_put_key({error, Reason, State}, _Key, _ValueGen) ->
+    {error, Reason, State};
+maybe_put_key(Key, ValueGen, State) ->
     Robj = riakc_obj:new(State#state.bucket, Key, ValueGen(), State#state.content_type),
     case riakc_pb_socket:put(State#state.pid, Robj, [{w, all}, {dw, all}], State#state.timeout_write) of
         ok ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
-    end;
-maybe_put_key({error, Reason, State}, _Key, _ValueGen) ->
-    {error, Reason, State};
-maybe_put_key(Key, ValueGen, State) ->
-    maybe_put_key({ok, State}, Key, ValueGen).
+    end.
 
 mapred(State, Input, Query) ->
     case riakc_pb_socket:mapred(State#state.pid, Input, Query, State#state.timeout_mapreduce) of
