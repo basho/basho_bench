@@ -87,8 +87,11 @@ init_source(1, undefined) ->
     SourceSz = basho_bench_config:get(?VAL_GEN_SRC_SIZE, 96*1048576),
     ?INFO("Random source: calling crypto:rand_bytes(~w) (override with the '~w' config option\n", [SourceSz, ?VAL_GEN_SRC_SIZE]),
     Bytes = crypto:rand_bytes(SourceSz),
-    ?TAB = ets:new(?TAB, [public, named_table]),
-    true = ets:insert(?TAB, {x, Bytes}),
+    try
+        ?TAB = ets:new(?TAB, [public, named_table]),
+        true = ets:insert(?TAB, {x, Bytes})
+    catch _:_ -> rerunning_id_1_init_source_table_already_exists
+    end,
     ?INFO("Random source: finished crypto:rand_bytes(~w)\n", [SourceSz]),
     {?VAL_GEN_SRC_SIZE, SourceSz, Bytes};
 init_source(_Id, undefined) ->
