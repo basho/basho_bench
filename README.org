@@ -104,7 +104,7 @@ $ ./priv/gp_throughput.sh
 #+END_SRC
 
 #+BEGIN_SRC shell
-$ ./priv/gp_latency.sh
+$ ./priv/gp_latencies.sh
 #+END_SRC
 
    By passing =-h= option to each script, help messages are shown.
