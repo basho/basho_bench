@@ -62,7 +62,7 @@ new(Id) ->
                     series = Series,
                     rand_bytes = RandBytes,
                     value_size = Size,
-                    timestamp = 0,
+                    timestamp = 1,
                     timeout = Timeout
                    }};
         {error, Reason2} ->
@@ -77,7 +77,7 @@ to_input_batch(Table, Series, Time, N, Size, RandBytes) ->
 add_points(0, _, _, _, B) ->
     B;
 add_points(N, ValSize, RandBytes, Time, B) ->
-    Ofs = random:uniform(byte_size(RandBytes) - ValSize),
+    Ofs = random:uniform(byte_size(RandBytes) - ValSize) - 1,
     <<_:Ofs/binary, V:ValSize/binary, _/binary>> = RandBytes,
     TimeBin = integer_to_binary(Time),
     B2 = <<B/binary, TimeBin/binary, " ", V/binary, "\n">>,
@@ -88,17 +88,46 @@ run({put, N}, _KeyGen, _ValueGen, State =
            table = Table, series = Series, value_size = Size,
            rand_bytes = RandBytes}) ->
     Batch = to_input_batch(Table, Series, Timestamp, N, Size, RandBytes),
+    State2 = State#state{timestamp=Timestamp+N},
     case hackney:send_request(ConnRef,
                               {post, <<"/ts/insert">>,
                                [{<<"Content-Type">>, <<"text/plain">>}],
                                Batch}) of
         {ok, _, _, ConnRef} ->
-            State2 = State#state{timestamp=Timestamp+N},
             case hackney:body(ConnRef) of
                 {ok, _Body} -> 
                     {ok, State2};
                 {error, Error} ->
                     {error, Error, State2}
+            end;
+        {error, ReqError} ->
+            {error, ReqError, State2}
+    end;
+run({get, N}, _KeyGen, _ValueGen, State =
+    #state{timestamp = Timestamp, series = Series,
+           conn_ref = ConnRef, table = Table}) ->
+    % Adjust number if not enough points yet
+    {Start, End} = case Timestamp > N of
+                       true ->
+                           S = random:uniform(Timestamp - N + 1),
+                           {S, S + N};
+                       false ->
+                           {1, Timestamp}
+                   end,
+    SBin = integer_to_binary(Start),
+    EBin = integer_to_binary(End),
+    Query = <<Table/binary, $\n, Series/binary, $\n,
+              SBin/binary, $\n, EBin/binary, $\n>>,
+    case hackney:send_request(ConnRef,
+                              {post, <<"/ts/query">>,
+                               [{<<"Content-Type">>, <<"text/plain">>}],
+                               Query}) of
+        {ok, _, _, ConnRef} ->
+            case hackney:body(ConnRef) of
+                {ok, _Body} ->
+                    {ok, State};
+                {error, Error} ->
+                    {error, Error, State}
             end;
         {error, ReqError} ->
             {error, ReqError, State}
