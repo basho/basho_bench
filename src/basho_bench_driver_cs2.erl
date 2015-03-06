@@ -30,7 +30,7 @@
 %% Riak. This one can handle multiple users and buckets to avoid it.
 
 %% TODO
-%% This driver requires Riak CS is configured as {admin_auth_disabled, true},
+%% This driver requires Riak CS is configured as {admin_auth_enabled, false},
 %% in order to automatically create users and buckets, also list users.
 %% This can be avoided, for example, by reading local file of user list
 %% create by `riak_cs_inspector'.
