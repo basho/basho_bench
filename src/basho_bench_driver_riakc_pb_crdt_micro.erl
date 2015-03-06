@@ -25,6 +25,8 @@
          run/4
          ]).
 
+-export([generate_repeated_bytes/2]).
+
 -include("basho_bench.hrl").
 
 %% This driver is intended to be used without concurrency, as there is no
@@ -59,6 +61,7 @@
                  fields_name_gen,
                  reg_gen,
                  ops_freq,
+                 binsize_gen,
                  object,
                  delta_object
                }).
@@ -119,12 +122,20 @@ new(Id) ->
     {MinSizeBytes, MaxSizeBytes} = basho_bench_config:get(reg_size_in_bytes, {4,4}),
     FieldsNameDomain = basho_bench_config:get(fields_domain, 100),
 
-    MapDepthGen = fun() -> random:uniform(1 + MaxDepth -  MinDepth) end,
-    TxnSizeGen = fun() -> random:uniform(1 + MaxTxnSize -  MinTxnSize) end,
+    MapDepthGen = fun() -> MinDepth - 1 + random:uniform(1 + MaxDepth -  MinDepth) end,
+    TxnSizeGen = fun() -> MinTxnSize - 1 + random:uniform(1 + MaxTxnSize -  MinTxnSize) end,
     RegGen = fun() ->
-                     NBytes = random:uniform(1 + MaxSizeBytes -  MinSizeBytes),
+                     NBytes = MinSizeBytes + random:uniform(1 + MaxSizeBytes -  MinSizeBytes),
                      base64:encode(crypto:strong_rand_bytes(NBytes))
              end,
+
+    BinaryWithSizeGen = fun() ->
+                                Field = random:uniform(FieldsNameDomain),
+                                FieldBin = integer_to_binary(Field),
+                                NBytes = MinSizeBytes - 1 + random:uniform(1 + MaxSizeBytes -  MinSizeBytes),
+                                generate_repeated_bytes(FieldBin, NBytes)
+                        end,
+
     FieldsNameGen = fun() ->
                            integer_to_list(random:uniform(FieldsNameDomain))
                     end,
@@ -169,6 +180,7 @@ new(Id) ->
                           txn_size_gen = TxnSizeGen,
                           map_depth_gen = MapDepthGen,
                           reg_gen = RegGen,
+                          binsize_gen = BinaryWithSizeGen,
                           ops_freq = OpsFreqComputed
                         }};
         {error, Reason2} ->
@@ -176,33 +188,33 @@ new(Id) ->
                       [TargetIp, TargetPort, Reason2])
     end.
 
-run({set, micro_op}, _KeyGen, ValueGen, State) ->
-    Set = case State#state.object of
-              undefined -> ?SET:new();
-              Object -> Object
-          end,
-
-    Result = execute_micro(set, Set, ValueGen, State),
-
-    case Result of
-        {ok, UpdtSet} ->
-            {ok, State#state{object=UpdtSet}};
-        {error, Reason} ->
-            ?INFO("Error on Set write ~p", [Reason]),
-            {error, Reason, State}
-    end;
-
-run({delta_set, micro_op}, _KeyGen, ValueGen, State) ->
+run({{delta, set}, micro_op}, _KeyGen, ValueGen, State) ->
     Set = case State#state.delta_object of
               undefined -> ?DELTA_SET:new();
               Object -> Object
           end,
 
-    Result = execute_micro(delta_set, Set, ValueGen, State),
-
+    %Result = execute_micro({delta, set}, Set, ValueGen, State),
+    Result = execute_micro({delta, set}, Set, ValueGen, State),
     case Result of
         {ok, UpdtSet} ->
             {ok, State#state{delta_object=UpdtSet}};
+        {error, Reason} ->
+            ?INFO("Error on Set write ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+run({{crdt, set}, micro_op}, _KeyGen, ValueGen, State) ->
+    Set = case State#state.object of
+              undefined -> ?SET:new();
+              Object -> Object
+          end,
+
+    Result = execute_micro({crdt, set}, Set, ValueGen, State),
+
+    case Result of
+        {ok, UpdtSet} ->
+            {ok, State#state{object=UpdtSet}};
         {error, Reason} ->
             ?INFO("Error on Set write ~p", [Reason]),
             {error, Reason, State}
@@ -212,22 +224,22 @@ run({delta_set, micro_op}, _KeyGen, ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-execute_micro(set, Set, ValueGen, State) ->
+execute_micro({crdt, set}, Set, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
     NextOp = next_op(State#state.ops_freq, set),
 
-    case gen_micro_op(NextOp, ValueGen, Set, TxnSize) of
+    case gen_micro_op(crdt, NextOp, State#state.binsize_gen, Set, TxnSize) of
         {_, undefined} -> {ok, Set};
         Op ->
             ?INFO("OPS ~p User ~p Context ~p~n",[Op, State#state.id, ?SET:precondition_context(Set)]),
             ?SET:update(Op, State#state.id, Set, ?SET:precondition_context(Set))
     end;
 
-execute_micro(delta_set, Set, ValueGen, State) ->
+execute_micro({delta, set}, Set, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
-    NextOp = next_op(State#state.ops_freq, delta_set),
+    NextOp = next_op(State#state.ops_freq, set),
 
-    case gen_micro_op(NextOp, ValueGen, Set, TxnSize) of
+    case gen_micro_op(delta, NextOp, State#state.binsize_gen, Set, TxnSize) of
         {_, undefined} -> {ok, Set};
         Op ->
             ?INFO("OPS ~p User ~p Context ~p~n",[Op, State#state.id, ?DELTA_SET:precondition_context(Set)]),
@@ -235,10 +247,10 @@ execute_micro(delta_set, Set, ValueGen, State) ->
             {ok, ?DELTA_SET:merge(Set, Updt)}
     end.
 
-gen_micro_op({set, add}, ValueGen, _Set, 1) ->
+gen_micro_op(_Type, {set, add}, ValueGen, _Set, 1) ->
     {add, ValueGen()};
 
-gen_micro_op({set, remove}, _, Set, 1) ->
+gen_micro_op(crdt, {set, remove}, _, Set, 1) ->
     ElementSet = ?SET:value(Set),
     Op = case length(ElementSet) of
              0 -> undefined;
@@ -246,10 +258,7 @@ gen_micro_op({set, remove}, _, Set, 1) ->
          end,
     {remove, Op};
 
-gen_micro_op({delta_set, add}, ValueGen, _Set, 1) ->
-    {add, ValueGen()};
-
-gen_micro_op({delta_set, remove}, _, Set, 1) ->
+gen_micro_op(delta, {set, remove}, _, Set, 1) ->
     ElementSet = ?DELTA_SET:value(Set),
     Op = case length(ElementSet) of
              0 -> undefined;
@@ -257,13 +266,13 @@ gen_micro_op({delta_set, remove}, _, Set, 1) ->
          end,
     {remove, Op};
 
-gen_micro_op({set, add}, ValueGen, _Set, TxnSize) ->
+gen_micro_op(_Type, {set, add}, ValueGen, _Set, TxnSize) ->
     SetOps = lists:foldl(fun(_, OpsAcc) ->
                                  [ValueGen() | OpsAcc]
                          end, [], lists:seq(1,TxnSize)),
     {add_all, SetOps};
 
-gen_micro_op({set, remove}, _, Set, TxnSize) ->
+gen_micro_op(crdt, {set, remove}, _, Set, TxnSize) ->
     ElementSet = ?SET:value(Set),
     SetOps = lists:foldl(fun(_, OpsAcc) ->
                                  case length(ElementSet) of
@@ -274,13 +283,7 @@ gen_micro_op({set, remove}, _, Set, TxnSize) ->
                          end, [], lists:seq(1,TxnSize)),
     {remove_all, SetOps};
 
-gen_micro_op({delta_set, add}, ValueGen, _Set, TxnSize) ->
-    SetOps = lists:foldl(fun(_, OpsAcc) ->
-                                 [ValueGen() | OpsAcc]
-                         end, [], lists:seq(1,TxnSize)),
-    {add_all, SetOps};
-
-gen_micro_op({delta_set, remove}, _, Set, TxnSize) ->
+gen_micro_op(delta, {set, remove}, _, Set, TxnSize) ->
     ElementSet = ?DELTA_SET:value(Set),
     SetOps = lists:foldl(fun(_, OpsAcc) ->
                                  case length(ElementSet) of
@@ -315,6 +318,22 @@ process_ops_freq(OpsFreqPerDt) ->
                                  SumDt = DtFreq + DtAcc,
                                  {{Dt, {OpsUpdt, SumOp}, SumDt}, SumDt}
                          end, 0, OpsFreqPerDt).
+
+%%Possibly expensive computation, but does not require memory and
+%%has equal cost for both solutions.
+generate_repeated_bytes(Bytes, TotalLength) ->
+    BytesLength = size(Bytes),
+    NConcat = case TotalLength >= BytesLength of
+                  true ->
+                      R = TotalLength / BytesLength,
+                      case trunc(R) < R of
+                          true -> R+1;
+                          _ -> R
+                      end;
+                  _ -> 1
+              end,
+    lists:foldl(fun(_,Acc) -> <<Bytes/binary, Acc/binary>> end,
+                Bytes, lists:seq(2, trunc(NConcat))).
 
 get_timeout_general() ->
     basho_bench_config:get(pb_timeout_general, ?TIMEOUT_GENERAL).

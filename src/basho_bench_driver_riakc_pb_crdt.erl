@@ -54,6 +54,7 @@
                  update_rate_gen,
                  fields_name_gen,
                  reg_gen,
+                 binsize_gen,
                  ops_freq
                }).
 
@@ -108,12 +109,20 @@ new(Id) ->
     {MinSizeBytes, MaxSizeBytes} = basho_bench_config:get(reg_size_in_bytes, {4,4}),
     FieldsNameDomain = basho_bench_config:get(fields_domain, 100),
 
-    MapDepthGen = fun() -> random:uniform(1 + MaxDepth -  MinDepth) end,
-    TxnSizeGen = fun() -> random:uniform(1 + MaxTxnSize -  MinTxnSize) end,
+    MapDepthGen = fun() -> MinDepth - 1 + random:uniform(1 + MaxDepth -  MinDepth) end,
+    TxnSizeGen = fun() -> MinTxnSize - 1 + random:uniform(1 + MaxTxnSize -  MinTxnSize) end,
     RegGen = fun() ->
-                     NBytes = random:uniform(1 + MaxSizeBytes -  MinSizeBytes),
+                     NBytes = MinSizeBytes - 1 + random:uniform(1 + MaxSizeBytes -  MinSizeBytes),
                      base64:encode(crypto:strong_rand_bytes(NBytes))
              end,
+
+    BinaryWithSizeGen = fun() ->
+                                Field = random:uniform(FieldsNameDomain),
+                                FieldBin = integer_to_binary(Field),
+                                NBytes = MinSizeBytes - 1 + random:uniform(1 + MaxSizeBytes -  MinSizeBytes),
+                                generate_repeated_bytes(FieldBin, NBytes)
+                        end,
+
     FieldsNameGen = fun() ->
                            integer_to_list(random:uniform(FieldsNameDomain))
                     end,
@@ -157,14 +166,15 @@ new(Id) ->
                           txn_size_gen = TxnSizeGen,
                           map_depth_gen = MapDepthGen,
                           reg_gen = RegGen,
-                          ops_freq = OpsFreqComputed
+                          ops_freq = OpsFreqComputed,
+                          binsize_gen = BinaryWithSizeGen
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
                       [TargetIp, TargetPort, Reason2])
     end.
 
-run({map, update, datatype}, KeyGen, ValueGen, State) ->
+run({{Type, map}, update, datatype}, KeyGen, ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket_map,
@@ -173,10 +183,10 @@ run({map, update, datatype}, KeyGen, ValueGen, State) ->
     Result2 = case Result of
                   {ok, M0} ->
                       ?INFO("Map value ~p",[riakc_map:value(M0)]),
-                      execute(map, Key, M0, ValueGen, State);
+                      execute({Type, map}, Key, M0, ValueGen, State);
                   {error, {notfound, _}} ->
                       M0 = riakc_map:new(),
-                      execute(map, Key, M0, ValueGen, State);
+                      execute({Type, map}, Key, M0, ValueGen, State);
                   {error, Reason} ->
                       ?INFO("Error on Map read ~p",[Reason]),
                       {error, Reason, State}
@@ -192,7 +202,7 @@ run({map, update, datatype}, KeyGen, ValueGen, State) ->
             {error, Reason2, State}
     end;
 
-run({set, op}, KeyGen, ValueGen, State) ->
+run({{Type, set}, op}, KeyGen, ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket_set,
@@ -202,10 +212,10 @@ run({set, op}, KeyGen, ValueGen, State) ->
     Result2 = case Result of
                   {ok, S0} ->
                       ?INFO("Set value ~p~n",[riakc_set:value(S0)]),
-                      execute(set, Key, S0, ValueGen, State);
+                      execute({Type, set}, Key, S0, ValueGen, State);
                   {error, {notfound, _}} ->
                       S0 = riakc_set:new(),
-                      execute(set, Key, S0, ValueGen, State);
+                      execute({Type, set}, Key, S0, ValueGen, State);
                   {error, Reason} ->
                       ?INFO("Error on Set read ~p",[Reason]),
                       {error, Reason, State}
@@ -221,7 +231,7 @@ run({set, op}, KeyGen, ValueGen, State) ->
             {error, Reason2, State}
     end;
 
-run({counter, op}, KeyGen, ValueGen, State) ->
+run({{Type, counter}, op}, KeyGen, ValueGen, State) ->
     Key = integer_to_list(KeyGen()),
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket_counter,
@@ -231,10 +241,10 @@ run({counter, op}, KeyGen, ValueGen, State) ->
     Result2 = case Result of
                   {ok, C0} ->
                       ?INFO("Counter value ~p",[riakc_counter:value(C0)]),
-                      execute(counter, Key, C0, ValueGen, State);
+                      execute({Type, counter}, Key, C0, ValueGen, State);
                   {error, {notfound, _}} ->
                       C0 = riakc_counter:new(),
-                      execute(counter, Key, C0, ValueGen, State);
+                      execute({Type, counter}, Key, C0, ValueGen, State);
                   {error, Reason} ->
                       ?INFO("Error on Counter read ~p",[Reason]),
                       {error, Reason, State}
@@ -254,7 +264,7 @@ run({counter, op}, KeyGen, ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-execute(map, Key, Map0, ValueGen, State) ->
+execute({Type, map}, Key, Map0, ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
     Depth = (State#state.map_depth_gen)(),
     Fields = lists:foldl(fun(_, FieldsAcc) ->
@@ -266,52 +276,55 @@ execute(map, Key, Map0, ValueGen, State) ->
                               %%ups...
                               case NextOp of
                                   {register,_} ->
-                                      execute_op(Fields, NextOp, State#state.reg_gen, Mapi);
+                                      execute_op(Type, Fields, NextOp, State#state.reg_gen, Mapi);
+                                  {set,_} ->
+                                      execute_op(Type, Fields, NextOp, State#state.binsize_gen, Mapi);
                                   _ ->
-                                      execute_op(Fields, NextOp, ValueGen, Mapi)
+                                      execute_op(Type, Fields, NextOp, ValueGen, Mapi)
                               end
                       end, Map0, lists:seq(1,TxnSize)),
 
     riakc_pb_socket:update_type(State#state.pid,
                                 State#state.bucket_map, Key, riakc_map:to_op(Map));
 
-execute(set, Key, Set0, ValueGen, State) ->
+execute({Type, set}, Key, Set0, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
     Set = lists:foldl(fun(_, Seti) ->
                               NextOp = next_op(State#state.ops_freq, set),
-                              execute_op(NextOp, ValueGen, Seti)
+                              execute_op(Type, NextOp, State#state.binsize_gen, Seti)
                       end, Set0, lists:seq(1,TxnSize)),
     riakc_pb_socket:update_type(State#state.pid,
                                 State#state.bucket_set, Key, riakc_set:to_op(Set));
 
-execute(counter, Key, Counter0, ValueGen, State) ->
+execute({Type, counter}, Key, Counter0, ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
     Counter = lists:foldl(fun(_, Counteri) ->
                                   NextOp = next_op(State#state.ops_freq, counter),
-                                  execute_op(NextOp, ValueGen, Counteri)
+                                  execute_op(Type, NextOp, ValueGen, Counteri)
                           end, Counter0, lists:seq(1, TxnSize)),
     riakc_pb_socket:update_type(State#state.pid,
                                 State#state.bucket_counter, Key, riakc_counter:to_op(Counter));
 
-execute(register, Key, Register0, _ValueGen, State) ->
+execute({Type, register}, Key, Register0, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
     Register = lists:foldl(fun(_, Registeri) ->
                                    NextOp = next_op(State#state.ops_freq, register),
-                                   execute_op(NextOp, State#state.reg_gen, Registeri)
+                                   execute_op(Type, NextOp, State#state.reg_gen, Registeri)
                            end, Register0, lists:seq(1, TxnSize)),
     riakc_pb_socket:update_type(State#state.pid,
                                 State#state.bucket_register, Key, riakc_register:to_op(Register)).
 
-execute_op({counter, increment}, _, Counter) ->
+execute_op(crdt, {counter, increment}, _, Counter) ->
     riakc_counter:increment(1, Counter);
 
-execute_op({counter, decrement}, _, Counter) ->
+execute_op(crdt, {counter, decrement}, _, Counter) ->
     riakc_counter:decrement(1, Counter);
 
-execute_op({set, put}, ValueGen, Set) ->
-    riakc_set:add_element(integer_to_binary(ValueGen()), Set);
+execute_op(crdt, {set, put}, ValueGen, Set) ->
+    riakc_set:add_element(ValueGen(), Set);
 
-execute_op({set, remove}, _, Set) ->
+execute_op(crdt, {set, remove}, _, Set) ->
+    io:format("SET REMOVE -------------------------~n"),
     ElementSet = riakc_set:dirty_value(Set),
     case length(ElementSet) of
         0 -> Set;
@@ -319,13 +332,39 @@ execute_op({set, remove}, _, Set) ->
              riakc_set:del_element(DelElem, Set)
     end;
 
-execute_op({register, update}, ValueGen, Register) ->
+execute_op(crdt, {register, update}, ValueGen, Register) ->
     riakc_register:set(ValueGen(), Register);
 
-execute_op({flag, enable}, _ValueGen, Flag) ->
+execute_op(crdt, {flag, enable}, _ValueGen, Flag) ->
     riakc_flag:enable(Flag);
 
-execute_op({flag, disable}, _ValueGen, Flag) ->
+execute_op(crdt, {flag, disable}, _ValueGen, Flag) ->
+    riakc_flag:disable(Flag);
+
+execute_op(delta, {counter, increment}, _, Counter) ->
+    riakc_counter:increment(1, Counter);
+
+execute_op(delta, {counter, decrement}, _, Counter) ->
+    riakc_counter:decrement(1, Counter);
+
+execute_op(delta, {set, put}, ValueGen, Set) ->
+    riakc_set:add_element(ValueGen(), Set);
+
+execute_op(delta, {set, remove}, _, Set) ->
+    ElementSet = riakc_set:dirty_value(Set),
+    case length(ElementSet) of
+        0 -> Set;
+        _ -> DelElem = lists:nth(random:uniform(length(ElementSet)),ElementSet),
+             riakc_set:del_element(DelElem, Set)
+    end;
+
+execute_op(delta, {register, update}, ValueGen, Register) ->
+    riakc_register:set(ValueGen(), Register);
+
+execute_op(delta, {flag, enable}, _ValueGen, Flag) ->
+    riakc_flag:enable(Flag);
+
+execute_op(delta, {flag, disable}, _ValueGen, Flag) ->
     riakc_flag:disable(Flag).
 
 next_op({DtProbRange, _}, DtName) ->
@@ -341,18 +380,18 @@ next_op({DtProbRange, SumDtRange}=OpsFreq) ->
                              end, DtProbRange),
     next_op(OpsFreq, DtName).
 
-execute_op([FieldName], {Type, _Op} = TypeOp, ValueGen, Map) ->
+execute_op(Type, [FieldName], {ObjType, _Op} = TypeOp, ValueGen, Map) ->
     riakc_map:update(
-      {FieldName, Type},
+      {FieldName, ObjType},
       fun(T) ->
-           execute_op(TypeOp, ValueGen, T)
+           execute_op(Type, TypeOp, ValueGen, T)
       end, Map);
 
-execute_op([Head | Tail], Op, ValueGen, Map) ->
+execute_op(Type, [Head | Tail], Op, ValueGen, Map) ->
     riakc_map:update(
       {Head, map},
       fun(M) ->
-              execute_op(Tail, Op, ValueGen, M)
+              execute_op(Type, Tail, Op, ValueGen, M)
       end, Map).
 
 process_ops_freq(OpsFreqPerDt) ->
@@ -367,6 +406,21 @@ process_ops_freq(OpsFreqPerDt) ->
                                  {{Dt, {OpsUpdt, SumOp}, SumDt}, SumDt}
                          end, 0, OpsFreqPerDt).
 
+%%Possibly expensive computation, but does not require memory and
+%%has equal cost for both solutions.
+generate_repeated_bytes(Bytes, TotalLength) ->
+    BytesLength = size(Bytes),
+    NConcat = case TotalLength >= BytesLength of
+                  true ->
+                      R = TotalLength / BytesLength,
+                      case trunc(R) < R of
+                          true -> R+1;
+                          _ -> R
+                      end;
+                  _ -> 1
+              end,
+    lists:foldl(fun(_,Acc) -> <<Bytes/binary, Acc/binary>> end,
+                Bytes, lists:seq(2, trunc(NConcat))).
 
 get_timeout_general() ->
     basho_bench_config:get(pb_timeout_general, ?TIMEOUT_GENERAL).
