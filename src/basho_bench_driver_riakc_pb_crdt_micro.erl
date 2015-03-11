@@ -20,7 +20,6 @@
 %%
 %% -------------------------------------------------------------------
 -module(basho_bench_driver_riakc_pb_crdt_micro).
-
 -export([new/1,
          run/4
          ]).
@@ -61,6 +60,7 @@
                  fields_name_gen,
                  reg_gen,
                  ops_freq,
+                 ops_freq_map,
                  binsize_gen,
                  object,
                  delta_object
@@ -140,7 +140,10 @@ new(Id) ->
                            integer_to_list(random:uniform(FieldsNameDomain))
                     end,
     OpsFreqPerDt = basho_bench_config:get(ops_frequency, []),
+    OpsFreqMapPerDt = basho_bench_config:get(ops_frequency_map, []),
     OpsFreqComputed  = process_ops_freq(OpsFreqPerDt),
+    OpsFreqMapComputed = process_ops_freq(OpsFreqMapPerDt),
+
 
     BucketMap = basho_bench_config:get(riakc_pb_bucket_map, <<"test">>),
     BucketSet = basho_bench_config:get(riakc_pb_bucket_set, <<"test">>),
@@ -181,21 +184,21 @@ new(Id) ->
                           map_depth_gen = MapDepthGen,
                           reg_gen = RegGen,
                           binsize_gen = BinaryWithSizeGen,
-                          ops_freq = OpsFreqComputed
+                          ops_freq = OpsFreqComputed,
+                          ops_freq_map = OpsFreqMapComputed
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
                       [TargetIp, TargetPort, Reason2])
     end.
 
-run({{delta, set}, micro_op}, _KeyGen, ValueGen, State) ->
+run({delta, {Type, micro_op}}, _KeyGen, ValueGen, State) ->
     Set = case State#state.delta_object of
-              undefined -> ?DELTA_SET:new();
+              undefined -> Type:new();
               Object -> Object
           end,
 
-    %Result = execute_micro({delta, set}, Set, ValueGen, State),
-    Result = execute_micro({delta, set}, Set, ValueGen, State),
+    Result = execute_micro({delta, Type}, Set, ValueGen, State),
     case Result of
         {ok, UpdtSet} ->
             {ok, State#state{delta_object=UpdtSet}};
@@ -204,17 +207,46 @@ run({{delta, set}, micro_op}, _KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 
-run({{crdt, set}, micro_op}, _KeyGen, ValueGen, State) ->
+run({crdt, {Type, micro_op}}, _KeyGen, ValueGen, State) ->
     Set = case State#state.object of
-              undefined -> ?SET:new();
+              undefined -> Type:new();
               Object -> Object
           end,
-
-    Result = execute_micro({crdt, set}, Set, ValueGen, State),
+    Result = execute_micro({crdt, Type}, Set, ValueGen, State),
 
     case Result of
         {ok, UpdtSet} ->
             {ok, State#state{object=UpdtSet}};
+        {error, Reason} ->
+            ?INFO("Error on Set write ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+run({delta, {Type, Op}}, _KeyGen, ValueGen, State) ->
+    CRDT = case State#state.delta_object of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+
+    Result = execute_micro({delta, {Type, Op}}, CRDT, ValueGen, State),
+    case Result of
+        {ok, UpdtCRDT} ->
+            {ok, State#state{delta_object=UpdtCRDT}};
+        {error, Reason} ->
+            ?INFO("Error on Set write ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+run({crdt, {Type, Op}}, _KeyGen, ValueGen, State) ->
+    CRDT = case State#state.object of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+
+    Result = execute_micro({crdt, {Type, Op}}, CRDT, ValueGen, State),
+    case Result of
+        {ok, UpdtCRDT} ->
+            {ok, State#state{object=UpdtCRDT}};
         {error, Reason} ->
             ?INFO("Error on Set write ~p", [Reason]),
             {error, Reason, State}
@@ -224,55 +256,138 @@ run({{crdt, set}, micro_op}, _KeyGen, ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 
-execute_micro({crdt, set}, Set, _ValueGen, State) ->
+execute_micro({crdt, riak_dt_map}, CRDT, ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
-    NextOp = next_op(State#state.ops_freq, set),
+    Depth = (State#state.map_depth_gen)(),
+    Fields = lists:foldl(fun(_, FieldsAcc) ->
+                                 ["Field_" ++ (State#state.fields_name_gen)() | FieldsAcc]
+                         end, [], lists:seq(1,Depth)),
+    MapOp = lists:foldl(fun(_, {update, Ops}) ->
+                              NextOp = next_op(State#state.ops_freq_map),
+                              %%ups...
+                              case NextOp of
+                                  {riak_dt_lwwreg,_} ->
+                                      gen_micro_op(Fields, NextOp, State#state.binsize_gen, CRDT, TxnSize);
+                                  %{riakc_set,_} ->
+                                  %    execute_op(Fields, NextOp, State#state.binsize_gen, Mapi);
+                                  _ ->
+                                      {update, GenOp} = gen_micro_op(Fields, NextOp, ValueGen, CRDT, TxnSize),
+                                      {update, Ops++GenOp}
+                              end
 
-    case gen_micro_op(crdt, NextOp, State#state.binsize_gen, Set, TxnSize) of
-        {_, undefined} -> {ok, Set};
-        Op ->
-            ?INFO("OPS ~p User ~p Context ~p~n",[Op, State#state.id, ?SET:precondition_context(Set)]),
-            ?SET:update(Op, State#state.id, Set, ?SET:precondition_context(Set))
+                      end, {update, []}, lists:seq(1,TxnSize)),
+    riak_dt_map:update(MapOp, State#state.id, CRDT, riak_dt_map:precondition_context(CRDT));
+
+execute_micro({crdt, {Type, Op}}, CRDT, _ValueGen, State) ->
+    TxnSize = (State#state.txn_size_gen)(),
+
+    case gen_micro_op({Type, Op}, State#state.binsize_gen, CRDT, TxnSize) of
+        {_, undefined} -> {ok, CRDT};
+        OpValue ->
+            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            Type:update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT))
     end;
 
-execute_micro({delta, set}, Set, _ValueGen, State) ->
+execute_micro({crdt, Type}, CRDT, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
-    NextOp = next_op(State#state.ops_freq, set),
+    NextOp = next_op(State#state.ops_freq, Type),
 
-    case gen_micro_op(delta, NextOp, State#state.binsize_gen, Set, TxnSize) of
-        {_, undefined} -> {ok, Set};
-        Op ->
-            ?INFO("OPS ~p User ~p Context ~p~n",[Op, State#state.id, ?DELTA_SET:precondition_context(Set)]),
-            {ok, Updt}= ?DELTA_SET:delta_update(Op, State#state.id, Set, ?DELTA_SET:precondition_context(Set)),
-            {ok, ?DELTA_SET:merge(Set, Updt)}
+    case gen_micro_op(NextOp, State#state.binsize_gen, CRDT, TxnSize) of
+        {_, undefined} -> {ok, CRDT};
+        OpValue ->
+            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            Type:update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT))
+    end;
+
+execute_micro({delta, {Type, Op}}, CRDT, _ValueGen, State) ->
+    TxnSize = (State#state.txn_size_gen)(),
+
+    case gen_micro_op({Type, Op}, State#state.binsize_gen, CRDT, TxnSize) of
+        {_, undefined} -> {ok, CRDT};
+        OpValue ->
+            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            %{ok, {Obj, _Delta}}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
+            %{ok, Obj}
+            {ok, Delta}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
+            {ok, Type:merge(Delta, CRDT)}
+    end;
+
+execute_micro({delta, Type}, CRDT, _ValueGen, State) ->
+    TxnSize = (State#state.txn_size_gen)(),
+    NextOp = next_op(State#state.ops_freq, Type),
+
+    case gen_micro_op(NextOp, State#state.binsize_gen, CRDT, TxnSize) of
+        {_, undefined} -> {ok, CRDT};
+        OpValue ->
+            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            %{ok, {Obj, _Delta}}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
+            %{ok, Obj}
+            {ok, Delta}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
+            {ok, Type:merge(Delta, CRDT)}
     end.
 
-gen_micro_op(_Type, {set, add}, ValueGen, _Set, 1) ->
+gen_micro_op([FieldName], {ObjType, _Op} = TypeOp, ValueGen, _Map, _TxnSize) ->
+    {update, [{update, {FieldName, ObjType}, gen_micro_op(TypeOp, ValueGen, undef, undef)}]};
+
+gen_micro_op([Head | Tail], Op, ValueGen, _Map, _TxnSize) ->
+    {update, [{update, {Head, riak_dt_map}, gen_micro_op(Tail, Op, ValueGen, undef, undef)}]}.
+
+gen_micro_op({riak_dt_od_flag, enable}, _ValueGen, _Set, _TxnSize) ->
+    enable;
+
+gen_micro_op({riak_dt_od_flag, disable}, _ValueGen, _Set, _TxnSize) ->
+    disable;
+
+gen_micro_op({riak_dt_lwwreg, assign}, ValueGen, _Set, _TxnSize) ->
+    {assign, ValueGen()};
+
+gen_micro_op({riak_dt_pncounter, increment}, ValueGen, _Set, _TxnSize) ->
+    {increment, ValueGen()};
+
+gen_micro_op({riak_dt_delta_counter, increment}, ValueGen, _Set, _TxnSize) ->
+    {increment, ValueGen()};
+
+gen_micro_op({riak_dt_pncounter, decrement}, ValueGen, _Set, _TxnSize) ->
+    {decrement, ValueGen()};
+
+gen_micro_op({riak_dt_delta_counter, decrement}, ValueGen, _Set, _TxnSize) ->
+    {decrement, ValueGen()};
+
+gen_micro_op({riak_dt_orswot, add}, ValueGen, _Set, 1) ->
     {add, ValueGen()};
 
-gen_micro_op(crdt, {set, remove}, _, Set, 1) ->
-    ElementSet = ?SET:value(Set),
+gen_micro_op({riak_dt_delta_orswot, add}, ValueGen, _Set, 1) ->
+    {add, ValueGen()};
+
+gen_micro_op({riak_dt_orswot, remove}, _, Set, 1) ->
+    ElementSet = riak_dt_orswot:value(Set),
     Op = case length(ElementSet) of
              0 -> undefined;
              _ -> lists:nth(random:uniform(length(ElementSet)),ElementSet)
          end,
     {remove, Op};
 
-gen_micro_op(delta, {set, remove}, _, Set, 1) ->
-    ElementSet = ?DELTA_SET:value(Set),
+gen_micro_op({riak_dt_delta_orswot, remove}, _, Set, 1) ->
+    ElementSet = riak_dt_delta_orswot:value(Set),
     Op = case length(ElementSet) of
              0 -> undefined;
              _ -> lists:nth(random:uniform(length(ElementSet)),ElementSet)
          end,
     {remove, Op};
 
-gen_micro_op(_Type, {set, add}, ValueGen, _Set, TxnSize) ->
+gen_micro_op({riak_dt_orswot, add}, ValueGen, _Set, TxnSize) ->
     SetOps = lists:foldl(fun(_, OpsAcc) ->
                                  [ValueGen() | OpsAcc]
                          end, [], lists:seq(1,TxnSize)),
     {add_all, SetOps};
 
-gen_micro_op(crdt, {set, remove}, _, Set, TxnSize) ->
+gen_micro_op({riak_dt_delta_orswot, add}, ValueGen, _Set, TxnSize) ->
+    SetOps = lists:foldl(fun(_, OpsAcc) ->
+                                 [ValueGen() | OpsAcc]
+                         end, [], lists:seq(1,TxnSize)),
+    {add_all, SetOps};
+
+gen_micro_op({riak_dt_orswot, remove}, _, Set, TxnSize) ->
     ElementSet = ?SET:value(Set),
     SetOps = lists:foldl(fun(_, OpsAcc) ->
                                  case length(ElementSet) of
@@ -283,7 +398,7 @@ gen_micro_op(crdt, {set, remove}, _, Set, TxnSize) ->
                          end, [], lists:seq(1,TxnSize)),
     {remove_all, SetOps};
 
-gen_micro_op(delta, {set, remove}, _, Set, TxnSize) ->
+gen_micro_op({riak_dt_delta_orswot, remove}, _, Set, TxnSize) ->
     ElementSet = ?DELTA_SET:value(Set),
     SetOps = lists:foldl(fun(_, OpsAcc) ->
                                  case length(ElementSet) of
@@ -300,12 +415,12 @@ next_op({DtProbRange, _}, DtName) ->
     [{Op, _} | _] = lists:dropwhile(fun({_, SumOp}) -> SumOp < R1 end, OpsProbRange),
     {DtName, Op}.
 
-%next_op({DtProbRange, SumDtRange}=OpsFreq) ->
-%    R0 = random:uniform(SumDtRange),
-%    [{DtName, _, _} | _] = lists:dropwhile(
-%                             fun({_, _, SumDt}) -> SumDt < R0
-%                             end, DtProbRange),
-%    next_op(OpsFreq, DtName).
+next_op({DtProbRange, SumDtRange}=OpsFreq) ->
+    R0 = random:uniform(SumDtRange),
+    [{DtName, _, _} | _] = lists:dropwhile(
+                             fun({_, _, SumDt}) -> SumDt < R0
+                             end, DtProbRange),
+    next_op(OpsFreq, DtName).
 
 process_ops_freq(OpsFreqPerDt) ->
     lists:mapfoldl(
