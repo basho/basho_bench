@@ -34,7 +34,8 @@
           max_key,
           pb_timeout,
           http_timeout,
-          last_key = 0
+          last_key = 0,
+          first_key = -1
          }).
 
 
@@ -122,15 +123,23 @@ run({put_pb, N}, KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 
-run(fast_get_pb, KeyGen, _ValueGen, State) ->
+run(fast_get_pb, _, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.bucket,
     LastKey = State#state.last_key,
+    FirstKey0 = State#state.first_key,
 
-    Key = case LastKey of
-      0 -> to_binary(KeyGen());
-      _ -> to_binary(LastKey)
+    FirstKey = case FirstKey0 of
+      -1 -> LastKey;
+      _ -> FirstKey0
     end,
+
+    IntKey = case LastKey of
+      FirstKey -> FirstKey;
+      _ -> crypto:rand_uniform(FirstKey, to_integer(LastKey))
+    end,
+
+    Key = to_binary(IntKey),
 
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
@@ -148,6 +157,7 @@ run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
     Value = ValueGen(),
     Indexes = generate_integer_indexes_for_key(Key, N),
     MetaData = dict:from_list([{<<"index">>, Indexes}]),
+    FirstKey = State#state.first_key,
 
     %% Create the object...
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
@@ -157,7 +167,10 @@ run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
     %% Write the object...
     case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
         ok ->
-            {ok, State#state{last_key = Key}};
+            case FirstKey of
+              -1 -> {ok, State#state{last_key = Key, first_key = Key}};
+              _ -> {ok, State#state{last_key = Key}}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
