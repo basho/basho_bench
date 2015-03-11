@@ -34,7 +34,7 @@
           max_key,
           pb_timeout,
           http_timeout,
-          last_key
+          last_key = 0
          }).
 
 
