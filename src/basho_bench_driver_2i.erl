@@ -33,7 +33,8 @@
           bucket,
           max_key,
           pb_timeout,
-          http_timeout
+          http_timeout,
+          last_key
          }).
 
 
@@ -117,6 +118,46 @@ run({put_pb, N}, KeyGen, ValueGen, State) ->
     case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
         ok ->
             {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run(fast_get_pb, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    LastKey = State#state.last_key,
+
+    Key = case LastKey of
+      0 -> to_binary(KeyGen());
+      _ -> to_binary(LastKey)
+    end,
+
+    case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
+        {ok, _Obj} ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    Key = to_integer(KeyGen()),
+    Value = ValueGen(),
+    Indexes = generate_integer_indexes_for_key(Key, N),
+    MetaData = dict:from_list([{<<"index">>, Indexes}]),
+
+    %% Create the object...
+    Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
+    Robj1 = riakc_obj:update_value(Robj0, Value),
+    Robj2 = riakc_obj:update_metadata(Robj1, MetaData),
+
+    %% Write the object...
+    case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
+        ok ->
+            {ok, State#state{last_key = Key}};
         {error, Reason} ->
             {error, Reason, State}
     end;
