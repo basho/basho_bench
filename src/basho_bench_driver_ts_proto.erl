@@ -41,7 +41,7 @@
 %% ====================================================================
 
 new(Id) ->
-    %% Ensure that ibrowse is started...
+    %% Ensure that hackney is started...
     hackney:start(),
 
     %% Read config settings...
@@ -52,7 +52,8 @@ new(Id) ->
     Table = iolist_to_binary(io_lib:format("table~p", [Id])),
     Series = iolist_to_binary(io_lib:format("series~p", [Id])),
     RandBytes = base64:encode(crypto:rand_bytes(10 * 1024 * 1024)),
-    ?INFO("Using target ~p:~p ~p/~p for worker ~p\n", [Host, Port, Table, Series, Id]),
+    ?INFO("Using target ~p:~p ~p/~p for worker ~p\n",
+          [Host, Port, Table, Series, Id]),
 
     case hackney:connect(hackney_tcp_transport, Host, Port, []) of
         {ok, ConnRef} ->
