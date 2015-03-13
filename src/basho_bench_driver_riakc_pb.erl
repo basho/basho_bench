@@ -517,8 +517,14 @@ run(counter_val, KeyGen, _ValueGen, State) ->
 %% Internal functions
 %% ====================================================================
 maybe_delete_key({ok, State}, Key) ->
-    Result = case riakc_pb_socket:delete(State#state.pid, State#state.bucket, Key,
-                                [{w, all}, {pw, all}, {dw, all}], State#state.timeout_write) of
+    DeleteResult = case riakc_pb_socket:get(State#state.pid, State#state.bucket, Key,
+                                            [{r, all}, {pr, all}], State#state.timeout_read) of
+        {ok, Object} ->
+            riakc_pb_socket:delete_obj(State#state.pid, Object, [{pw, all}, {w, all}, {dw, all}]);
+        {error, notfound} ->
+            ok
+    end,
+    Result = case DeleteResult of
         ok ->
             {ok, State};
         {error, Reason} ->
