@@ -155,15 +155,19 @@ run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
     Bucket = State#state.bucket,
     Key = to_integer(KeyGen()),
     Value = ValueGen(),
-    Indexes = generate_integer_indexes_for_key(Key, N),
-    MetaData = dict:from_list([{<<"index">>, Indexes}]),
+    MetaData = case N of
+      0 -> dict:new();
+      _ ->
+        Indexes = generate_integer_indexes_for_key(Key, N),
+        dict:from_list([{<<"index">>, Indexes}])
+    end,
     FirstKey = State#state.first_key,
 
     %% Create the object...
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MetaData),
-
+    
     %% Write the object...
     case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
         ok ->
