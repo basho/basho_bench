@@ -71,7 +71,6 @@
                                {git,"git://github.com/seth/rebar_lock_deps_plugin.git",
                                     "9711549b8a84b065eb2edc22f8eb6ff85e3c94e8"}}]}.
 {erl_opts,[{src_dirs,[src]},{parse_transform,lager_transform}]}.
-{plugin_dir,".plugins"}.
 {plugins,[rebar_lock_deps_plugin]}.
 {escript_incl_apps,[bear,casbench,cqerl,folsom,getopt,goldrush,ibrowse,katja,
                     lager,lz4,mochiweb,node_package,protobuffs,riak_pb,riakc,
