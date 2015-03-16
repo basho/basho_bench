@@ -19,7 +19,7 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
--module(basho_bench_driver_riakc_pb_crdt_micro).
+-module(basho_bench_driver_riakc_pb_crdt_micro_merge).
 -export([new/1,
          run/4
          ]).
@@ -33,10 +33,6 @@
 
 -record(state, { id,
                  pid,
-                 bucket_map,
-                 bucket_set,
-                 bucket_register,
-                 bucket_counter,
                  r,
                  pr,
                  w,
@@ -61,9 +57,14 @@
                  reg_gen,
                  ops_freq,
                  ops_freq_map,
+                 ops_freq_delta_map,
                  binsize_gen,
-                 object,
-                 delta_object
+                 obj_a,
+                 dobj_a,
+                 dobj_acc_a,
+                 dobj_acc_b,
+                 obj_b,
+                 dobj_b
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -141,14 +142,11 @@ new(Id) ->
                     end,
     OpsFreqPerDt = basho_bench_config:get(ops_frequency, []),
     OpsFreqMapPerDt = basho_bench_config:get(ops_frequency_map, []),
+    OpsFreqDeltaMapPerDt = basho_bench_config:get(ops_frequency_delta_map, []),
     OpsFreqComputed  = process_ops_freq(OpsFreqPerDt),
     OpsFreqMapComputed = process_ops_freq(OpsFreqMapPerDt),
+    OpsFreqMapDeltaComputed = process_ops_freq(OpsFreqDeltaMapPerDt),
 
-
-    BucketMap = basho_bench_config:get(riakc_pb_bucket_map, <<"test">>),
-    BucketSet = basho_bench_config:get(riakc_pb_bucket_set, <<"test">>),
-    BucketCounter = basho_bench_config:get(riakc_pb_bucket_counter, <<"test">>),
-    BucketRegister = basho_bench_config:get(riakc_pb_bucket_register, <<"test">>),
 
     %% Choose the target node using our ID as a modulus
     Targets = basho_bench_config:normalize_ips(Ips, Port),
@@ -158,10 +156,6 @@ new(Id) ->
         {ok, Pid} ->
             {ok, #state { id = Id,
                           pid = Pid,
-                          bucket_map = BucketMap,
-                          bucket_set = BucketSet,
-                          bucket_register = BucketRegister,
-                          bucket_counter = BucketCounter,
                           r = R,
                           pr = PR,
                           w = W,
@@ -185,60 +179,201 @@ new(Id) ->
                           reg_gen = RegGen,
                           binsize_gen = BinaryWithSizeGen,
                           ops_freq = OpsFreqComputed,
-                          ops_freq_map = OpsFreqMapComputed
+                          ops_freq_map = OpsFreqMapComputed,
+                          ops_freq_delta_map = OpsFreqMapDeltaComputed
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
                       [TargetIp, TargetPort, Reason2])
     end.
 
-run({delta, {Type, micro_op}}, _KeyGen, ValueGen, State) ->
-    Set = case State#state.delta_object of
+run({delta, {Type, merge, ab}}, _KeyGen, _ValueGen, State) ->
+    ObjA = case State#state.dobj_acc_a of
+              undefined -> Type:new();
+              ObjectA -> ObjectA
+          end,
+
+    ObjB = case State#state.dobj_b of
+              undefined -> Type:new();
+              ObjectB -> ObjectB
+          end,
+
+    ?INFO("Merge delta ~p~n", [ObjA]),
+    Result = Type:merge(ObjA, ObjB),
+    {ok, State#state{dobj_b=Result, dobj_acc_a=Type:new()}};
+
+run({crdt, {Type, merge, ab}}, _KeyGen, _ValueGen, State) ->
+    ObjA = case State#state.obj_a of
+              undefined -> Type:new();
+              ObjectA -> ObjectA
+          end,
+
+    ObjB = case State#state.obj_b of
+              undefined -> Type:new();
+              ObjectB -> ObjectB
+          end,
+
+    ?INFO("Merge CRDT ~p~n", [ObjA]),
+
+    Result = Type:merge(ObjA, ObjB),
+    {ok, State#state{obj_b=Result}};
+
+
+run({delta, {Type, merge, ba}}, _KeyGen, _ValueGen, State) ->
+    ObjA = case State#state.dobj_a of
+              undefined -> Type:new();
+              ObjectA -> ObjectA
+          end,
+
+    ObjB = case State#state.dobj_acc_b of
+              undefined -> Type:new();
+              ObjectB -> ObjectB
+          end,
+
+    ?INFO("Merge delta ~p~n", [ObjB]),
+    Result = Type:merge(ObjA, ObjB),
+    {ok, State#state{dobj_a=Result, dobj_acc_b=Type:new()}};
+
+run({crdt, {Type, merge, ba}}, _KeyGen, _ValueGen, State) ->
+    ObjA = case State#state.obj_a of
+              undefined -> Type:new();
+              ObjectA -> ObjectA
+          end,
+
+    ObjB = case State#state.obj_b of
+              undefined -> Type:new();
+              ObjectB -> ObjectB
+          end,
+
+    ?INFO("Merge CRDT ~p~n", [ObjB]),
+
+
+    Result = Type:merge(ObjA, ObjB),
+    {ok, State#state{obj_a=Result}};
+
+run({delta, {Type, micro_op, a}}, _KeyGen, ValueGen, State) ->
+    Obj = case State#state.dobj_a of
               undefined -> Type:new();
               Object -> Object
           end,
 
-    Result = execute_micro({delta, Type}, Set, ValueGen, State),
-    case Result of
-        {ok, UpdtSet} ->
-            {ok, State#state{delta_object=UpdtSet}};
-        {error, Reason} ->
-            ?INFO("Error on Set write ~p", [Reason]),
-            {error, Reason, State}
-    end;
-
-run({crdt, {Type, micro_op}}, _KeyGen, ValueGen, State) ->
-    Set = case State#state.object of
+    DeltaAcc = case State#state.dobj_acc_a of
               undefined -> Type:new();
-              Object -> Object
+              ObjectD -> ObjectD
           end,
-    Result = execute_micro({crdt, Type}, Set, ValueGen, State),
 
+    Result = execute_micro({delta, Type}, Obj, ValueGen, State),
     case Result of
-        {ok, UpdtSet} ->
-            {ok, State#state{object=UpdtSet}};
+        {ok, {ObjState, Delta}} ->
+            {ok, State#state{dobj_a=ObjState, dobj_acc_a=Type:merge(Delta, DeltaAcc)}};
+        {ok, Delta} ->
+            {ok, State#state{dobj_a=Type:merge(Delta, Obj), dobj_acc_a=Type:merge(Delta, DeltaAcc)}};
         {error, Reason} ->
-            ?INFO("Error on Set write ~p", [Reason]),
+            ?INFO("Error on Obj write ~p", [Reason]),
             {error, Reason, State}
     end;
 
-run({delta, {Type, Op}}, _KeyGen, ValueGen, State) ->
-    CRDT = case State#state.delta_object of
+run({delta, {Type, micro_op, b}}, _KeyGen, ValueGen, State) ->
+    Obj = case State#state.dobj_b of
               undefined -> Type:new();
               Object -> Object
           end,
 
-    Result = execute_micro({delta, {Type, Op}}, CRDT, ValueGen, State),
+    DeltaAcc = case State#state.dobj_acc_b of
+              undefined -> Type:new();
+              ObjectD -> ObjectD
+          end,
+
+    Result = execute_micro({delta, Type}, Obj, ValueGen, State),
     case Result of
-        {ok, UpdtCRDT} ->
-            {ok, State#state{delta_object=UpdtCRDT}};
+        {ok, {ObjState, Delta}} ->
+            {ok, State#state{dobj_b=ObjState, dobj_acc_b=Type:merge(Delta,DeltaAcc)}};
+        {ok, Delta} ->
+            {ok, State#state{dobj_b=Type:merge(Delta, Obj), dobj_acc_b=Type:merge(Delta,DeltaAcc)}};
         {error, Reason} ->
-            ?INFO("Error on Set write ~p", [Reason]),
+            ?INFO("Error on Obj write ~p", [Reason]),
             {error, Reason, State}
     end;
 
-run({crdt, {Type, Op}}, _KeyGen, ValueGen, State) ->
-    CRDT = case State#state.object of
+run({crdt, {Type, micro_op, a}}, _KeyGen, ValueGen, State) ->
+    Obj = case State#state.obj_a of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+    Result = execute_micro({crdt, Type}, Obj, ValueGen, State),
+
+    case Result of
+        {ok, UpdtObj} ->
+            {ok, State#state{obj_a=UpdtObj}};
+        {error, Reason} ->
+            ?INFO("Error on Obj write ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+run({crdt, {Type, micro_op, b}}, _KeyGen, ValueGen, State) ->
+    Obj = case State#state.obj_b of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+    Result = execute_micro({crdt, Type}, Obj, ValueGen, State),
+
+    case Result of
+        {ok, UpdtObj} ->
+            {ok, State#state{obj_b=UpdtObj}};
+        {error, Reason} ->
+            ?INFO("Error on Obj write ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+run({delta, {Type, Op, a}}, _KeyGen, ValueGen, State) ->
+    Obj = case State#state.dobj_a of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+
+    DeltaAcc = case State#state.dobj_acc_a of
+              undefined -> Type:new();
+              ObjectD -> ObjectD
+          end,
+    Result = execute_micro({delta, {Type, Op}}, Obj, ValueGen, State),
+    case Result of
+        {ok, {ObjState, Delta}} ->
+            {ok, State#state{dobj_a=ObjState, dobj_acc_a=Type:merge(Delta, DeltaAcc)}};
+        {ok, Delta} ->
+            {ok, State#state{dobj_a=Type:merge(Delta, Obj), dobj_acc_a=Type:merge(Delta, DeltaAcc)}};
+        {error, Reason} ->
+            ?INFO("Error on Obj write ~p", [Reason]),
+            {error, Reason, State};
+        Other -> io:format("11 ~p ~p ~p~n~p~n",[Type, Op, Obj, Other])
+    end;
+
+run({delta, {Type, Op, b}}, _KeyGen, ValueGen, State) ->
+    Obj = case State#state.dobj_b of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+
+    DeltaAcc = case State#state.dobj_acc_b of
+              undefined -> Type:new();
+              ObjectD -> ObjectD
+          end,
+
+    Result = execute_micro({delta, {Type, Op}}, Obj, ValueGen, State),
+    case Result of
+        {ok, {ObjState, Delta}} ->
+            {ok, State#state{dobj_b=ObjState, dobj_acc_b=Type:merge(Delta, DeltaAcc)}};
+        {ok, Delta} ->
+            {ok, State#state{dobj_b=Type:merge(Delta, Obj), dobj_acc_b=Type:merge(Delta, DeltaAcc)}};
+        {error, Reason} ->
+            ?INFO("Error on Obj write ~p", [Reason]),
+            {error, Reason, State};
+        Other -> io:format("~p ~p ~p~n~p~n",[Type, Op, Obj, Other])
+
+    end;
+
+
+run({crdt, {Type, Op, a}}, _KeyGen, ValueGen, State) ->
+    CRDT = case State#state.obj_a of
               undefined -> Type:new();
               Object -> Object
           end,
@@ -246,17 +381,33 @@ run({crdt, {Type, Op}}, _KeyGen, ValueGen, State) ->
     Result = execute_micro({crdt, {Type, Op}}, CRDT, ValueGen, State),
     case Result of
         {ok, UpdtCRDT} ->
-            {ok, State#state{object=UpdtCRDT}};
+            {ok, State#state{obj_a=UpdtCRDT}};
         {error, Reason} ->
-            ?INFO("Error on Set write ~p", [Reason]),
+            ?INFO("Error on Obj write ~p", [Reason]),
+            {error, Reason, State}
+    end;
+
+run({crdt, {Type, Op, b}}, _KeyGen, ValueGen, State) ->
+    CRDT = case State#state.obj_b of
+              undefined -> Type:new();
+              Object -> Object
+          end,
+
+    Result = execute_micro({crdt, {Type, Op}}, CRDT, ValueGen, State),
+    case Result of
+        {ok, UpdtCRDT} ->
+            {ok, State#state{obj_b=UpdtCRDT}};
+        {error, Reason} ->
+            ?INFO("Error on Obj write ~p", [Reason]),
             {error, Reason, State}
     end.
+
 
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
 
-execute_micro({crdt, riak_dt_map}, CRDT, ValueGen, State) ->
+execute_micro({crdt, {riak_dt_map, update}}, CRDT, ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
     Depth = (State#state.map_depth_gen)(),
     Fields = lists:foldl(fun(_, FieldsAcc) ->
@@ -267,16 +418,38 @@ execute_micro({crdt, riak_dt_map}, CRDT, ValueGen, State) ->
                               %%ups...
                               case NextOp of
                                   {riak_dt_lwwreg,_} ->
-                                      gen_micro_op(Fields, NextOp, State#state.binsize_gen, CRDT, TxnSize);
+                                      gen_micro_op(crdt, Fields, NextOp, State#state.binsize_gen, CRDT, TxnSize);
                                   %{riakc_set,_} ->
                                   %    execute_op(Fields, NextOp, State#state.binsize_gen, Mapi);
                                   _ ->
-                                      {update, GenOp} = gen_micro_op(Fields, NextOp, ValueGen, CRDT, TxnSize),
+                                      {update, GenOp} = gen_micro_op(crdt, Fields, NextOp, ValueGen, CRDT, TxnSize),
                                       {update, Ops++GenOp}
                               end
 
                       end, {update, []}, lists:seq(1,TxnSize)),
     riak_dt_map:update(MapOp, State#state.id, CRDT, riak_dt_map:precondition_context(CRDT));
+
+execute_micro({delta, {riak_dt_delta_map, update}}, CRDT, ValueGen, State) ->
+    TxnSize = (State#state.txn_size_gen)(),
+    Depth = (State#state.map_depth_gen)(),
+    Fields = lists:foldl(fun(_, FieldsAcc) ->
+                                 ["Field_" ++ (State#state.fields_name_gen)() | FieldsAcc]
+                         end, [], lists:seq(1,Depth)),
+    MapOp = lists:foldl(fun(_, {update, Ops}) ->
+                              NextOp = next_op(State#state.ops_freq_delta_map),
+                              %%ups...
+                              case NextOp of
+                                  {riak_dt_delta_lwwreg,_} ->
+                                      gen_micro_op(delta, Fields, NextOp, State#state.binsize_gen, CRDT, TxnSize);
+                                  %{riakc_set,_} ->
+                                  %    execute_op(Fields, NextOp, State#state.binsize_gen, Mapi);
+                                  _ ->
+                                      {update, GenOp} = gen_micro_op(delta, Fields, NextOp, ValueGen, CRDT, TxnSize),
+                                      {update, Ops++GenOp}
+                              end
+
+                      end, {update, []}, lists:seq(1,TxnSize)),
+    riak_dt_delta_map:delta_update(MapOp, State#state.id, CRDT, riak_dt_delta_map:precondition_context(CRDT));
 
 execute_micro({crdt, {Type, Op}}, CRDT, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
@@ -284,7 +457,7 @@ execute_micro({crdt, {Type, Op}}, CRDT, _ValueGen, State) ->
     case gen_micro_op({Type, Op}, State#state.binsize_gen, CRDT, TxnSize) of
         {_, undefined} -> {ok, CRDT};
         OpValue ->
-            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            ?INFO("CRDT OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
             Type:update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT))
     end;
 
@@ -295,7 +468,7 @@ execute_micro({crdt, Type}, CRDT, _ValueGen, State) ->
     case gen_micro_op(NextOp, State#state.binsize_gen, CRDT, TxnSize) of
         {_, undefined} -> {ok, CRDT};
         OpValue ->
-            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            ?INFO("CRDT OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
             Type:update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT))
     end;
 
@@ -303,13 +476,11 @@ execute_micro({delta, {Type, Op}}, CRDT, _ValueGen, State) ->
     TxnSize = (State#state.txn_size_gen)(),
 
     case gen_micro_op({Type, Op}, State#state.binsize_gen, CRDT, TxnSize) of
-        {_, undefined} -> {ok, CRDT};
+        %{_, undefined} -> {ok, {CRDT,Type:new()}};
+        {_, undefined} -> {ok, Type:new()};
         OpValue ->
-            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
-            {ok, {Obj, _Delta}}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
-            {ok, Obj}
-            %{ok, Delta}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
-            %{ok, Type:merge(Delta, CRDT)}
+            ?INFO("DELTA OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT))
     end;
 
 execute_micro({delta, Type}, CRDT, _ValueGen, State) ->
@@ -317,46 +488,59 @@ execute_micro({delta, Type}, CRDT, _ValueGen, State) ->
     NextOp = next_op(State#state.ops_freq, Type),
 
     case gen_micro_op(NextOp, State#state.binsize_gen, CRDT, TxnSize) of
-        {_, undefined} -> {ok, CRDT};
+        %{_, undefined} -> {ok, {CRDT,Type:new()}};
+        {_, undefined} -> {ok, Type:new()};
         OpValue ->
-            ?INFO("OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
-            {ok, {Obj, _Delta}}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
-            {ok, Obj}
-            %{ok, Delta}= Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT)),
-            %{ok, Type:merge(Delta, CRDT)}
+            ?INFO("DELTA OPS ~p User ~p Context ~p~n",[OpValue, State#state.id, Type:precondition_context(CRDT)]),
+            Type:delta_update(OpValue, State#state.id, CRDT, Type:precondition_context(CRDT))
     end.
 
-gen_micro_op([FieldName], {ObjType, _Op} = TypeOp, ValueGen, _Map, _TxnSize) ->
+gen_micro_op(crdt, [FieldName], {ObjType, _Op} = TypeOp, ValueGen, _Map, _TxnSize) ->
     {update, [{update, {FieldName, ObjType}, gen_micro_op(TypeOp, ValueGen, undef, undef)}]};
 
-gen_micro_op([Head | Tail], Op, ValueGen, _Map, _TxnSize) ->
-    {update, [{update, {Head, riak_dt_map}, gen_micro_op(Tail, Op, ValueGen, undef, undef)}]}.
+gen_micro_op(crdt, [Head | Tail], Op, ValueGen, _Map, _TxnSize) ->
+    {update, [{update, {Head, riak_dt_map}, gen_micro_op(crdt, Tail, Op, ValueGen, undef, undef)}]};
 
-gen_micro_op({riak_dt_od_flag, enable}, _ValueGen, _Set, _TxnSize) ->
+gen_micro_op(delta, [FieldName], {ObjType, _Op} = TypeOp, ValueGen, _Map, _TxnSize) ->
+    {update, [{update, {FieldName, ObjType}, gen_micro_op(TypeOp, ValueGen, undef, undef)}]};
+
+gen_micro_op(delta, [Head | Tail], Op, ValueGen, _Map, _TxnSize) ->
+    {update, [{update, {Head, riak_dt_delta_map}, gen_micro_op(delta, Tail, Op, ValueGen, undef, undef)}]}.
+
+gen_micro_op({riak_dt_od_flag, enable}, _ValueGen, _Obj, _TxnSize) ->
     enable;
 
-gen_micro_op({riak_dt_od_flag, disable}, _ValueGen, _Set, _TxnSize) ->
+gen_micro_op({riak_dt_od_flag, disable}, _ValueGen, _Obj, _TxnSize) ->
     disable;
 
-gen_micro_op({riak_dt_lwwreg, assign}, ValueGen, _Set, _TxnSize) ->
+gen_micro_op({riak_dt_delta_od_flag, enable}, _ValueGen, _Obj, _TxnSize) ->
+    enable;
+
+gen_micro_op({riak_dt_delta_od_flag, disable}, _ValueGen, _Obj, _TxnSize) ->
+    disable;
+
+gen_micro_op({riak_dt_lwwreg, assign}, ValueGen, _Obj, _TxnSize) ->
     {assign, ValueGen()};
 
-gen_micro_op({riak_dt_pncounter, increment}, ValueGen, _Set, _TxnSize) ->
+gen_micro_op({riak_dt_delta_lwwreg, assign}, ValueGen, _Obj, _TxnSize) ->
+    {assign, ValueGen()};
+
+gen_micro_op({riak_dt_pncounter, increment}, ValueGen, _Obj, _TxnSize) ->
     {increment, ValueGen()};
 
-gen_micro_op({riak_dt_delta_counter, increment}, ValueGen, _Set, _TxnSize) ->
+gen_micro_op({riak_dt_pncounter, decrement}, ValueGen, _Obj, _TxnSize) ->
+    {decrement, ValueGen()};
+
+gen_micro_op({riak_dt_delta_pncounter, increment}, ValueGen, _Obj, _TxnSize) ->
     {increment, ValueGen()};
 
-gen_micro_op({riak_dt_pncounter, decrement}, ValueGen, _Set, _TxnSize) ->
+gen_micro_op({riak_dt_delta_pncounter, decrement}, ValueGen, _Obj, _TxnSize) ->
     {decrement, ValueGen()};
 
-gen_micro_op({riak_dt_delta_counter, decrement}, ValueGen, _Set, _TxnSize) ->
-    {decrement, ValueGen()};
-
-gen_micro_op({riak_dt_orswot, add}, ValueGen, _Set, 1) ->
+gen_micro_op({riak_dt_orswot, add}, ValueGen, _Obj, 1) ->
     {add, ValueGen()};
 
-gen_micro_op({riak_dt_delta_orswot, add}, ValueGen, _Set, 1) ->
+gen_micro_op({riak_dt_delta_orswot, add}, ValueGen, _Obj, 1) ->
     {add, ValueGen()};
 
 gen_micro_op({riak_dt_orswot, remove}, _, Set, 1) ->

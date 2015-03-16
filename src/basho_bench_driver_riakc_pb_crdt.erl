@@ -196,6 +196,34 @@ run({Type, op}, KeyGen, ValueGen, State) ->
         {error, Reason2} ->
             ?INFO("Error on ~p write ~p", [Type, Reason2]),
             {error, Reason2, State}
+    end;
+
+run({Type, _Op}=TypeOp, KeyGen, ValueGen, State) ->
+    Key = integer_to_list(KeyGen()),
+    Result = riakc_pb_socket:fetch_type(State#state.pid,
+                                        orddict:fetch(Type, ?BUCKET),
+                                        Key,
+                                        ?OPTIONS),
+    Result2 = case Result of
+                  {ok, M0} ->
+                      ?INFO("~p value ~p",[TypeOp, Type:value(M0)]),
+                      execute(TypeOp, Key, M0, ValueGen, State);
+                  {error, {notfound, _}} ->
+                      M0 = Type:new(),
+                      execute(TypeOp, Key, M0, ValueGen, State);
+                  {error, Reason} ->
+                      ?INFO("Error on ~p read ~p",[Type, Reason]),
+                      {error, Reason, State}
+              end,
+
+    case Result2 of
+        ok ->
+            {ok, State};
+        {ok, _} ->
+            {ok, State};
+        {error, Reason2} ->
+            ?INFO("Error on ~p write ~p", [Type, Reason2]),
+            {error, Reason2, State}
     end.
 
 %% ====================================================================
@@ -228,6 +256,14 @@ execute(riakc_set, Key, Set0, _ValueGen, State) ->
     Set = lists:foldl(fun(_, Seti) ->
                               NextOp = next_op(State#state.ops_freq, riakc_set),
                               execute_op(NextOp, State#state.binsize_gen, Seti)
+                      end, Set0, lists:seq(1,TxnSize)),
+    riakc_pb_socket:update_type(State#state.pid,
+                                orddict:fetch(riakc_set, ?BUCKET), Key, riakc_set:to_op(Set));
+
+execute({riakc_set, _}=Op, Key, Set0, _ValueGen, State) ->
+    TxnSize = (State#state.txn_size_gen)(),
+    Set = lists:foldl(fun(_, Seti) ->
+                              execute_op(Op, State#state.binsize_gen, Seti)
                       end, Set0, lists:seq(1,TxnSize)),
     riakc_pb_socket:update_type(State#state.pid,
                                 orddict:fetch(riakc_set, ?BUCKET), Key, riakc_set:to_op(Set));
