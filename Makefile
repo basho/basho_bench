@@ -13,7 +13,7 @@ OVERLAY_VARS    ?=
 all: deps compile
 	./rebar skip_deps=true escriptize
 
-.PHONY: deps compile rel
+.PHONY: deps compile rel lock locked-all locked-deps
 
 rel: deps compile
 	cd rel && ../rebar generate skip_deps=true $(OVERLAY_VARS)
@@ -82,7 +82,7 @@ package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
-	${MAKE} -C package/$(PKG_ID) deps
+	${MAKE} -C package/$(PKG_ID) locked-deps
 	for dep in package/$(PKG_ID)/deps/*; do \
 	    echo "Processing dep: $${dep}"; \
 	    mkdir -p $${dep}/priv; \
