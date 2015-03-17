@@ -13,13 +13,26 @@ OVERLAY_VARS    ?=
 all: deps compile
 	./rebar skip_deps=true escriptize
 
-.PHONY: deps compile rel
+.PHONY: deps compile rel lock locked-all locked-deps
 
 rel: deps compile
 	cd rel && ../rebar generate skip_deps=true $(OVERLAY_VARS)
 
 deps:
 	./rebar get-deps
+
+##
+## Lock Targets
+##
+##  see https://github.com/seth/rebar_lock_deps_plugin
+lock: deps compile
+	./rebar lock-deps
+
+locked-all: locked-deps compile
+
+locked-deps:
+	@echo "Using rebar.config.lock file to fetch dependencies"
+	./rebar -C rebar.config.lock get-deps
 
 compile: deps
 	# Temp hack to work around https://github.com/basho/riak-erlang-client/issues/151
@@ -69,7 +82,7 @@ package.src: deps
 	mkdir -p package
 	rm -rf package/$(PKG_ID)
 	git archive --format=tar --prefix=$(PKG_ID)/ $(PKG_REVISION)| (cd package && tar -xf -)
-	${MAKE} -C package/$(PKG_ID) deps
+	${MAKE} -C package/$(PKG_ID) locked-deps
 	for dep in package/$(PKG_ID)/deps/*; do \
 	    echo "Processing dep: $${dep}"; \
 	    mkdir -p $${dep}/priv; \
