@@ -24,7 +24,7 @@
 -export([new/1,
          run/4]).
 
--export([sink_generator/0, lager_msg_generator/0]).
+-export([keygen/1, valgen/1, sink_generator/0, lager_msg_generator/0]).
 
 -include("basho_bench.hrl").
 
@@ -54,8 +54,16 @@ run(log, SinkGen, ValueGen, State = #state{multiple_sink_support = S}) ->
         {error, Reason} -> {error, Reason, State}
     end.
 
+keygen(_Id) ->
+    fun sink_generator/0.
+
+valgen(_Id) ->
+    fun lager_msg_generator/0.
+
+%% XXX FIXME: obviously a placeholder
 sink_generator() ->
     ok.
 
+%% XXX FIXME: obviously a placeholder
 lager_msg_generator() ->
-    ok.
+    {info, [], "~p", [<<"foo">>]}.
