@@ -35,7 +35,9 @@
           pb_timeout,
           http_timeout,
           last_key = 0,
-          first_key = -1
+          first_key = -1,
+          r_val,
+          w_val
          }).
 
 
@@ -67,6 +69,8 @@ new(Id) ->
     {HTTPTargetIp, HTTPTargetPort} = lists:nth((Id rem length(HTTPTargets)+1), HTTPTargets),
     ?INFO("Using http target ~p:~p for worker ~p\n", [HTTPTargetIp, HTTPTargetPort, Id]),
 
+    RVal = basho_bench_config:get(r_val, 2),
+    WVal = basho_bench_config:get(w_val, 2),
 
     %% Choose the target node using our ID as a modulus
     PBTargets = basho_bench_config:normalize_ips(PBIPs, PBPort),
@@ -81,7 +85,9 @@ new(Id) ->
                bucket = Bucket,
                max_key = MaxKey,
                pb_timeout = PBTimeout,
-               http_timeout = HTTPTimeout}};
+               http_timeout = HTTPTimeout,
+               r_val = RVal,
+               w_val = WVal}};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [PBTargetIp, PBTargetPort, Reason2])
@@ -128,6 +134,7 @@ run(fast_get_pb, _, _ValueGen, State) ->
     Bucket = State#state.bucket,
     LastKey = State#state.last_key,
     FirstKey0 = State#state.first_key,
+    RVal = State#state.r_val,
 
     FirstKey = case FirstKey0 of
       -1 -> LastKey;
@@ -141,7 +148,7 @@ run(fast_get_pb, _, _ValueGen, State) ->
 
     Key = to_binary(IntKey),
 
-    case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
+    case riakc_pb_socket:get(Pid, Bucket, Key, [{r, RVal}], State#state.pb_timeout) of
         {ok, _Obj} ->
             {ok, State};
         {error, notfound} ->
@@ -155,6 +162,8 @@ run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
     Bucket = State#state.bucket,
     Key = to_integer(KeyGen()),
     Value = ValueGen(),
+    WVal = State#state.w_val,
+
     MetaData = case N of
       0 -> dict:new();
       _ ->
@@ -169,7 +178,7 @@ run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
     Robj2 = riakc_obj:update_metadata(Robj1, MetaData),
     
     %% Write the object...
-    case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
+    case riakc_pb_socket:put(Pid, Robj2, [{w, WVal}], State#state.pb_timeout) of
         ok ->
             case FirstKey of
               -1 -> {ok, State#state{last_key = Key, first_key = Key}};
