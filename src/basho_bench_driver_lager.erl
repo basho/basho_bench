@@ -50,6 +50,9 @@ new(_ID) ->
         false -> erlang:put(lager_levels, Levels)
     end,
 
+    MDKeys = basho_bench_config:get(lager_metadata_keys, [bar, baz, qux, hoge]),
+    erlang:put(lager_mdkeys, MDKeys),
+
     {ok, #state{multiple_sink_support = erlang:function_exported(lager, log, 5)}}.
 
 run(log, SinkGen, ValueGen, State = #state{multiple_sink_support = S}) ->
@@ -84,6 +87,9 @@ lager_msg_generator() ->
     Fmt = generate_fmt(Args),
     {Level, Metadata, Fmt, Args}.
 
+get_random(List) ->
+    get_random(List, undefined).
+
 get_random(List, Default) ->
     Len = length(List),
     case Len of
@@ -93,7 +99,18 @@ get_random(List, Default) ->
     end.
 
 maybe_generate_metadata() ->
-    [].
+    NumArgs = random:uniform(3) - 1,
+    generate_md(NumArgs, []).
+
+generate_md(0, Acc) -> lists:reverse(Acc);
+generate_md(N, Acc) ->
+    MDKeys = erlang:get(lager_mdkeys),
+    Data = case random:uniform(100) of
+               N when N rem 10 =:= 0 ->
+                   random_binstr();
+               _ -> N
+    end,
+    generate_md(N - 1, [ { get_random(MDKeys), Data } | Acc ]).
 
 maybe_generate_args() ->
     NumArgs = random:uniform(6) - 1,
@@ -101,9 +118,7 @@ maybe_generate_args() ->
 
 generate_args(0, Acc) -> lists:reverse(Acc);
 generate_args(N, Acc) ->
-    Char = random:uniform(26) + 64, % 64 precedes ASCII "A" (65), so this will generate a char in the range of A-Z
-    Num  = random:uniform(100),
-    generate_args(N - 1, [ list_to_binary(string:chars(Char, Num)) | Acc ]).
+    generate_args(N - 1, [ random_binstr() | Acc ]).
 
 generate_fmt(Args) ->
     L = length(Args),
@@ -111,3 +126,8 @@ generate_fmt(Args) ->
         0 -> "No arguments!";
         _ -> string:copies("~p ", L)
     end.
+
+random_binstr() ->
+    Char = random:uniform(26) + 64, % 64 precedes ASCII "A" (65), so this will generate a char in the range of A-Z
+    Num  = random:uniform(50),
+    list_to_binary(string:chars(Char, Num)).
