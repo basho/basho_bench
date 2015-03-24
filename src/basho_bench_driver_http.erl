@@ -32,7 +32,8 @@
           generators = [],
           values = [],
           headers = [],
-          targets = []}).
+          targets = [],
+          target_indexes = []}).
 
 
 %% ====================================================================
@@ -68,69 +69,71 @@ new(Id) ->
     Generators = build_generators(basho_bench_config:get(generators), [], Id),
     Values = basho_bench_config:get(values),
     Headers = basho_bench_config:get(headers),
-    Targets = basho_bench_config:get(targets),
+    TargetsProplist = basho_bench_config:get(targets),
+    TargetIndexes = build_target_list(TargetsProplist, []),
 
     {ok, #state {
             generators = Generators,
             values = Values,
             headers = Headers,
-            targets = Targets
+            targets = TargetsProplist,
+            target_indexes = TargetIndexes
            }}.
 
 run({get, Target}, KeyGen, ValueGen, State) ->
     run({get, Target, undefined}, KeyGen, ValueGen, State);
 run({get, Target, HeaderName}, KeyGen, ValueGen, State) ->
-    Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get_value(HeaderName, State#state.headers, []),
+    {Url, S2} = next_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, S2#state.headers, []),
 
     case do_get(Url, Headers) of
         {not_found, _Url} ->
-            {ok, State};
+            {ok, S2};
         {ok, _Url, _Header} ->
-            {ok, State};
+            {ok, S2};
         {error, Reason} ->
-            {error, Reason, State}
+            {error, Reason, S2}
     end;
 
 run({put, Target, ValueName}, KeyGen, ValueGen, State) ->
     run({put, Target, ValueName, undefined}, KeyGen, ValueGen, State);
 run({put, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
-    Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get_value(HeaderName, State#state.headers, []),
-    Data = build_value(ValueName, KeyGen, ValueGen, State),
+    {Url, S2} = next_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, S2#state.headers, []),
+    Data = build_value(ValueName, KeyGen, ValueGen, S2),
 
     case do_put(Url, Headers, Data) of
         ok ->
-            {ok, State};
+            {ok, S2};
         {error, Reason} ->
-            {error, Reason, State}
+            {error, Reason, S2}
     end;
 
 run({post, Target, ValueName}, KeyGen, ValueGen, State) ->
     run({post, Target, ValueName, undefined}, KeyGen, ValueGen, State);
 run({post, Target, ValueName, HeaderName}, KeyGen, ValueGen, State) ->
-    Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get_value(HeaderName, State#state.headers, []),
-    Data = build_value(ValueName, KeyGen, ValueGen, State),
+    {Url, S2} = next_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, S2#state.headers, []),
+    Data = build_value(ValueName, KeyGen, ValueGen, S2),
 
     case do_post(Url, Headers, Data) of
         ok ->
-            {ok, State};
+            {ok, S2};
         {error, Reason} ->
-            {error, Reason, State}
+            {error, Reason, S2}
     end;
 
 run({delete, Target}, KeyGen, ValueGen, State) ->
     run({delete, Target, undefined}, KeyGen, ValueGen, State);
 run({delete, Target, HeaderName}, KeyGen, ValueGen, State) ->
-    Url = build_url(Target, KeyGen, ValueGen, State),
-    Headers = proplists:get_value(HeaderName, State#state.headers, []),
+    {Url, S2} = next_url(Target, KeyGen, ValueGen, State),
+    Headers = proplists:get_value(HeaderName, S2#state.headers, []),
 
     case do_delete(Url, Headers) of
         ok ->
-            {ok, State};
+            {ok, S2};
         {error, Reason} ->
-            {error, Reason, State}
+            {error, Reason, S2}
     end.
 
 %% ====================================================================
@@ -160,13 +163,36 @@ build_formatted_value(String, GeneratorNames, Generators, KeyGen, ValueGen) ->
     Values = lists:map(fun (Name) -> evaluate_generator(Name, Generators, KeyGen, ValueGen) end, GeneratorNames),
     io_lib:format(String, Values).
 
+%% Round robin sub-target selection
+next_url({TargetName, Index, Targets}, KeyGen, ValueGen, State) 
+        when is_list(Targets), Index > length(Targets) ->
+    OtherIndexes = proplists:delete(TargetName, State#state.target_indexes),
+    S2 = State#state{target_indexes = [{TargetName, 1} | OtherIndexes]},
+    next_url({TargetName, 1, Targets}, KeyGen, ValueGen, S2);
+next_url({TargetName, Index, Targets}, KeyGen, ValueGen, State) 
+        when is_list(Targets) ->
+    OtherIndexes = proplists:delete(TargetName, State#state.target_indexes),
+    Url = build_url(lists:nth(Index, Targets), State#state.generators, KeyGen, ValueGen),
+    S2 = State#state{target_indexes = [{TargetName, Index + 1} | OtherIndexes]},
+    {Url, S2};
+next_url({_, _, Target}, KeyGen, ValueGen, State) when is_tuple(Target) ->
+    Url = build_url(Target, State#state.generators, KeyGen, ValueGen),
+    {Url, State};
+next_url(TargetName, KeyGen, ValueGen, State) when is_atom(TargetName) ->
+    Index = proplists:get_value(TargetName, State#state.target_indexes), 
+    Target = proplists:get_value(TargetName, State#state.targets),
+    next_url({TargetName, Index, Target}, KeyGen, ValueGen, State).
+
 build_url({Host, Port, {FormattedPath, GeneratorNames}}, Generators, KeyGen, ValueGen) ->
     Path = build_formatted_value(FormattedPath, GeneratorNames, Generators, KeyGen, ValueGen),
     #url{host=Host, port=Port, path=Path};
 build_url({Host, Port, Path}, _, _, _) ->
-    #url{host=Host, port=Port, path=Path};
-build_url(Target, KeyGen, ValueGen, State) ->
-    build_url(proplists:get_value(Target, State#state.targets), State#state.generators, KeyGen, ValueGen).
+    #url{host=Host, port=Port, path=Path}.
+
+build_target_list([], TargetIndexes) ->
+    TargetIndexes;
+build_target_list([{Name, _}|Rest], TargetIndexes) ->
+    build_target_list(Rest, [{Name, 1} | TargetIndexes]).
 
 build_value(ValueName, KeyGen, ValueGen, State) ->
     case proplists:get_value(ValueName, State#state.values) of
