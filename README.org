@@ -126,24 +126,32 @@ $ ./priv/gp_latencies.sh
    We encourage contributions to Basho Bench from the community.
 
    1) Fork the =basho_bench= repository on [[https://github.com/basho/basho_bench][Github]].
+
    2) Clone your fork or add the remote if you already have a clone of
       the repository.
-#+BEGIN_SRC shell
-git clone git@github.com:yourusername/basho_bench.git
-# or
-git remote add mine git@github.com:yourusername/basho_bench.git
-#+END_SRC
+
+      #+BEGIN_SRC shell
+      git clone git@github.com:yourusername/basho_bench.git
+      # or
+      git remote add mine git@github.com:yourusername/basho_bench.git
+      #+END_SRC
+
    3) Create a topic branch for your change.
-#+BEGIN_SRC shell
-git checkout -b some-topic-branch
-#+END_SRC
+
+      #+BEGIN_SRC shell
+      git checkout -b some-topic-branch
+      #+END_SRC
+
    4) Make your change and commit. Use a clear and descriptive commit
       message, spanning multiple lines if detailed explanation is
       needed.
+
    5) Push to your fork of the repository and then send a pull-request
       through Github.
-#+BEGIN_SRC shell
-git push mine some-topic-branch
-#+END_SRC
+
+      #+BEGIN_SRC shell
+      git push mine some-topic-branch
+      #+END_SRC
+
    6) A Basho engineer or community maintainer will review your patch
       and merge it into the main repository or send you feedback.
