@@ -33,6 +33,8 @@
           multiple_sink_support = false
     }).
 
+-define(TRACE_FILTER, [{trace, <<"match">>}]).
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -53,7 +55,18 @@ new(_ID) ->
     MDKeys = basho_bench_config:get(lager_metadata_keys, [bar, baz, qux, hoge]),
     erlang:put(lager_mdkeys, MDKeys),
 
+    configure_traces(basho_bench_config:get(traces, [])),
+
     {ok, #state{multiple_sink_support = erlang:function_exported(lager, log, 5)}}.
+
+configure_trace(file) ->
+    lager:trace_file("trace-error.log", ?TRACE_FILTER);
+configure_trace(console) ->
+    lager:trace_console("trace-error.log", ?TRACE_FILTER).
+
+configure_traces(Traces) ->
+    lists:foreach(fun configure_trace/1, Traces).
+
 
 run(log, SinkGen, ValueGen, State = #state{multiple_sink_support = S}) ->
     Sink = SinkGen(),
@@ -106,11 +119,17 @@ generate_md(0, Acc) -> lists:reverse(Acc);
 generate_md(N, Acc) ->
     MDKeys = erlang:get(lager_mdkeys),
     Data = case random:uniform(100) of
-               N when N rem 10 =:= 0 ->
+               X when X rem 10 =:= 0 ->
                    random_binstr();
-               _ -> N
+               X -> X
     end,
-    generate_md(N - 1, [ { get_random(MDKeys), Data } | Acc ]).
+    %% Make sure we occasionally match any trace that's installed
+    case random:uniform(20) of
+        5 ->
+            generate_md(N - 1, [ { trace, <<"match">> } | Acc ]);
+        _ ->
+            generate_md(N - 1, [ { get_random(MDKeys), Data } | Acc ])
+    end.
 
 maybe_generate_args() ->
     NumArgs = random:uniform(6) - 1,
