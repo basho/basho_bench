@@ -62,7 +62,7 @@ new(_ID) ->
 configure_trace(file) ->
     lager:trace_file("trace-error.log", ?TRACE_FILTER);
 configure_trace(console) ->
-    lager:trace_console("trace-error.log", ?TRACE_FILTER).
+    lager:trace_console(?TRACE_FILTER).
 
 configure_traces(Traces) ->
     lists:foreach(fun configure_trace/1, Traces).
