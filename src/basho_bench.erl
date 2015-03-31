@@ -56,28 +56,25 @@ main(Args) ->
     {ok, _Pid} = basho_bench_config:start_link(),
     basho_bench_config:set(test_id, BenchName),
 
-    application:load(lager),
-    ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
-    ErrorLog = filename:join([TestDir, "error.log"]),
-    ConsoleLog = filename:join([TestDir, "console.log"]),
-    CrashLog = filename:join([TestDir, "crash.log"]),
-    application:set_env(lager,
-                        handlers,
-                        [{lager_console_backend, ConsoleLagerLevel},
-                         {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
-                         {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
-                        ]),
-    application:set_env(lager, crash_log, CrashLog),
-    lager:start(),
-
+    case basho_bench_config:get(use_lager, true) of
+        true -> 
+            load_and_start_lager(TestDir);
+        false -> 
+            ok
+    end,
+    
     %% Make sure this happens after starting lager or failures wont
     %% show.
     basho_bench_config:load(Configs),
 
     %% Log level can be overriden by the config files
-    CustomLagerLevel = basho_bench_config:get(log_level),
-    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
-    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel),
+    case basho_bench_config:get(use_lager, true) of
+        true ->
+            CustomLagerLevel = basho_bench_config:get(log_level),
+            maybe_override_log_levels(TestDir, CustomLagerLevel);
+        false ->
+            ok
+    end,
 
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
@@ -117,6 +114,26 @@ main(Args) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
+
+load_and_start_lager(TestDir) ->
+    application:load(lager),
+    ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
+    ErrorLog = filename:join([TestDir, "error.log"]),
+    ConsoleLog = filename:join([TestDir, "console.log"]),
+    CrashLog = filename:join([TestDir, "crash.log"]),
+    application:set_env(lager,
+                        handlers,
+                        [{lager_console_backend, ConsoleLagerLevel},
+                         {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
+                         {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
+                        ]),
+    application:set_env(lager, crash_log, CrashLog),
+    lager:start().
+
+maybe_override_log_levels(TestDir, CustomLagerLevel) ->
+    ConsoleLog = filename:join([TestDir, "console.log"]),
+    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
+    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel).
 
 print_usage() ->
     getopt:usage(cli_options(), escript:script_name(), "CONFIG_FILE").
