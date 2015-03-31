@@ -56,8 +56,6 @@ new(_ID) ->
     MDKeys = basho_bench_config:get(lager_metadata_keys, [bar, baz, qux, hoge]),
     erlang:put(lager_mdkeys, MDKeys),
 
-    configure_traces(basho_bench_config:get(traces, [])),
-
     MultSinks = erlang:function_exported(lager, log, 5),
 
     %% ok, at this point we need to start lager
@@ -73,6 +71,8 @@ new(_ID) ->
                         ]),
     application:set_env(lager, crash_log, "crash.log"),
     lager:start(),
+
+    configure_traces(basho_bench_config:get(traces, [])),
 
     {ok, #state{multiple_sink_support = MultSinks,
                 current_backends = collect_backends(MultSinks)}}.
