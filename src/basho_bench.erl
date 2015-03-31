@@ -24,6 +24,12 @@
 -export([main/1, md5/1]).
 -include("basho_bench.hrl").
 
+-ifdef(no_lager).
+-define(USE_LAGER, false).
+-else.
+-define(USE_LAGER, true).
+-endif.
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -56,7 +62,8 @@ main(Args) ->
     {ok, _Pid} = basho_bench_config:start_link(),
     basho_bench_config:set(test_id, BenchName),
 
-    case basho_bench_config:get(use_lager, true) of
+
+    case basho_bench_config:get(use_lager, ?USE_LAGER) of
         true -> 
             load_and_start_lager(TestDir);
         false -> 
@@ -68,7 +75,7 @@ main(Args) ->
     basho_bench_config:load(Configs),
 
     %% Log level can be overriden by the config files
-    case basho_bench_config:get(use_lager, true) of
+    case basho_bench_config:get(use_lager, ?USE_LAGER) of
         true ->
             CustomLagerLevel = basho_bench_config:get(log_level),
             maybe_override_log_levels(TestDir, CustomLagerLevel);
