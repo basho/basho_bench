@@ -60,6 +60,20 @@ new(_ID) ->
 
     MultSinks = erlang:function_exported(lager, log, 5),
 
+    %% ok, at this point we need to start lager
+
+    application:load(lager),
+    %% do not hijack error_logger
+    application:set_env(lager, error_logger_redirect, false),
+    %% set the output handlers
+    application:set_env(lager,
+                        handlers,
+                        [{lager_console_backend, debug},
+                         {lager_file_backend, [{file, "console.log"}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
+                        ]),
+    application:set_env(lager, crash_log, "crash.log"),
+    lager:start(),
+
     {ok, #state{multiple_sink_support = MultSinks,
                 current_backends = collect_backends(MultSinks)}}.
 

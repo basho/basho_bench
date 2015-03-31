@@ -62,7 +62,6 @@ main(Args) ->
     {ok, _Pid} = basho_bench_config:start_link(),
     basho_bench_config:set(test_id, BenchName),
 
-
     case basho_bench_config:get(use_lager, ?USE_LAGER) of
         true -> 
             load_and_start_lager(TestDir);
