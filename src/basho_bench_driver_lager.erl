@@ -30,7 +30,8 @@
 -include_lib("lager/include/lager.hrl").
 
 -record(state, {
-          multiple_sink_support = false
+          multiple_sink_support = false,
+          current_backends = []
     }).
 
 -define(TRACE_FILTER, [{trace, <<"match">>}]).
@@ -57,7 +58,23 @@ new(_ID) ->
 
     configure_traces(basho_bench_config:get(traces, [])),
 
-    {ok, #state{multiple_sink_support = erlang:function_exported(lager, log, 5)}}.
+    MultSinks = erlang:function_exported(lager, log, 5),
+
+    {ok, #state{multiple_sink_support = MultSinks,
+                current_backends = collect_backends(MultSinks)}}.
+
+%% New lager
+collect_backends(true) ->
+    Handlers = lager_config:global_get(handlers, []),
+    lists:foldl(fun({Id, _Pid, Sink}, Accum) ->
+                        orddict:append(Sink, Id, Accum)
+                end,
+                orddict:new(),
+                Handlers);
+%% Old lager
+collect_backends(false) ->
+    Handlers = gen_event:which_handlers(lager_event),
+    orddict:store(lager_event, Handlers, orddict:new()).
 
 configure_trace(file) ->
     lager:trace_file("trace-error.log", ?TRACE_FILTER);
@@ -67,21 +84,48 @@ configure_trace(console) ->
 configure_traces(Traces) ->
     lists:foreach(fun configure_trace/1, Traces).
 
-
-run(log, SinkGen, ValueGen, State = #state{multiple_sink_support = S}) ->
+run_aux(SinkGen, ValueGen, State = #state{multiple_sink_support = S}, ExtraMD) ->
     Sink = SinkGen(),
     {Level, Metadata, Format, Args} = ValueGen(),
     Result = case S of
         true ->
-            lager:log(Sink, Level, Metadata, Format, Args);
+            lager:log(Sink, Level, Metadata ++ ExtraMD, Format, Args);
         false ->
-            lager:log(Level, Metadata, Format, Args)
+            lager:log(Level, Metadata ++ ExtraMD, Format, Args)
     end,
     case Result of
         ok -> {ok, State};
         {error, lager_not_running} -> {'EXIT', lager_not_running};
         {error, Reason} -> {error, Reason, State}
     end.
+
+change_loglevel(Sink, Backends, true) ->
+    lists:foreach(fun(B) -> L = random_loglevel(),
+                            error_logger:info_msg("Changing loglevel on ~p (~p)~n",
+                                      [B, L]),
+                            lager:set_loglevel(Sink, B, undefined, L) end,
+                  Backends);
+change_loglevel(Sink, Backends, false) ->
+    lists:foreach(fun(B) -> L = random_loglevel(),
+                            error_logger:info_msg("Changing loglevel on ~p (~p)~n",
+                                      [B, L]),
+                            lager:set_loglevel(B, L) end,
+                  Backends).
+
+
+random_loglevel() ->
+    get_random(erlang:get(lager_levels), debug).
+
+run(change_loglevel, _SinkGen, _ValueGen, State=#state{current_backends=B,multiple_sink_support=M}) ->
+    io:format("~n~nHEY YOU~n~p~n", [B]),
+    lists:foreach(fun(Sink) -> change_loglevel(Sink,
+                                               orddict:fetch(Sink, B), M) end,
+                  orddict:fetch_keys(B)),
+    {ok, State};
+run(log, SinkGen, ValueGen, State) ->
+    run_aux(SinkGen, ValueGen, State, []);
+run(trace, SinkGen, ValueGen, State) ->
+    run_aux(SinkGen, ValueGen, State, ?TRACE_FILTER).
 
 keygen(_Id) ->
     fun sink_generator/0.
@@ -123,13 +167,7 @@ generate_md(N, Acc) ->
                    random_binstr();
                X -> X
     end,
-    %% Make sure we occasionally match any trace that's installed
-    case random:uniform(20) of
-        5 ->
-            generate_md(N - 1, [ { trace, <<"match">> } | Acc ]);
-        _ ->
-            generate_md(N - 1, [ { get_random(MDKeys), Data } | Acc ])
-    end.
+    generate_md(N - 1, [ { get_random(MDKeys), Data } | Acc ]).
 
 maybe_generate_args() ->
     NumArgs = random:uniform(6) - 1,
