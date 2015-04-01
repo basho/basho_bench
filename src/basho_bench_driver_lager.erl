@@ -19,6 +19,14 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+%% @doc This is a driver for lager inside of the basho_bench framework.
+%% Since lager is itself a dependency of basho_bench, you'll need to use
+%% the `{d, no_lager}' macro in the `{erl_opt}' portion of rebar.config 
+%% to build a basho_bench which does NOT use lager for its own log messages.
+%%
+%% Instead basho_bench will use the built-in SASL error_logger, so internal log
+%% messages will show up in the `sasl.log.txt' file for a given test run.
+%%
 -module(basho_bench_driver_lager).
 
 -export([new/1,
