@@ -6,9 +6,12 @@
 
 -define(CONSOLE(Str, Args), io:format(Str, Args)).
 
--define(DEBUG(Str, Args), error_logger:debug_msg(Str, Args)).
+%% error_logger doesn't have a debug message
+%% see http://www.erlang.org/doc/man/error_logger.html
+-define(DEBUG(Str, Args), error_logger:info_msg("DEBUG: " ++ Str, Args)).
+
 -define(INFO(Str, Args), error_logger:info_msg(Str, Args)).
--define(WARN(Str, Args), error_logger:warn_msg(Str, Args)).
+-define(WARN(Str, Args), error_logger:warning_msg(Str, Args)).
 -define(ERROR(Str, Args), error_logger:error_msg(Str, Args)).
 
 -else.
