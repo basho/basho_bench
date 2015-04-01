@@ -40,7 +40,7 @@
 %% API
 %% ====================================================================
 
-new(_ID) ->
+do_init() ->
     %% I guess it's mildly evil to use the process dictionary to store
     %% stateful things...
 
@@ -56,10 +56,12 @@ new(_ID) ->
     MDKeys = basho_bench_config:get(lager_metadata_keys, [bar, baz, qux, hoge]),
     erlang:put(lager_mdkeys, MDKeys),
 
-    MultSinks = erlang:function_exported(lager, log, 5),
+    erlang:function_exported(lager, log, 5).
+
+new(1) ->
+    MultSinks = do_init(),
 
     %% ok, at this point we need to start lager
-
     application:load(lager),
     %% do not hijack error_logger
     application:set_env(lager, error_logger_redirect, false),
@@ -74,6 +76,11 @@ new(_ID) ->
 
     configure_traces(basho_bench_config:get(traces, [])),
 
+    {ok, #state{multiple_sink_support = MultSinks,
+                current_backends = collect_backends(MultSinks)}};
+
+new(_ID) -> 
+    MultSinks = do_init(),
     {ok, #state{multiple_sink_support = MultSinks,
                 current_backends = collect_backends(MultSinks)}}.
 
@@ -119,7 +126,7 @@ change_loglevel(Sink, Backends, true) ->
                                       [B, L]),
                             lager:set_loglevel(Sink, B, undefined, L) end,
                   Backends);
-change_loglevel(Sink, Backends, false) ->
+change_loglevel(_Sink, Backends, false) ->
     lists:foreach(fun(B) -> L = random_loglevel(),
                             error_logger:info_msg("Changing loglevel on ~p (~p)~n",
                                       [B, L]),
