@@ -26,7 +26,7 @@
 
 -include("basho_bench.hrl").
 
--record(state, { client_id, host, 
+-record(state, { client_id, hosts, host_index, 
                  users, user_index, 
                  policy_ids, policy_index,
                  group_names, group_index}).
@@ -54,26 +54,32 @@ new(Id) ->
     application:start(ibrowse),
     erlang:put(disconnect_freq, infinity),
 
-    Host = basho_bench_config:get(host, "https://www.google.com"),
+    Hosts = create_host_list(basho_bench_config:get(host, "https://www.google.com")),
     UserTokens = basho_bench_config:get(user_tokens, []),
     PolicyIds = basho_bench_config:get(policy_ids, []),
     GroupNames = basho_bench_config:get(group_names, []),
 
     {ok, #state { client_id = Id,
-                  host = Host,
-                  users = setup_users(Host, UserTokens, 1, []),
+                  hosts = Hosts,
+                  host_index = 1,
+                  users = setup_users(Hosts, UserTokens, 1, []),
                   user_index = 1,
                   policy_ids = PolicyIds,
                   policy_index = 1,
                   group_names = GroupNames,
                   group_index = 1}}.
 
+create_host_list(Hosts) when is_list(Hosts) ->
+    Hosts;
+create_host_list(Host) ->
+    [Host].
+
 setup_users(_Host, [], _Index, Users) ->
     Users;
-setup_users(Host, [T|Rest], Index, Users) ->
+setup_users([Host|_], [T|Rest], Index, Users) ->
     % Get device token
     Url = Host ++ "/api/dev",
-    Headers = [{"Authorization","Basic " ++ T},{'Content-Type', 'application/json'}],
+    Headers = [{"Authorization","Basic " ++ T},{'Content-Type', 'application/json'},{"X-VDS-TENANT", "bashoperf"}],
     Method = post,
     Payload = lists:flatten("{\"deviceName\": \"API_Test_Device\", \"pushToken\": \"APITestToken\", \"os\": \"WINDOWS\", \"clientDeviceId\": \"APITestDeviceId" ++ integer_to_list(Index) ++ "\", \"osVersion\": \"7.0\", \"type\": \"WINDOWS\"}"),
     
@@ -81,7 +87,7 @@ setup_users(Host, [T|Rest], Index, Users) ->
     {struct,[{<<"deviceId">>,DeviceId},{<<"deviceToken">>, DeviceToken},{<<"canProtect">>,true}]} = mochijson2:decode(Json),
 
     DeviceHeader = binary_to_list(base64:encode(binary_to_list(DeviceId) ++ ":" ++ binary_to_list(DeviceToken))),
-    setup_users(Host, Rest, Index+1, [{Index, T, DeviceHeader}|Users]).
+    setup_users([Host], Rest, Index+1, [{Index, T, DeviceHeader}|Users]).
 
 next_in_list([], _Itr, _Ind) ->
     error;
@@ -111,13 +117,15 @@ run({get, Path}, KeyGen, _ValueGen, State) ->
 
     {Header, State2} = next_device_token(State),
 
-    Url = State2#state.host ++ Path,
-    Headers = [{"Authorization","Basic " ++ Header}],
+    Url = next_in_list(State2#state.hosts, 1, State2#state.host_index)  ++ Path,
+    Headers = [{"Authorization","Basic " ++ Header},{"X-VDS-TENANT", "bashoperf"}],
     Method = get,
 
+    State3 = State2#state {host_index = incr_index(State2#state.host_index, length(State2#state.hosts))},
+
     case ibrowse:send_req(Url, Headers, Method) of
-        {ok,"200", _, _} -> {ok, State2};
-        Reason -> {error, Reason, State2}
+        {ok,"200", _, _} -> {ok, State3};
+        Reason -> {error, Reason, State3}
     end;
 
 run(sync_docs, KeyGen, _ValueGen, State) ->
@@ -127,13 +135,20 @@ run(sync_docs, KeyGen, _ValueGen, State) ->
 
     Timestamp = timestamp(now()),
 
-    Url = State2#state.host ++ "/api/doc/sync?syncId=" ++ Timestamp,
-    Headers = [{"Authorization","Basic " ++ Header}],
+    Url = next_in_list(State2#state.hosts, 1, State2#state.host_index) ++ "/api/doc/sync?syncId=" ++ Timestamp,
+    % Url = State2#state.host ++ "/api/doc/sync",
+    Headers = [{"Authorization","Basic " ++ Header},{"X-VDS-TENANT", "bashoperf"}],
     Method = get,
 
+    State3 = State2#state {host_index = incr_index(State2#state.host_index, length(State2#state.hosts))},
+
     case ibrowse:send_req(Url, Headers, Method) of
-        {ok,"200", _, _} -> {ok, State2};
-        Reason -> {error, Reason, State2}
+        {ok,"200", _, _Doc} -> 
+            % io:fwrite("Sync Docs Returned: ~n~p~n~n", [Doc]),
+            {ok, State3};
+        Reason -> 
+            % io:fwrite("Sync Docs Error: ~n~p~n~n", [Reason]),
+            {error, Reason, State3}
     end;
 
 run(protect_doc, KeyGen, _ValueGen, State) ->
@@ -144,19 +159,25 @@ run(protect_doc, KeyGen, _ValueGen, State) ->
 
     {Header, State2} = next_device_token(State),
 
-    Url = State2#state.host ++ "/api/doc",
-    Headers = [{"Authorization","Basic " ++ Header}, {'Content-Type', 'application/json'}],
+    Url = next_in_list(State2#state.hosts, 1, State2#state.host_index) ++ "/api/doc",
+    Headers = [{"Authorization","Basic " ++ Header}, {'Content-Type', 'application/json'},{"X-VDS-TENANT", "bashoperf"}],
     Method = post,
 
-    State3 = State2#state {policy_index = incr_index(State#state.policy_index, length(State#state.policy_ids))},
-    State4 = State3#state {group_index = incr_index(State#state.group_index, length(State#state.group_names))},
+    State3 = State2#state {policy_index = incr_index(State2#state.policy_index, length(State2#state.policy_ids))},
+    State4 = State3#state {group_index = incr_index(State3#state.group_index, length(State3#state.group_names))},
+    State5 = State4#state {host_index = incr_index(State4#state.host_index, length(State4#state.hosts))},
 
     case ibrowse:send_req(Url, Headers, Method, Payload) of
-        {ok,"200", _, _} -> {ok, State4};
-        Reason -> {error, Reason, State4}
+        {ok,"200", _, _Doc} -> 
+            % io:fwrite("Protect Doc Returned: ~n~p~n~n", [Doc]),
+            {ok, State5};
+        Reason -> 
+            % io:fwrite("Protect Doc Error: ~n~p~n~n", [Reason]),
+            {error, Reason, State5}
     end.
 
 timestamp(Now) -> 
     {{YY, MM, DD}, {Hour, Min, Sec}} = calendar:now_to_local_time(Now), 
     lists:flatten(io_lib:format("~2..0w/~2..0w/~4..0w%20~2..0w:~2..0w:~2..0w", 
-                  [MM, DD, YY, Hour, Min, Sec])).
+                  [MM, DD, YY, Hour, Min, 0])).
+
