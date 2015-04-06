@@ -97,8 +97,10 @@ run({put, N}, _KeyGen, _ValueGen, State =
         {ok, _, _, ConnRef} ->
             case hackney:body(ConnRef) of
                 {ok, _Body} -> 
+                    %lager:debug("Put ok ~p\n", [self()]),
                     {ok, State2};
                 {error, Error} ->
+                    lager:error("Put error ~p\n", [self()]),
                     {error, Error, State2}
             end;
         {error, ReqError} ->
@@ -124,8 +126,8 @@ run({get, N}, _KeyGen, _ValueGen, State =
                                [{<<"Content-Type">>, <<"text/plain">>}],
                                Query}) of
         {ok, _, _, ConnRef} ->
-            case hackney:body(ConnRef) of
-                {ok, _Body} ->
+            case read_stream_body(ConnRef) of
+                ok ->
                     {ok, State};
                 {error, Error} ->
                     {error, Error, State}
@@ -136,3 +138,17 @@ run({get, N}, _KeyGen, _ValueGen, State =
 
 run(Other, _, _, _) ->
     throw({unknown_operation, Other}).
+
+read_stream_body(C) ->
+    case hackney:stream_body(C) of
+        {ok, _Data} ->
+            %lager:debug("Received data ~p\n", [self()]),
+            read_stream_body(C);
+        done ->
+            %lager:debug("Received end of data ~p\n", [self()]),
+            ok;
+        {error, Err} ->
+            lager:error("Error ~p\n", [Err]),
+            {error, Err}
+    end.
+
