@@ -188,6 +188,36 @@ run({fast_put_pb, N}, KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 
+run(delete, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.bucket,
+    LastKey = State#state.last_key,
+    FirstKey0 = State#state.first_key,
+
+    FirstKey = case FirstKey0 of
+      -1 -> LastKey;
+      _ -> FirstKey0
+    end,
+
+    IntKey = case LastKey of
+      FirstKey -> FirstKey;
+      _ -> crypto:rand_uniform(FirstKey, to_integer(LastKey))
+    end,
+
+    Key = to_binary(IntKey),
+
+    case riakc_pb_socket:delete(Pid, Bucket, Key,
+                                [], State#state.pb_timeout) of
+        ok ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, disconnected} ->
+            run(delete, KeyGen, _ValueGen, State);
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
 %% Query results via the HTTP interface.
 run({query_http, MaxN}, KeyGen, _ValueGen, State) ->
     Host = State#state.http_host,
