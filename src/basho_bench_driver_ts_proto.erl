@@ -63,7 +63,7 @@ new(Id) ->
     ?INFO("Using target ~p:~p ~p/~p for worker ~p\n",
           [Host, Port, Table, Series, Id]),
 
-    case hackney:connect(hackney_tcp_transport, Host, Port, []) of
+    case hackney:connect(hackney_tcp_transport, Host, Port, [{pool, false}]) of
         {ok, ConnRef} ->
             ?INFO("Connection established\n", []),
             {ok, #state {
