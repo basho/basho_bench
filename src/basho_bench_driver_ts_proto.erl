@@ -1,7 +1,5 @@
 %% -------------------------------------------------------------------
 %%
-%% basho_bench_driver_2i_pb: Driver for Secondary Indices (via PB)
-%%
 %% Copyright (c) 2009 Basho Techonologies
 %%
 %% This file is provided to you under the Apache License,
@@ -19,6 +17,8 @@
 %% under the License.
 %%
 %% -------------------------------------------------------------------
+
+%% @doc Driver for Time Series bulk insertion and range scans prototype.
 -module(basho_bench_driver_ts_proto).
 
 -export([new/1,
@@ -51,12 +51,21 @@ new(Id) ->
     Timeout = basho_bench_config:get(ts_proto_timeout, 60000),
     Table = iolist_to_binary(io_lib:format("table~p", [Id])),
     Series = iolist_to_binary(io_lib:format("series~p", [Id])),
-    RandBytes = base64:encode(crypto:rand_bytes(10 * 1024 * 1024)),
+    RandBytes =
+    case basho_bench_config:get(ts_proto_rand_bytes, undefined) of
+        undefined ->
+            NewBytes = base64:encode(crypto:rand_bytes(2 * 1024 * 1024)),
+            basho_bench_config:set(ts_proto_rand_bytes, NewBytes),
+            NewBytes;
+        CachedBytes ->
+            CachedBytes
+    end,
     ?INFO("Using target ~p:~p ~p/~p for worker ~p\n",
           [Host, Port, Table, Series, Id]),
 
     case hackney:connect(hackney_tcp_transport, Host, Port, []) of
         {ok, ConnRef} ->
+            ?INFO("Connection established\n", []),
             {ok, #state {
                     conn_ref = ConnRef,
                     table = Table,
@@ -81,7 +90,7 @@ add_points(N, ValSize, RandBytes, Time, B) ->
     Ofs = random:uniform(byte_size(RandBytes) - ValSize) - 1,
     <<_:Ofs/binary, V:ValSize/binary, _/binary>> = RandBytes,
     TimeBin = integer_to_binary(Time),
-    B2 = <<B/binary, TimeBin/binary, " ", V/binary, "\n">>,
+    B2 = <<B/binary, TimeBin/binary, " attr1=", V/binary, "\n">>,
     add_points(N-1, ValSize, RandBytes, Time + 1, B2).
 
 run({put, N}, _KeyGen, _ValueGen, State =
