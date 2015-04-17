@@ -175,7 +175,7 @@ test_dir(Opts, Name) ->
     ResultsDir = proplists:get_value(results_dir, Opts, DefaultResultsDir),
     ResultsDirAbs = filename:absname(ResultsDir),
     TestDir = filename:join([ResultsDirAbs, Name]),
-    ok = filelib:ensure_dir(filename:join(TestDir, "foobar")),
+    {ok, TestDir} = {filelib:ensure_dir(filename:join(TestDir, "foobar")), TestDir},
     Link = filename:join([ResultsDir, "current"]),
     [] = os:cmd(?FMT("rm -f ~s; ln -sf ~s ~s", [Link, TestDir, Link])),
     TestDir.
