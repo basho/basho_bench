@@ -1,20 +1,12 @@
+ #!/usr/bin/env python
+
 import SimpleHTTPServer
 import SocketServer
 import logging
 import cgi
 import base64
-
-import sys
-
-if len(sys.argv) > 2:
-    PORT = int(sys.argv[2])
-    I = sys.argv[1]
-elif len(sys.argv) > 1:
-    PORT = int(sys.argv[1])
-    I = ""
-else:
-    PORT = 8000
-    I = ""
+import argparse
+import os
 
 class ServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def do_GET(self):
@@ -27,14 +19,21 @@ class ServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       length = self.headers['content-length']
       data = self.rfile.read(int(length))
 
-      with open("./" + self.path, 'w') as fh:
+      with open(os.path.join("." , "summary.png"), 'w') as fh:
         fh.write(base64.b64decode(data.decode()))
 
       self.send_response(200)
 
-Handler = ServerHandler
 
-httpd = SocketServer.TCPServer(("", PORT), Handler)
+def startServer(host, port):
+  handler = ServerHandler
+  httpd = SocketServer.TCPServer(("", port), handler)
+  print 'Serving at: http://{host}:{port}'.format(host=host, port=port)
+  httpd.serve_forever()
 
-print "Serving at: http://%(interface)s:%(port)s" % dict(interface=I or "localhost", port=PORT)
-httpd.serve_forever()
+if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='Results generator')
+  parser.add_argument('--port', '-p', type=int, help='Port for results generator to bind to', default=8080, required=False)
+  parser.add_argument('--host', type=str, help='Host for results generator to bind to', default='localhost', required=False)
+  args = parser.parse_args()
+  startServer(args.host, args.port)

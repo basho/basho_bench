@@ -66,7 +66,7 @@ mib_sec-results:
 	Rscript --vanilla priv/summary.r --ylabel1stgraph MiB/sec -i tests/current
 
 results-browser:
-	cp -R priv/results-browser/* tests/current && cd tests/current && python -c 'import os, json; print json.dumps(os.listdir("."))' > web/data.json && python ../../priv/results-browser.py
+	cp -R priv/results-browser/* tests/current && cd tests/current && python -c 'import os, json; print json.dumps(os.listdir("."))' > web/data.json && python ../../priv/results-browser.py --host localhost --port 8080
 
 TARGETS := $(shell ls tests/ | grep -v current)
 JOBS := $(addprefix job,${TARGETS})

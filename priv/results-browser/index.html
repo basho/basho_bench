@@ -187,7 +187,7 @@
 
       $.ajax({
         type: "POST",
-        url: "summary.png",
+        url: "/",
         data: c.toDataURL("image/png").substr(22),
         success: function (data) {
           console.log("Image uploaded");
