@@ -1,0 +1,210 @@
+<html>
+  <head>
+  <script src="web/jquery.js"></script>
+  <script src="web/jquery.csv.js"></script>
+  <script type="text/javascript"
+      src="https://www.google.com/jsapi?autoload={
+        'modules':[{
+          'name':'visualization',
+          'version':'1',
+          'packages':['corechart']
+        }]
+      }"></script>
+
+  <script type="text/javascript">
+    google.setOnLoadCallback(drawCharts);
+
+    var allCharts = [];
+    var numCharts = 1;
+    var chartsDrawn = 0;
+
+    String.prototype.endsWith = function(suffix) {
+      return this.indexOf(suffix, this.length - suffix.length) !== -1;
+    };
+
+    function drawCharts() {
+      $.ajax({
+        url: "summary.csv",
+        async: true,
+        success: function (csvd) {
+          var data = toThroughputTable($.csv2Array(csvd));
+          drawChart(data, document.getElementById('throughput'), "Throughput", "Ops/Sec");
+        },
+        dataType: "text",
+        complete: function () {
+          // call a function on complete 
+        }
+      });
+
+      $.getJSON( "web/data.json", function( data ) {
+        var fileNames = [];
+
+        for(var i = 0; i < data.length; i++) {
+          var fileName = data[i];
+          if (fileName.endsWith(".csv") && fileName != "summary.csv" && fileName != "errors.csv") {
+            fileNames.push(fileName);
+          }
+        }
+
+        numCharts += 4 * fileNames.length;
+
+        for(var i = 0; i < fileNames.length; i++) {
+          drawLatencyCharts(fileNames[i]);
+        }
+      });
+    }
+
+    function drawLatencyCharts(fileName) {
+      $.ajax({
+        url: fileName,
+        async: true,
+        success: function (csvd) {
+          var data = toLatencyTables($.csv2Array(csvd));
+          for(var i = 0; i < data.length; i++) {
+            var obj = document.createElement('div');
+            obj.id = fileName + i.toString();
+            obj.style.cssText = 'width:800px; height: 200px';
+            document.getElementById("latencies" + i.toString()).appendChild(obj);
+
+            drawChart(data[i][0], obj, data[i][1] + " (" + fileName.substr(0, fileName.length - 14) + ")", "Milliseconds");
+          }
+        },
+        dataType: "text",
+        complete: function () {
+          // call a function on complete 
+        }
+      });
+    }
+
+    function toLatencyTables(arrayData) {
+      var data1 = new google.visualization.DataTable();
+      var data2 = new google.visualization.DataTable();
+      var data3 = new google.visualization.DataTable();
+      var data4 = new google.visualization.DataTable();
+
+      data1.addColumn('number','Elapsed');
+      data1.addColumn('number','95th');
+      data1.addColumn('number','Mean');
+      data1.addColumn('number','Median');
+
+      data2.addColumn('number','Elapsed');
+      data2.addColumn('number','99th');
+
+      data3.addColumn('number','Elapsed');
+      data3.addColumn('number','99.9th');
+
+      data4.addColumn('number','Elapsed');
+      data4.addColumn('number','Max');
+
+      data1.addRows([[0, 0, 0, 0]]);
+      data2.addRows([[0, 0]]);
+      data3.addRows([[0, 0]]);
+      data4.addRows([[0, 0]]);
+
+      for(var i = 0; i < arrayData.length; i++) {
+        var elapsed = parseFloat(arrayData[i][0]);
+        var mean = parseFloat(arrayData[i][4]) / 1000;
+        var median = parseFloat(arrayData[i][5]) / 1000;
+        var p95 = parseFloat(arrayData[i][6]) / 1000;
+        var p99 = parseFloat(arrayData[i][7]) / 1000;
+        var p999 = parseFloat(arrayData[i][8]) / 1000;
+        var max = parseFloat(arrayData[i][9]) / 1000;
+
+        data1.addRows([[elapsed, p95, mean, median]]);
+        data2.addRows([[elapsed, p99]]);
+        data3.addRows([[elapsed, p999]]);
+        data4.addRows([[elapsed, max]]);
+      }
+
+      return [[data1, "Mean, Median, 95th Percentile Latencies"], 
+              [data2, "99th Percentile Latencies"], 
+              [data3, "99.9th Percentile Latencies"], 
+              [data4, "Max Latencies"]];
+    }
+
+    function toThroughputTable(arrayData) {
+      var data = new google.visualization.DataTable();
+
+      data.addColumn('number','Elapsed');
+      data.addColumn('number','Successful');
+      data.addColumn('number','Failed');
+
+      data.addRows([[0, 0, 0]]);
+
+      for(var i = 0; i < arrayData.length; i++) {
+        var elapsed = parseFloat(arrayData[i][0]);
+        var win = parseFloat(arrayData[i][1]);
+        var successful = parseFloat(arrayData[i][3]);
+        var failed = parseFloat(arrayData[i][4]);
+
+        data.addRows([[elapsed, (successful / win), (failed / win)]]);
+      }
+
+      return data;
+    }
+
+    function drawChart(data, elem, title, vAxis) {
+      var chart = new google.visualization.LineChart(elem);
+          var options = {
+            title: title,
+            curveType: 'function',
+            pointSize: 4,
+            vAxis: {title: vAxis},
+            trendlines: {
+              0: {
+                pointSize: 0,
+                type: 'linear',
+                color: 'green',
+                lineWidth: 3,
+                vAxis: {title: vAxis},
+                opacity: 0.5,
+                showR2: true,
+                visibleInLegend: false
+              }
+            },
+            legend: { position: 'bottom' }
+          };
+
+          chart.draw(data, options);
+
+          allCharts.push(chart.getImageURI());
+          chartsDrawn++;
+          if(chartsDrawn == numCharts) {
+            generateReport();
+          }
+    }
+
+    function generateReport()
+    {
+      var c=document.getElementById("report");
+      var ctx=c.getContext("2d");
+      ctx.canvas.height = allCharts.length * 200;
+      for(var i = 0; i < allCharts.length; i++) {
+        var imageObj = new Image();
+        imageObj.src = allCharts[i];
+        ctx.drawImage(imageObj, 0, i * 200, 800, 200);
+      }
+
+      $.ajax({
+        type: "POST",
+        url: "/",
+        data: c.toDataURL("image/png").substr(22),
+        success: function (data) {
+          console.log("Image uploaded");
+        }
+      });
+    }
+  </script>
+  </head>
+  <body>
+  <div id="summary" style="width: 800px">
+    <div id="throughput" style="height: 200px"></div>
+  </div>
+  <div id="latencies0" style="width: 800px"></div>
+  <div id="latencies1" style="width: 800px"></div>
+  <div id="latencies2" style="width: 800px"></div>
+  <div id="latencies3" style="width: 800px"></div>
+
+  <canvas id="report" width="800" style="display:none"></canvas>
+  </body>
+</html>
