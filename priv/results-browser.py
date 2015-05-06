@@ -27,7 +27,7 @@ class ServerHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 def startServer(host, port):
   handler = ServerHandler
-  httpd = SocketServer.TCPServer(("", port), handler)
+  httpd = SocketServer.TCPServer((host, port), handler)
   print 'Serving at: http://{host}:{port}'.format(host=host, port=port)
   httpd.serve_forever()
 
