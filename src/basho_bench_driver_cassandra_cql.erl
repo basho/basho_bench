@@ -26,7 +26,7 @@
          run/4]).
 
 -include("basho_bench.hrl").
--include("deps/cqerl/include/cqerl.hrl").
+-include_lib("cqerl/include/cqerl.hrl").
 
 -record(state, { client,
                  keyspace,
