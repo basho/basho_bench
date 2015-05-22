@@ -127,7 +127,9 @@ init([SupChild, Id]) ->
     WorkerPid ! {init_driver, self()},
     receive
         driver_ready ->
-            ok
+            ok;
+        {driver_failed, Why} ->
+            exit({init_driver_failed, Why})
     end,
 
     %% If the system is marked as running this is a restart; queue up the run
@@ -224,6 +226,7 @@ worker_idle_loop(State) ->
                     Caller ! driver_ready,
                     ok;
                 Error ->
+                    Caller ! {init_driver_failed, Error},
                     DriverState = undefined, % Make erlc happy
                     ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
             end,
