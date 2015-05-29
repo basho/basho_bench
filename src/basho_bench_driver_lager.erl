@@ -37,7 +37,7 @@
 -include("basho_bench.hrl").
 -include_lib("lager/include/lager.hrl").
 
--define(MAX_MSGS, 10000000).
+-define(MAX_MSGS, 400).
 
 -record(state, {
           multiple_sink_support = false,
@@ -60,7 +60,7 @@ do_init() ->
 
     Levels = basho_bench_config:get(lager_levels, []),
     case Levels == [] of
-        true -> erlang:put(lager_levels, ?LEVELS);
+        true -> erlang:put(lager_levels, ?LEVELS -- [none]);
         false -> erlang:put(lager_levels, Levels)
     end,
 
@@ -81,8 +81,9 @@ new(1) ->
     %% set the output handlers
     application:set_env(lager,
                         handlers,
-                        [{lager_console_backend, debug},
-                         {lager_file_backend, [{file, "console.log"}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
+                        [
+%%{lager_console_backend, debug},
+                         {lager_file_backend, [{file, "console.log"}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 50}]}
                         ]),
     application:set_env(lager, crash_log, "crash.log"),
     application:set_env(lager, extra_sinks, erlang:get(lager_extra_sinks)),
