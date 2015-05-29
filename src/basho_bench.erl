@@ -74,6 +74,16 @@ main(Args) ->
     %% show.
     basho_bench_config:load(Configs),
 
+    %% Allow controlling number of schedulers from config.
+    case basho_bench_config:get(schedulers, undefined) of
+        N when is_integer(N) ->
+            erlang:system_flag(schedulers_online, N);
+        _ ->
+            ok
+    end,
+    lager:info("Running with ~p schedulers",
+               [erlang:system_info(schedulers_online)]),
+
     %% Log level can be overriden by the config files
     CustomLagerLevel = basho_bench_config:get(log_level),
     lager:set_loglevel(lager_console_backend, CustomLagerLevel),
