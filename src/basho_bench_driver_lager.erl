@@ -21,7 +21,7 @@
 %% -------------------------------------------------------------------
 %% @doc This is a driver for lager inside of the basho_bench framework.
 %% Since lager is itself a dependency of basho_bench, you'll need to use
-%% the `{d, no_lager}' macro in the `{erl_opt}' portion of rebar.config 
+%% the `{d, no_lager}' macro in the `{erl_opt}' portion of rebar.config
 %% to build a basho_bench which does NOT use lager for its own log messages.
 %%
 %% Instead basho_bench will use the built-in SASL error_logger, so internal log
@@ -37,9 +37,12 @@
 -include("basho_bench.hrl").
 -include_lib("lager/include/lager.hrl").
 
+-define(MAX_MSGS, 10000000).
+
 -record(state, {
           multiple_sink_support = false,
-          current_backends = []
+          current_backends = [],
+          msgs_sent = 0
     }).
 
 -define(TRACE_FILTER, [{trace, <<"match">>}]).
@@ -91,7 +94,7 @@ new(1) ->
     {ok, #state{multiple_sink_support = MultSinks,
                 current_backends = collect_backends(MultSinks)}};
 
-new(_ID) -> 
+new(_ID) ->
     MultSinks = do_init(),
     {ok, #state{multiple_sink_support = MultSinks,
                 current_backends = collect_backends(MultSinks)}}.
@@ -117,7 +120,9 @@ configure_trace(console) ->
 configure_traces(Traces) ->
     lists:foreach(fun configure_trace/1, Traces).
 
-run_aux(SinkGen, ValueGen, State = #state{multiple_sink_support = S}, ExtraMD) ->
+run_aux(_SinkGen, _ValueGen, State = #state{msgs_sent = M}, _ExtraMD) when M >= ?MAX_MSGS ->
+    {ok, State};
+run_aux(SinkGen, ValueGen, State = #state{msgs_sent = M, multiple_sink_support = S}, ExtraMD) ->
     Sink = SinkGen(),
     {Level, Metadata, Format, Args} = ValueGen(),
     Result = case S of
@@ -127,7 +132,7 @@ run_aux(SinkGen, ValueGen, State = #state{multiple_sink_support = S}, ExtraMD) -
             lager:log(Level, Metadata ++ ExtraMD, Format, Args)
     end,
     case Result of
-        ok -> {ok, State};
+        ok -> {ok, State#state{msgs_sent = M+1}};
         {error, lager_not_running} -> {'EXIT', lager_not_running};
         {error, Reason} -> {error, Reason, State}
     end.
