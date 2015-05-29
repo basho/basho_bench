@@ -64,6 +64,8 @@ do_init() ->
     MDKeys = basho_bench_config:get(lager_metadata_keys, [bar, baz, qux, hoge]),
     erlang:put(lager_mdkeys, MDKeys),
 
+    erlang:put(lager_extra_sinks, basho_bench_config:get(extra_sinks, [])),
+
     erlang:function_exported(lager, log, 5).
 
 new(1) ->
@@ -80,6 +82,8 @@ new(1) ->
                          {lager_file_backend, [{file, "console.log"}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
                         ]),
     application:set_env(lager, crash_log, "crash.log"),
+    application:set_env(lager, extra_sinks, erlang:get(lager_extra_sinks)),
+
     lager:start(),
 
     configure_traces(basho_bench_config:get(traces, [])),
@@ -146,7 +150,6 @@ random_loglevel() ->
     get_random(erlang:get(lager_levels), debug).
 
 run(change_loglevel, _SinkGen, _ValueGen, State=#state{current_backends=B,multiple_sink_support=M}) ->
-    io:format("~n~nHEY YOU~n~p~n", [B]),
     lists:foreach(fun(Sink) -> change_loglevel(Sink,
                                                orddict:fetch(Sink, B), M) end,
                   orddict:fetch_keys(B)),
