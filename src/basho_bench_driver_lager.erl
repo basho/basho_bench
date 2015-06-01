@@ -122,7 +122,7 @@ configure_traces(Traces) ->
     lists:foreach(fun configure_trace/1, Traces).
 
 run_aux(_SinkGen, _ValueGen, State = #state{msgs_sent = M}, _ExtraMD) when M >= ?MAX_MSGS ->
-    {ok, State};
+    throw({stop, message_limit});
 run_aux(SinkGen, ValueGen, State = #state{msgs_sent = M, multiple_sink_support = S}, ExtraMD) ->
     Sink = SinkGen(),
     {Level, Metadata, Format, Args} = ValueGen(),
