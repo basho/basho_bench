@@ -20,10 +20,10 @@
 %%
 %% -------------------------------------------------------------------
 %% @doc copy of the basho_bench_driver_riakclient. Uses the internal
-%% node client for bigsets. Still prototype code.
+%% node client for dt sets (for comparision to basho_bench_driver_bigset)
 %% @end
 
--module(basho_bench_driver_bigset).
+-module(basho_bench_driver_riakclient_sets).
 
 -export([new/1,
          run/4]).
@@ -31,6 +31,7 @@
 -include("basho_bench.hrl").
 
 -record(state, { client,
+                 bucket,
                  remove_set, %% The set name to perform a remove on
                  remove_ctx, %% The context of a get from `remove_set'
                  remove_values %% The values from a get to `remove_set'
@@ -50,9 +51,10 @@ new(Id) ->
             ok
     end,
 
-    Nodes   = basho_bench_config:get(bigset_nodes),
-    Cookie  = basho_bench_config:get(bigset_cookie, 'bigset'),
-    MyNode  = basho_bench_config:get(bigset_mynode, [basho_bench, longnames]),
+    Nodes   = basho_bench_config:get(riakclient_nodes),
+    Cookie  = basho_bench_config:get(riak_cookie, 'riak'),
+    MyNode  = basho_bench_config:get(riakclient_mynode, [basho_bench, longnames]),
+    Bucket  = basho_bench_config:get(riakclient_bucket, {<<"sets">>, <<"test">>}),
 
     %% Try to spin up net_kernel
     case net_kernel:start(MyNode) of
@@ -74,52 +76,53 @@ new(Id) ->
     TargetNode = lists:nth((Id rem length(Nodes)+1), Nodes),
     ?INFO("Using target node ~p for worker ~p\n", [TargetNode, Id]),
 
-    case bigset_client:new(TargetNode) of
+    case riak:client_connect(TargetNode) of
         {error, Reason2} ->
             ?FAIL_MSG("Failed get a bigset_client to ~p: ~p\n", [TargetNode, Reason2]);
-        Client ->
-            {ok, #state { client = Client }}
+        {ok, Client} ->
+            {ok, #state { client = Client, bucket=Bucket }}
     end.
 
 run(read, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    #state{client=C} = State,
-    case bigset_client:read(Key, [], C) of
-        {ok, {ctx, Ctx}, {elems, Set}} ->
+    #state{client=C, bucket=B} = State,
+    case C:get(B, Key, []) of
+        {ok, Res} ->
+            {{Ctx, Value}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
             %% Store the latest Ctx/State for a remove
-            {ok, State#state{remove_set=Key, remove_ctx=Ctx, remove_values=Set}};
+            {ok, State#state{remove_set=Key, remove_ctx=Ctx, remove_values=Value}};
         {error, notfound} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
 run(insert, KeyGen, ValueGen, State) ->
-    #state{client=C} = State,
+    #state{client=C, bucket=B} = State,
     Member = ValueGen(),
     Set = KeyGen(),
-    case bigset_client:update(Set, [Member], C) of
+    O = riak_kv_crdt:new(B, Set, riak_dt_orswot),
+    Opp = riak_kv_crdt:operation(riak_dt_orswot, {add, Member}, undefined),
+    Options1 = [{crdt_op, Opp}],
+    case C:put(O, Options1) of
         ok ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
 run(remove, _KeyGen, _ValueGen, State) ->
-    #state{client=C, remove_set=Key, remove_ctx=Ctx, remove_values=Vals} = State,
+    #state{client=C, remove_set=Key, remove_ctx=Ctx, remove_values=Vals, bucket=B} = State,
     RemoveVal = random_element(Vals),
-    case bigset_client:update(Key, [], [RemoveVal], [{ctx, Ctx}], C) of
+    O = riak_kv_crdt:new(B, Key, riak_dt_orswot),
+    Opp = riak_kv_crdt:operation(riak_dt_orswot, {remove, RemoveVal}, Ctx),
+    Options1 = [{crdt_op, Opp}],
+    case C:put(O, Options1) of
         ok ->
             {ok, State};
         {error, notfound} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
-    end;
-run(dt_insert, KeyGen, ValueGen, State) ->
-    {ok, State};
-run(dt_read, KeyGen, _ValueGen, State) ->
-    {ok, State};
-run(dt_remove, _KeyGen, _ValueGen, State) ->
-    {ok, State}.
+    end.
 
 
 
