@@ -64,6 +64,9 @@ new({uniform_int, MaxVal}, _Id)
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
     fun() -> random:uniform(MinVal, MaxVal) end;
+new({keygen, KeyGen}, Id) ->
+    %% Use a KeyGen as a Value generator
+    basho_bench_keygen:new(KeyGen, Id);
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 
