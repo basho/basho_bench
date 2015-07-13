@@ -89,6 +89,16 @@ new({sequential_int, MaxKey}, Id)
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     fun() -> sequential_int_generator(Ref, MaxKey, Id, DisableProgress) end;
+new({sequential_int, StartKey, MaxKey}, Id)
+  when is_integer(StartKey), StartKey > 0,
+       is_integer(MaxKey), MaxKey > 0,
+       MaxKey > StartKey ->
+    ?WARN("Are you sure that you want to use 'sequential_int'?\n"
+          "For most use cases, 'partitioned_sequential_int' is the better choice.\n", []),
+    Ref = make_ref(),
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    fun() -> sequential_int_generator(Ref, MaxKey-StartKey, Id, DisableProgress) + StartKey end;
 new({partitioned_sequential_int, MaxKey}, Id) ->
     new({partitioned_sequential_int, 0, MaxKey}, Id);
 new({partitioned_sequential_int, StartKey, NumKeys}, Id)
@@ -331,10 +341,19 @@ seq_gen_state_dir(Id) ->
     end.
 
 reset_sequential_int_state() ->
-    case [X || {{sigen, X}, _} <- element(2, process_info(self(),
+    case [{X, N} || {{sigen, X}, N} <- element(2, process_info(self(),
                                                           dictionary))] of
-        [Ref] ->
+        [{Ref, _Val}] ->
             erlang:put({sigen, Ref}, 0);
+        [{Ref1, Val1}, {Ref2, Val2}] ->
+            %% HORRID HACK for two*sigen (reset the higher!)
+            if Val1 > Val2 ->
+            ?DEBUG("Resetting val gen for ~p ~p~n", [self(), Ref1]),
+            erlang:put({sigen, Ref1}, 0);
+               true ->
+            ?DEBUG("Resetting val gen for ~p ~p~n", [self(), Ref1]),
+                    erlang:put({sigen, Ref2}, 0)
+            end;
         [] ->
             ok
     end.
