@@ -101,6 +101,17 @@ run(read, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(insert, KeyGen, ValueGen, State) ->
+    #state{client=C} = State,
+    Member = ValueGen(),
+    Set = KeyGen(),
+
+    case bigset_client:update(Set, [Member], C) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(insert_pl, KeyGen, ValueGen, State) ->
     #state{client=C, last_key=LastKey0} = State,
     {Member, LastKey} = try
                             {ValueGen(), LastKey0}
