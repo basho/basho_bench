@@ -113,6 +113,36 @@ run(insert, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(insert_pl, KeyGen, ValueGen, State) ->
+    #state{client=C, bucket=B, last_key=LastKey0} = State,
+    {Member, LastKey} = try
+                            {ValueGen(), LastKey0}
+                        catch
+                            throw:{stop, empty_keygen} ->
+                                ?DEBUG("Empty keygen, reset~n", []),
+                                basho_bench_keygen:reset_sequential_int_state(),
+                                {ValueGen(), undefined}
+                        end,
+
+    Set = case LastKey of
+              undefined ->
+                  Key = KeyGen(),
+                  ?DEBUG("New set ~p~n", [Key]),
+                  Key;
+              Bin when is_binary(Bin) ->
+                  Bin
+          end,
+    State2 = State#state{last_key=Set},
+
+    O = riak_kv_crdt:new(B, Set, riak_dt_orswot),
+    Opp = riak_kv_crdt:operation(riak_dt_orswot, {add, Member}, undefined),
+    Options1 = [{crdt_op, Opp}],
+    case C:put(O, Options1) of
+        ok ->
+            {ok, State2};
+        {error, Reason} ->
+            {error, Reason, State2}
+    end;
 run(batch_insert, KeyGen, ValueGen, State) ->
     #state{client=C, bucket=B, batch_size=BatchSize, last_key=LastKey0} = State,
 
