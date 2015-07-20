@@ -211,6 +211,10 @@ accumulate_members(BS, Gen, Acc) ->
             lists:reverse(Acc)
     end.
 
+random_element([]) ->
+    undefined;
+random_element([E]) ->
+   E;
 random_element(Vals) ->
     Nth = crypto:rand_uniform(1, length(Vals)),
     lists:nth(Nth, Vals).
@@ -224,3 +228,4 @@ ping_each([Node | Rest]) ->
         pang ->
             ?FAIL_MSG("Failed to ping node ~p\n", [Node])
     end.
+
