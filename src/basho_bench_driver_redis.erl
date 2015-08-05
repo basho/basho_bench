@@ -55,8 +55,7 @@ run(put, KeyGen, ValueGen, State) ->
 	end;
 run(get, KeyGen, _ValueGen, State) ->
 	KeyNum = KeyGen(),
-	Key = lists:flatten(State#state.bucket ++ io_lib:format(":~p", [KeyNum])),
-	io:format("Key ~p~n", [Key]), 
+	Key = lists:flatten(State#state.bucket ++ io_lib:format(":~p", [KeyNum])), 
 	case eredis:q(State#state.c, ["GET", Key]) of
 		{ok, _} ->
 			{ok, State};
