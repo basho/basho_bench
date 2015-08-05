@@ -26,18 +26,22 @@
 
 -include("basho_bench.hrl").
 
--record(state, { c }).
+-record(state, { c, bucket }).
 
 new(Id) ->
 	Ips  = basho_bench_config:get(redis_ips, ["127.0.0.1"]),
 	Port  = basho_bench_config:get(redis_port, 6379),
 	Targets = basho_bench_config:normalize_ips(Ips, Port),
+	Bucket  = basho_bench_config:get(bucket_name, "my-bucket"),
 	{TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
 	?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
 
 	case eredis:start_link(TargetIp, TargetPort) of
 		{ok, C} ->
-			{ok, #state { c = C }};
+			{ok, #state { 
+				c = C, 
+				bucket = Bucket
+			}};
 		{error, Reason} ->
 			?FAIL_MSG("Failed to connect to redis at ~p:~p: ~p\n", [TargetIp, TargetPort, Reason])
 	end.
@@ -50,7 +54,10 @@ run(put, KeyGen, ValueGen, State) ->
 			{error, Reason, State}
 	end;
 run(get, KeyGen, _ValueGen, State) ->
-	case eredis:q(State#state.c, ["GET", KeyGen()]) of
+	KeyNum = KeyGen(),
+	Key = lists:flatten(State#state.bucket ++ io_lib:format(":~p", [KeyNum])),
+	io:format("Key ~p~n", [Key]), 
+	case eredis:q(State#state.c, ["GET", Key]) of
 		{ok, _} ->
 			{ok, State};
 		{error, Reason} ->
