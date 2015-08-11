@@ -152,7 +152,7 @@ run(put_delete, KeyGen, ValueGen,
     {User, ObjectKey} = decompose_key(UserCount, Key),
     case do_put(NextUrl, ObjectKey, ValueGen, HostBase, User, State) of
         ok ->
-            case do_delete(NextUrl, Key, HostBase, User, State) of
+            case do_delete(NextUrl, ObjectKey, HostBase, User, State) of
                 ok ->
                     {ok, NewState};
                 {error, Reason} ->
