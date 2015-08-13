@@ -81,6 +81,12 @@ new({concat_binary, OneGen, TwoGen}, Id) ->
     fun() ->
             <<(Gen1())/binary, (Gen2())/binary>>
     end;
+new({concat_string, OneGen, TwoGen}, Id) ->
+    Gen1 = new(OneGen, Id),
+    Gen2 = new(TwoGen, Id),
+    fun() ->
+      lists:append(Gen1(), Gen2())
+    end;
 new({sequential_int, MaxKey}, Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     ?WARN("Are you sure that you want to use 'sequential_int'?\n"
