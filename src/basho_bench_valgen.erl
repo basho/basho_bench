@@ -64,6 +64,11 @@ new({uniform_int, MaxVal}, _Id)
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
     fun() -> random:uniform(MinVal, MaxVal) end;
+new({timeseries_data}, _Id) ->
+    fun() -> 
+        random:seed(now()),
+        [[{time, random:uniform(9999)}, random:uniform(9999), random:uniform(9999)]]
+    end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 

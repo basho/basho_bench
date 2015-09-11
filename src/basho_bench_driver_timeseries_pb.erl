@@ -67,9 +67,8 @@ run(put, KeyGen, ValueGen, State) ->
             {error, Reason, State}
 	end;
 
-run(put_ts, KeyGen, ValueGen, State) ->
-  Robj = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen()),
-  case riakc_ts:put(State#state.pid, State#state.bucket, Robj) of
+run(put_ts, _KeyGen, ValueGen, State) ->
+  case riakc_ts:put(State#state.pid, State#state.bucket, ValueGen()) of
     ok ->
       {ok, State};
     {error, Reason} ->
