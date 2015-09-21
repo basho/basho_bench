@@ -178,6 +178,11 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                     Bin
             end
     end;
+new({timestamp_ms}, Id) ->
+    fun() -> 
+      {Mega,Sec,Micro} = erlang:now(),
+      trunc((Mega*1000000 + Sec) * 1000 + (Micro * 0.001))
+    end;
 %% Adapt a value generator. The function keygen would work if Id was added as 
 %% the last parameter. But, alas, it is added as the first.
 new({valgen, ValGen}, Id) ->
