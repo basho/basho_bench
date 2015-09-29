@@ -73,4 +73,22 @@ run(put_ts, _KeyGen, ValueGen, State) ->
       {ok, State};
     {error, Reason} ->
       {error, Reason, State}
-  end.
+  end;
+
+run(fast_put_pb, KeyGen, ValueGen, State) ->
+    Pid = State#state.pid,
+    Bucket = State#state.bucket,
+    Key = KeyGen(),
+    Value = ValueGen(),
+
+    %% Create the object...
+    Robj0 = riakc_obj:new(Bucket, Key),
+    Robj1 = riakc_obj:update_value(Robj0, Value),
+
+    %% Write the object...
+    case riakc_pb_socket:put(Pid, Robj1) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end.
