@@ -68,6 +68,7 @@ run(put, KeyGen, ValueGen, State) ->
 	end;
 
 run(put_ts, _KeyGen, ValueGen, State) ->
+  Key = KeyGen(),
   case riakc_ts:put(State#state.pid, State#state.bucket, ValueGen()) of
     ok ->
       {ok, State};
