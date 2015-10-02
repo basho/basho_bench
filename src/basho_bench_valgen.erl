@@ -70,7 +70,7 @@ new({timeseries_data}, _Id) ->
         {Mega,Sec,Micro} = erlang:now(),
         % Timestamps are current epoch in microseconds
         Timestamp = (Mega*1000000 + Sec) * 1000000 + Micro,
-        [[{time, Timestamp}, random:uniform(9999), random:uniform(9999)]]
+        [[{time, Timestamp}, float(random:uniform(9999)), float(random:uniform(9999))]]
     end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
