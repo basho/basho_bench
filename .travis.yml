@@ -8,11 +8,12 @@ otp_release:
   - R16B03-1
   - R16B02
   - R16B01
-  - R15B03-1
-  - R15B01
-  - R15B
-  - R14B04
-  - R14B03
+# At least one of the deps require min erlang R16. E.g. quickrand
+#  - R15B03-1
+#  - R15B01
+#  - R15B
+#  - R14B04
+#  - R14B03
 
 branches:
   only:
