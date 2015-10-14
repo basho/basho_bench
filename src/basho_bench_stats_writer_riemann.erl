@@ -21,13 +21,6 @@
 %% -------------------------------------------------------------------
 %% HOWTO:
 %%
-%% * To run basho_bench with the default CSV writer, nothing needs to
-%%   be done. But if wanting to override a former setting, then
-%%   writing the following in the benchmark config file will switch
-%%   the stats writer to CSV:
-%%
-%%    {stats, {csv}}.
-%%
 %% * To run basho_bench with statistics sent to [Riemann][1], in the
 %%   benchmark config file the following needs to be written:
 %%
