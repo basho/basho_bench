@@ -67,11 +67,11 @@ new({uniform_int, MinVal, MaxVal}, _Id)
 new({timeseries_data}, _Id) ->
     fun() -> 
         random:seed(now()),
-        {Mega,Sec,Micro} = erlang:now(),
+        %{Mega,Sec,Micro} = erlang:now(),
         % Timestamps are current epoch in microseconds
-        Timestamp = (Mega*1000000 + Sec) * 1000000 + Micro,
-	Data = list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,1024))),
-        [[{time, Timestamp}, float(random:uniform(9999)), Data]]
+        %Timestamp = (Mega*1000000 + Sec) * 1000000 + Micro,
+	    %Data = list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,1024))),
+        lists:map(fun (_) -> {Mega,Sec,Micro} = erlang:now(), [{time, (Mega*1000000 + Sec) * 1000000 + Micro}, float(random:uniform(9999)), float(random:uniform(9999))] end, lists:seq(1,25))
     end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
