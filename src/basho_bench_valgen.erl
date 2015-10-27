@@ -64,14 +64,17 @@ new({uniform_int, MaxVal}, _Id)
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
     fun() -> random:uniform(MinVal, MaxVal) end;
-new({timeseries_data}, _Id) ->
+new({timeseries_data}, Id) ->
     fun() -> 
         random:seed(now()),
+        {ok, Hostname} = inet:gethostname(),
         %{Mega,Sec,Micro} = erlang:now(),
         % Timestamps are current epoch in microseconds
         %Timestamp = (Mega*1000000 + Sec) * 1000000 + Micro,
 	    %Data = list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,1024))),
-        lists:map(fun (_) -> {Mega,Sec,Micro} = erlang:now(), [{time, (Mega*1000000 + Sec) * 1000000 + Micro}, float(random:uniform(9999)), float(random:uniform(9999))] end, lists:seq(1,25))
+        R = lists:map(fun (_) -> {Mega,Sec,Micro} = erlang:now(), [{time, (Mega*1000000 + Sec)*1000 + round(Micro/1000)}, Id, Hostname, float(random:uniform(9999)), float(random:uniform(9999))] end, lists:seq(1,250)),
+        io:format("~p~n", [R]),
+        R
     end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
