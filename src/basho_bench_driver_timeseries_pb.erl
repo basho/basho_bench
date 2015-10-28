@@ -27,8 +27,13 @@
 -include("basho_bench.hrl").
 
 -record(state, { pid,
-                 bucket
+                 id,
+                 bucket,
+                 timestamp,
+                 hostname
                }).
+
+-define(BATCH_SIZE, 250).
 
 new(Id) ->
     %% Make sure the path is setup such that we can get at riak_client
@@ -40,16 +45,25 @@ new(Id) ->
             ok
     end,
 
+    random:seed(now()),
+
     Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
     Port  = basho_bench_config:get(riakc_pb_port, 8087),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
-     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
+    {Mega,Sec,Micro} = erlang:now(),
+    Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    {ok, Hostname} = inet:gethostname(),
+    ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
+            io:format("Worker PID: ~p~n", [Pid]),
             {ok, #state { pid = Pid,
-                          bucket = Bucket
+                          id = Id,
+                          bucket = Bucket,
+                          timestamp = Timestamp,
+                          hostname = list_to_binary(Hostname)
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -67,11 +81,14 @@ run(put, KeyGen, ValueGen, State) ->
             {error, Reason, State}
 	end;
 
-run(put_ts, KeyGen, ValueGen, State) ->
-  Key = KeyGen(),
-  case riakc_ts:put(State#state.pid, State#state.bucket, ValueGen()) of
+run(put_ts, KeyGen, _ValueGen, State) ->
+  _Key = KeyGen(),
+  Timestamp = State#state.timestamp,
+  Val =  lists:map(fun (X) -> [{time, Timestamp + (X-1)}, State#state.id, State#state.hostname, float(random:uniform(9999)), float(random:uniform(9999))] end, lists:seq(1,?BATCH_SIZE)),
+  State#state{timestamp = Timestamp + ?BATCH_SIZE},
+  case riakc_ts:put(State#state.pid, State#state.bucket, Val) of
     ok ->
-      {ok, State};
+      {ok, State#state {timestamp = Timestamp + 25}};
     {error, Reason} ->
       {error, Reason, State}
   end;
