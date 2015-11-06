@@ -27,7 +27,8 @@
 -include("basho_bench.hrl").
 
 -record(state, { pid,
-                 bucket
+                 bucket,
+                 ts
                }).
 
 new(Id) ->
@@ -42,14 +43,16 @@ new(Id) ->
 
     Ips  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
     Port  = basho_bench_config:get(riakc_pb_port, 8087),
-    Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
+    Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"GeoCheckin">>),
     Targets = basho_bench_config:normalize_ips(Ips, Port),
+    Ts = basho_bench_config:get(ts, true),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
             {ok, #state { pid = Pid,
-                          bucket = Bucket
+                          bucket = Bucket,
+                          ts = Ts
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -68,7 +71,7 @@ run(put, KeyGen, ValueGen, State) ->
 	end;
 
 run(put_ts, KeyGen, ValueGen, State) ->
-  Key = KeyGen(),
+  _Key = KeyGen(),
   case riakc_ts:put(State#state.pid, State#state.bucket, ValueGen()) of
     ok ->
       {ok, State};
@@ -92,4 +95,28 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
-    end.
+    end;
+
+run(rt_port_ts, KeyGen, ValueGen, State) ->
+  Pid = State#state.pid,
+  Bucket = State#state.bucket,
+  Data = ValueGen(),
+  Key = KeyGen(),
+  case State#state.ts of
+    true ->
+      case riakc_ts:put(Pid, Bucket, ValueGen()) of
+        ok ->
+          {ok, State};
+        {error, Reason} ->
+          {error, Reason, State}
+        end;
+    
+    false ->
+      Obj = riakc_obj:new({<<"fastpath">>,<<"fastpath">>}, list_to_binary(integer_to_list(Key)), Data),
+      case riakc_pb_socket:put(Pid, Obj) of
+        ok ->
+          {ok, State};
+        {error, Reason} ->
+          {error, Reason, State}
+        end
+  end.
