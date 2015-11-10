@@ -84,11 +84,11 @@ run(put, KeyGen, ValueGen, State) ->
 run(put_ts, KeyGen, _ValueGen, State) ->
   _Key = KeyGen(),
   Timestamp = State#state.timestamp,
-  Val =  lists:map(fun (X) -> [{time, Timestamp + (X-1)}, State#state.id, State#state.hostname, float(random:uniform(9999)), float(random:uniform(9999))] end, lists:seq(1,?BATCH_SIZE)),
+  Val =  lists:map(fun (X) -> [{time, Timestamp + (X-1)}, State#state.id, State#state.hostname, 100.0, 50.5] end, lists:seq(1,?BATCH_SIZE)),
   State#state{timestamp = Timestamp + ?BATCH_SIZE},
   case riakc_ts:put(State#state.pid, State#state.bucket, Val) of
     ok ->
-      {ok, State#state {timestamp = Timestamp + 25}};
+      {ok, State#state {timestamp = Timestamp + ?BATCH_SIZE}};
     {error, Reason} ->
       {error, Reason, State}
   end;
