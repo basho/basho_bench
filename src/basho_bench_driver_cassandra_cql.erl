@@ -35,6 +35,7 @@
                  partition_key,
                  get_query,
                  put_query,
+                 put_ts_query,
                  delete_query,
                  put_composite_query,
                  get_composite_query,
@@ -74,6 +75,10 @@ new(Id) ->
             PutQueryText = iolist_to_binary(["UPDATE ", ColumnFamily,
                                              " SET ", ValueColumn, " = :val WHERE KEY = :key;"]),
             PutQuery = #cql_query{statement = PutQueryText, consistency = WriteConsistency},
+            TSPutText = iolist_to_binary(["INSERT INTO ", ColumnFamily,
+                                          "(myfamily, myseries, time, myint, mytext, myfloat, mybool) 
+                                           VALUES (:myfamily, :myseries, :time, :myint, :mytext, :myfloat, :mybool);"]),
+            TSPutQuery = #cql_query{statement = TSPutText, consistency = WriteConsistency},
             DeleteQueryText = ["DELETE FROM ", ColumnFamily ," WHERE KEY = :key;"],
             DeleteQuery = #cql_query{statement = DeleteQueryText, consistency = WriteConsistency},
             GetCompositeQueryText = iolist_to_binary(["SELECT ", ValueColumn," FROM ", ColumnFamily ," WHERE ",
@@ -91,6 +96,7 @@ new(Id) ->
                           partition_key = io_lib:format("~p - ~p", [node(), Id]),
                           get_query = GetQuery,
                           put_query = PutQuery,
+                          put_ts_query = TSPutQuery,
                           put_composite_query = PutCompositeQuery,
                           get_composite_query = GetCompositeQuery,
                           delete_query = DeleteQuery,
@@ -167,7 +173,19 @@ run(query_composite, KeyGen, _ValueGen,
 run(insert, KeyGen, ValueGen, State) ->
     run_put(KeyGen, ValueGen, State);
 run(put, KeyGen, ValueGen, State) ->
-    run_put(KeyGen, ValueGen, State).
+    run_put(KeyGen, ValueGen, State);
+
+run(ts_put, _KeyGen, _ValueGen, State) ->
+  C = State#state.client,
+  TSPutQuery = State#state.put_ts_query,
+  ParameterizedQuery = TSPutQuery#cql_query{values = [{myfamily, "family1"}, {myseries, "seriesX"}, {time, 100}, 
+                                                      {myint, 1}, {mytext, "test1"}, {myfloat, 1.0}, {mybool, true}]},
+  case cqerl:run_query(C, ParameterizedQuery) of
+    {ok, void} ->
+      {ok, State};
+    Error ->
+      {error, Error, State}
+  end.
 
 run_put(KeyGen, ValueGen,#state{client=C, put_query = PutQuery}=State) ->
     Key = KeyGen(),
