@@ -112,7 +112,7 @@ run(rt_port_ts, KeyGen, ValueGen, State) ->
         end;
     
     false ->
-      Obj = riakc_obj:new({<<"fastpath">>,<<"fastpath">>}, list_to_binary(integer_to_list(Key)), Data),
+      Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>}, list_to_binary(integer_to_list(Key)), Data),
       case riakc_pb_socket:put(Pid, Obj) of
         ok ->
           {ok, State};
