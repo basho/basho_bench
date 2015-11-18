@@ -60,7 +60,7 @@ new(Id) ->
         {ok, Pid} ->
             io:format("Worker PID: ~p~n", [Pid]),
             {ok, #state { pid = Pid,
-                          id = Id,
+                          id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
                           bucket = Bucket,
                           timestamp = Timestamp,
                           hostname = list_to_binary(Hostname)
@@ -87,7 +87,8 @@ run(put_ts, _KeyGen, _ValueGen, State) ->
   Timestamp = State#state.timestamp,
   Bucket = State#state.bucket,
   %Val =  lists:map(fun (X) -> [{time, Timestamp + (X-1)}, State#state.id, State#state.hostname, 100.0, 50.5] end, lists:seq(1,?BATCH_SIZE)),
-  Val = [[<<"family1">>, <<"seriesX">>, 100, 1, <<"test1">>, 1.0, true]],
+  %Val = [[<<"family1">>, <<"seriesX">>, 100, 1, <<"test1">>, 1.0, true]],
+  Val = [[State#state.hostname, State#state.id, Timestamp, 1, <<"test1">>, 1.0, true]],
   %State#state{timestamp = Timestamp + ?BATCH_SIZE},
 
   case riakc_ts:put(Pid, Bucket, Val) of
