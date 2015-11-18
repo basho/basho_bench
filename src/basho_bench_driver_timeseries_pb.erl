@@ -33,7 +33,7 @@
                  hostname
                }).
 
--define(BATCH_SIZE, 250).
+-define(BATCH_SIZE, 1).
 
 new(Id) ->
     %% Make sure the path is setup such that we can get at riak_client
@@ -81,14 +81,18 @@ run(put, KeyGen, ValueGen, State) ->
             {error, Reason, State}
 	end;
 
-run(put_ts, KeyGen, _ValueGen, State) ->
-  _Key = KeyGen(),
+run(put_ts, _KeyGen, _ValueGen, State) ->
+  %_Key = KeyGen(),
+  Pid = State#state.pid,
   Timestamp = State#state.timestamp,
-  Val =  lists:map(fun (X) -> [{time, Timestamp + (X-1)}, State#state.id, State#state.hostname, 100.0, 50.5] end, lists:seq(1,?BATCH_SIZE)),
-  State#state{timestamp = Timestamp + ?BATCH_SIZE},
-  case riakc_ts:put(State#state.pid, State#state.bucket, Val) of
+  Bucket = State#state.bucket,
+  %Val =  lists:map(fun (X) -> [{time, Timestamp + (X-1)}, State#state.id, State#state.hostname, 100.0, 50.5] end, lists:seq(1,?BATCH_SIZE)),
+  Val = [[<<"family1">>, <<"seriesX">>, 100, 1, <<"test1">>, 1.0, true]],
+  %State#state{timestamp = Timestamp + ?BATCH_SIZE},
+
+  case riakc_ts:put(Pid, Bucket, Val) of
     ok ->
-      {ok, State#state {timestamp = Timestamp + ?BATCH_SIZE}};
+      {ok, State#state{timestamp = Timestamp + ?BATCH_SIZE}};
     {error, Reason} ->
       {error, Reason, State}
   end;
