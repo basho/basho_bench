@@ -122,6 +122,28 @@ $ ./priv/gp_latencies.sh
 
    Also, you can plot multiple test runs on a single plot by using "-d" switch.
 
+** Benchmarking Erlang cluster
+
+   A typical benchmark scenario is that Basho Bench spawn Erlang VM and executes the driver inside. However, there is needs to catch performance metrics from an application executed remotely within dedicated environment (e.g. probe performance from live system; benchmark an application inside C or Java node, etc). Bash Bench implements a generic =basho_bench_driver_cluster= that acts as proxy. It uses Erlang distribution to delegate benchmark responsibility to remote actor, which is randomly selected from configured pool.
+
+   Basho Bench do not define how the actors are spawned within SUT. It only defined a communication protocol. The actor is responsible to handle the message:
+
+   ={pid(), atom(), key(), val()}=
+
+   - =pid()=  : request originator, actor shall respond to this process
+   - =atom()= : id of operation to execute as defined in config file
+   - =key()=  : materialized key value as defined by key generator function
+   - =val()=  : materialized value as defined by value generator function
+
+   The actor executes the request, measures performance and respond to originator process =pid()= with one of the message ={ok, microsecond()}= or ={error, reason()}=
+
+   See cluster.config example for details. Use following command to spawn benchmark
+
+#+BEGIN_SRC shell
+./basho_bench -C nocookie -N bb@127.0.0.1 -J erlang@127.0.0.1 examples/cluster.config
+#+END_SRC
+   
+
 ** Contributing
    We encourage contributions to Basho Bench from the community.
 
