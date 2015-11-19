@@ -40,7 +40,10 @@
                  put_composite_query,
                  get_composite_query,
                  last_row_key = 0,
-                 range_query_num_rows
+                 range_query_num_rows,
+                 timestamp,
+                 hostname,
+                 id
                }).
 
 
@@ -58,6 +61,11 @@ new(Id) ->
     CompositeRowColumn = basho_bench_config:get(cassandra_composite_row_column, "RowKey"),
     ReadConsistency = basho_bench_config:get(cassandra_read_consistency, ?CQERL_CONSISTENCY_ONE),
     WriteConsistency = basho_bench_config:get(cassandra_write_consistency, ?CQERL_CONSISTENCY_QUORUM),
+
+    {Mega,Sec,Micro} = erlang:now(),
+    Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    {ok, Hostname} = inet:gethostname(),
+    
     %% connect to client
     %% Choose the target node using our ID as a modulus
     Targets = basho_bench_config:normalize_ips(Ips, Port),
@@ -76,8 +84,8 @@ new(Id) ->
                                              " SET ", ValueColumn, " = :val WHERE KEY = :key;"]),
             PutQuery = #cql_query{statement = PutQueryText, consistency = WriteConsistency},
             TSPutText = iolist_to_binary(["INSERT INTO ", ColumnFamily,
-                                          "(myfamily, myseries, time, myint, mytext, myfloat, mybool) 
-                                           VALUES (:myfamily, :myseries, :time, :myint, :mytext, :myfloat, :mybool);"]),
+                                          "(myfamily, myseries, time, time_quanta, myint, mytext, myfloat, mybool) 
+                                           VALUES (:myfamily, :myseries, :time, :time_quanta, :myint, :mytext, :myfloat, :mybool);"]),
             TSPutQuery = #cql_query{statement = TSPutText, consistency = WriteConsistency},
             DeleteQueryText = ["DELETE FROM ", ColumnFamily ," WHERE KEY = :key;"],
             DeleteQuery = #cql_query{statement = DeleteQueryText, consistency = WriteConsistency},
@@ -100,7 +108,10 @@ new(Id) ->
                           put_composite_query = PutCompositeQuery,
                           get_composite_query = GetCompositeQuery,
                           delete_query = DeleteQuery,
-                          range_query_num_rows = RangeQueryNumRows}};
+                          range_query_num_rows = RangeQueryNumRows,
+                          timestamp = Timestamp,
+                          hostname = list_to_binary(Hostname),
+                          id = list_to_binary(lists:flatten(io_lib:format("~p", [Id])))}};
         {error, Reason} ->
             error_logger:error_msg("Failed to get a cqerl client for ~p: ~p\n",
                                    [TargetIp, Reason])
@@ -178,12 +189,25 @@ run(put, KeyGen, ValueGen, State) ->
 run(ts_put, _KeyGen, _ValueGen, State) ->
   C = State#state.client,
   TSPutQuery = State#state.put_ts_query,
-  ParameterizedQuery = TSPutQuery#cql_query{values = [{myfamily, "family1"}, {myseries, "seriesX"}, {time, 100}, 
-                                                      {myint, 1}, {mytext, "test1"}, {myfloat, 1.0}, {mybool, true}]},
+
+  % Calculate the quanta, currently hardcoaded for a 15 minute quanta
+  Timestamp = State#state.timestamp,
+  FifteenMinutesInSeconds = 900.0,
+  Quanta = trunc(trunc((float(trunc(Timestamp / 1000.0)) / FifteenMinutesInSeconds)) * FifteenMinutesInSeconds) * 1000,
+  ParameterizedQuery = TSPutQuery#cql_query{values = [{myfamily, State#state.hostname}, 
+                                                      {myseries, State#state.id}, 
+                                                      {time, Timestamp},
+                                                      {time_quanta, Quanta}, 
+                                                      {myint, 1}, 
+                                                      {mytext, <<"test1">>}, 
+                                                      {myfloat, 1.0}, 
+                                                      {mybool, true}]},
+
   case cqerl:run_query(C, ParameterizedQuery) of
     {ok, void} ->
-      {ok, State};
+      {ok, State#state{timestamp = Timestamp + 1}};
     Error ->
+      io:format("Error: ~p~n", [Error]),
       {error, Error, State}
   end.
 

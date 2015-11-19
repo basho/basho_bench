@@ -28,7 +28,10 @@
 
 -record(state, { pid,
                  bucket,
-                 ts
+                 ts,
+                 id,
+                 timestamp,
+                 hostname
                }).
 
 new(Id) ->
@@ -46,13 +49,19 @@ new(Id) ->
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"GeoCheckin">>),
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     Ts = basho_bench_config:get(ts, true),
+    {Mega,Sec,Micro} = erlang:now(),
+    Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    {ok, Hostname} = inet:gethostname(),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
             {ok, #state { pid = Pid,
                           bucket = Bucket,
-                          ts = Ts
+                          ts = Ts,
+                          id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
+                          timestamp = Timestamp,
+                          hostname = list_to_binary(Hostname)
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -97,7 +106,7 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 
-run(rt_port_ts, KeyGen, ValueGen, State) ->
+run(ts_put, KeyGen, ValueGen, State) ->
   Pid = State#state.pid,
   Bucket = State#state.bucket,
   Data = ValueGen(),
@@ -119,4 +128,17 @@ run(rt_port_ts, KeyGen, ValueGen, State) ->
         {error, Reason} ->
           {error, Reason, State}
         end
-  end.
+  end;
+
+  run(ts_sequential, _KeyGen, _ValueGen, State) ->
+    Pid = State#state.pid,
+    Timestamp = State#state.timestamp,
+    Bucket = State#state.bucket,
+    Val = [[State#state.hostname, State#state.id, Timestamp, 1, <<"test1">>, 1.0, true]],
+
+    case riakc_ts:put(Pid, Bucket, Val) of
+      ok ->
+        {ok, State#state{timestamp = Timestamp + 1}};
+      {error, Reason} ->
+        {error, Reason, State}
+    end.
