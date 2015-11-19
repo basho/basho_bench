@@ -1,5 +1,7 @@
  % CREATE TABLE demo.GeoCheckin (myfamily varchar, myseries varchar, time timestamp, time_quanta timestamp, myint bigint, mytext varchar, myfloat double, mybool boolean, PRIMARY KEY ((myfamily, myseries), time_quanta));
 
+% CREATE KEYSPACE demo WITH replication = {'class': 'SimpleStrategy', 'replication_factor': '1'};
+
 
 {mode, max}.
 
