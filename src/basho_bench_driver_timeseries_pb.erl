@@ -140,7 +140,6 @@ run(ts_put, KeyGen, ValueGen, State) ->
     BatchSize = State#state.batch_size,
 
     Val = lists:map(fun (X) -> [State#state.hostname, State#state.id, Timestamp + (X-1), 1, <<"test1">>, 1.0, true] end, lists:seq(1,BatchSize)),
-    io:format("Data: ~p~n", [Val]),
 
     case riakc_ts:put(Pid, Bucket, Val) of
       ok ->
