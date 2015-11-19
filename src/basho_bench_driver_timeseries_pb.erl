@@ -31,7 +31,8 @@
                  ts,
                  id,
                  timestamp,
-                 hostname
+                 hostname,
+                 batch_size
                }).
 
 new(Id) ->
@@ -49,6 +50,7 @@ new(Id) ->
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"GeoCheckin">>),
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     Ts = basho_bench_config:get(ts, true),
+    BatchSize = basho_bench_config:get(batch_size, 1),
     {Mega,Sec,Micro} = erlang:now(),
     Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
     {ok, Hostname} = inet:gethostname(),
@@ -61,7 +63,8 @@ new(Id) ->
                           ts = Ts,
                           id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
                           timestamp = Timestamp,
-                          hostname = list_to_binary(Hostname)
+                          hostname = list_to_binary(Hostname),
+                          batch_size = BatchSize
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -134,11 +137,14 @@ run(ts_put, KeyGen, ValueGen, State) ->
     Pid = State#state.pid,
     Timestamp = State#state.timestamp,
     Bucket = State#state.bucket,
-    Val = [[State#state.hostname, State#state.id, Timestamp, 1, <<"test1">>, 1.0, true]],
+    BatchSize = State#state.batch_size,
+
+    Val = lists:map(fun (X) -> [State#state.hostname, State#state.id, Timestamp + (X-1), 1, <<"test1">>, 1.0, true] end, lists:seq(1,BatchSize)),
+    io:format("Data: ~p~n", [Val]),
 
     case riakc_ts:put(Pid, Bucket, Val) of
       ok ->
-        {ok, State#state{timestamp = Timestamp + 1}};
+        {ok, State#state{timestamp = Timestamp + BatchSize}};
       {error, Reason} ->
         {error, Reason, State}
     end.
