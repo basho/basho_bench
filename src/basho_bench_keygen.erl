@@ -24,7 +24,9 @@
 -export([new/2,
          dimension/1,
          sequential_int_generator/4]).
--export([reset_sequential_int_state/0]).        % Internal driver use only.
+% Internal driver use only.
+-export([reset_sequential_int_state/0,
+         reset_sequential_int_state/1]).
 
 -include("basho_bench.hrl").
 
@@ -89,6 +91,23 @@ new({sequential_int, MaxKey}, Id)
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     fun() -> sequential_int_generator(Ref, MaxKey, Id, DisableProgress) end;
+new({named_sequential_int, Name, MaxKey}, Id)
+  when is_integer(MaxKey), MaxKey > 0 ->
+    ?WARN("Are you sure that you want to use 'sequential_int'?\n"
+          "For most use cases, 'partitioned_sequential_int' is the better choice.\n", []),
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    fun() -> sequential_int_generator(Name, MaxKey, Id, DisableProgress) end;
+new({sequential_int, StartKey, MaxKey}, Id)
+  when is_integer(StartKey), StartKey > 0,
+       is_integer(MaxKey), MaxKey > 0,
+       MaxKey > StartKey ->
+    ?WARN("Are you sure that you want to use 'sequential_int'?\n"
+          "For most use cases, 'partitioned_sequential_int' is the better choice.\n", []),
+    Ref = make_ref(),
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    fun() -> sequential_int_generator(Ref, MaxKey-StartKey, Id, DisableProgress) + StartKey end;
 new({partitioned_sequential_int, MaxKey}, Id) ->
     new({partitioned_sequential_int, 0, MaxKey}, Id);
 new({partitioned_sequential_int, StartKey, NumKeys}, Id)
@@ -104,6 +123,18 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id)
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
     fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
+new({named_partitioned_sequential_int, Name, StartKey, NumKeys}, Id)
+  when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
+    Workers = basho_bench_config:get(concurrent),
+    Range = NumKeys div Workers,
+    MinValue = StartKey + Range * (Id - 1),
+    MaxValue = StartKey +
+               % Last worker picks up remainder to include entire range
+               case Workers == Id of true-> NumKeys; false -> Range * Id end,
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
+    fun() -> sequential_int_generator(Name, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     fun() -> random:uniform(MaxKey) end;
@@ -178,7 +209,7 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                     Bin
             end
     end;
-%% Adapt a value generator. The function keygen would work if Id was added as 
+%% Adapt a value generator. The function keygen would work if Id was added as
 %% the last parameter. But, alas, it is added as the first.
 new({valgen, ValGen}, Id) ->
     basho_bench_valgen:new(ValGen, Id);
@@ -331,10 +362,29 @@ seq_gen_state_dir(Id) ->
     end.
 
 reset_sequential_int_state() ->
-    case [X || {{sigen, X}, _} <- element(2, process_info(self(),
-                                                          dictionary))] of
-        [Ref] ->
+    case [{X, N} || {{sigen, X}, N} <- element(2, process_info(self(),
+                                                             dictionary))] of
+        [{Ref, _Val}] ->
             erlang:put({sigen, Ref}, 0);
+        [{Ref1, Val1}, {Ref2, Val2}] ->
+            %% HORRID HACK for two*sigen (reset the higher!)
+            if Val1 > Val2 ->
+            ?DEBUG("Resetting val gen for ~p ~p~n", [self(), Ref1]),
+            erlang:put({sigen, Ref1}, 0);
+               true ->
+            ?DEBUG("Resetting val gen for ~p ~p~n", [self(), Ref1]),
+                    erlang:put({sigen, Ref2}, 0)
+            end;
         [] ->
             ok
+    end.
+
+reset_sequential_int_state(Name) ->
+    Sigens = [{X, N} || {{sigen, X}, N} <- element(2, process_info(self(),
+                                                                 dictionary))],
+    case proplists:get_value(Name, Sigens) of
+        undefined -> ok;
+        _ ->
+            ?DEBUG("Resetting val gen for ~p ~p~n", [self(), Name]),
+            erlang:put({sigen, Name}, 0)
     end.

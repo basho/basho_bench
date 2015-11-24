@@ -1,0 +1,26 @@
+diff --git a/src/riak_kv_crdt.erl b/src/riak_kv_crdt.erl
+index 01ac9a0..769e799 100644
+--- a/src/riak_kv_crdt.erl
++++ b/src/riak_kv_crdt.erl
+@@ -29,7 +29,8 @@
+ %% MR helper funs
+ -export([value/1, counter_value/1, set_value/1, map_value/1]).
+ %% Other helper funs
+--export([is_crdt/1]).
++-export([is_crdt/1, operation/3]).
++-compile([export_all]).
+ 
+ -include("riak_kv_wm_raw.hrl").
+ -include("riak_object.hrl").
+@@ -510,6 +511,11 @@ get_context(Type, Value) ->
+         false -> <<>>
+     end.
+ 
++%% @TODO remove, added for hack up benchmarking sets
++operation(Mod, Op, Ctx) ->
++    #crdt_op{mod=Mod, op=Op, ctx=Ctx}.
++
++
+ %% ===================================================================
+ %% EUnit tests
+ %% ===================================================================
