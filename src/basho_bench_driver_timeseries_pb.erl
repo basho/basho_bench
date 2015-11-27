@@ -106,24 +106,29 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
     Bucket = State#state.bucket,
     BatchSize = State#state.batch_size,
 
-    Val = lists:map(fun (X) -> [State#state.hostname, State#state.id, Timestamp + (X-1), 1, <<"test1">>, 1.0, true] end, lists:seq(1,BatchSize)),
+    Val = lists:map(fun (X) ->
+                            [State#state.hostname, State#state.id,
+                             Timestamp + (X-1), 1, <<"test1">>, 1.0, true]
+                    end,
+                    lists:seq(1,BatchSize)),
 
     case State#state.ts of
+        true ->
+            case riakc_ts:put(Pid, Bucket, Val) of
+                ok ->
+                    {ok, State#state{timestamp = Timestamp + BatchSize}};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
 
-      true ->
-        case riakc_ts:put(Pid, Bucket, Val) of
-          ok ->
-            {ok, State#state{timestamp = Timestamp + BatchSize}};
-          {error, Reason} ->
-            {error, Reason, State}
-          end;
-
-      false ->
-        Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>}, list_to_binary(integer_to_list(Timestamp)), Val),
-        case riakc_pb_socket:put(Pid, Obj) of
-          ok ->
-          {ok, State#state{timestamp = Timestamp + BatchSize}};
-        {error, Reason} ->
-          {error, Reason, State}
-        end
+        false ->
+            Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>},
+                                list_to_binary(integer_to_list(Timestamp)),
+                                term_to_binary(Val)),
+            case riakc_pb_socket:put(Pid, Obj) of
+                ok ->
+                    {ok, State#state{timestamp = Timestamp + BatchSize}};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
     end.
