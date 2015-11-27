@@ -46,7 +46,8 @@
                  timeout_read,
                  timeout_write,
                  timeout_listkeys,
-                 timeout_mapreduce
+                 timeout_mapreduce,
+                 obj_ttl
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -89,6 +90,8 @@ new(Id) ->
     KeylistLength = basho_bench_config:get(riakc_pb_keylist_length, 1000),
     PreloadedKeys = basho_bench_config:get(
                       riakc_pb_preloaded_keys, undefined),
+    ObjTTL = basho_bench_config:get(
+                      obj_ttl, undefined),
     CT = basho_bench_config:get(riakc_pb_content_type, "application/octet-stream"),
     warn_bucket_mr_correctness(PreloadedKeys),
 
@@ -116,7 +119,8 @@ new(Id) ->
                           timeout_read = get_timeout(pb_timeout_read),
                           timeout_write = get_timeout(pb_timeout_write),
                           timeout_listkeys = get_timeout(pb_timeout_listkeys),
-                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce)
+                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce),
+                          obj_ttl = ObjTTL
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -313,6 +317,20 @@ run(put, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(put_ttl, KeyGen, ValueGen, State) ->
+  Robj = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen(), State#state.content_type),
+  MD = riakc_obj:get_metadata(Robj),
+  Robj1 = riakc_obj:update_metadata(Robj, riakc_obj:set_ttl(MD, State#state.obj_ttl)),
+  case riakc_pb_socket:put(State#state.pid, Robj1, [
+                                                   {w, State#state.w},
+                                                   {dw, State#state.dw}], State#state.timeout_write) of
+      ok ->
+          {ok, State};
+      {error, disconnected} ->
+          run(put, KeyGen, ValueGen, State);  % suboptimal, but ...
+      {error, Reason} ->
+          {error, Reason, State}
+  end;
 run(update, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
@@ -413,7 +431,7 @@ run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_t
     case timer:now_diff(Now, StartTime) of
         _MicroSec when _MicroSec > (Interval * 1000000) ->
             NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
-        _MicroSec -> 
+        _MicroSec ->
             NewState = State
     end,
 
