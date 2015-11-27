@@ -122,9 +122,10 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
             end;
 
         false ->
-            Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>},
-                                list_to_binary(integer_to_list(Timestamp)),
-                                term_to_binary(Val)),
+            Key = <<(State#state.hostname)/binary,
+                    (State#state.id)/binary,
+                    (list_to_binary(integer_to_list(Timestamp)))/binary>>,
+            Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>}, Key, term_to_binary(Val)),
             case riakc_pb_socket:put(Pid, Obj) of
                 ok ->
                     {ok, State#state{timestamp = Timestamp + BatchSize}};
