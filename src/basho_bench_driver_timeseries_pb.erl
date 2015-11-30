@@ -53,6 +53,7 @@ new(Id) ->
     BatchSize = basho_bench_config:get(batch_size, 1),
     {Mega,Sec,Micro} = erlang:now(),
     Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    io:format("Worker ~p Starting Timestamp: ~p~n", [Id, Timestamp]),
     {ok, Hostname} = inet:gethostname(),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
