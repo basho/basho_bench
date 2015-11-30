@@ -132,4 +132,15 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
                 {error, Reason} ->
                     {error, Reason, State}
             end
+    end;
+
+  run(ts_query, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pid,
+    Query = KeyGen(),
+
+    case riakc_ts:query(Pid, Query) of
+      {error, Reason} ->
+        {error, Reason, State};
+      {_Schema, _Results} ->
+        {ok, State}
     end.

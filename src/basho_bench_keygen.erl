@@ -118,6 +118,15 @@ new({truncated_pareto_int, MaxKey}, Id) ->
     fun() -> erlang:min(MaxKey, Pareto()) end;
 new(uuid_v4, _Id) ->
     fun() -> basho_uuid:v4() end;
+new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTimestamp, RangeSize}, _Id) ->
+  random:seed(now()),
+  fun() ->
+    Family = lists:nth(random:uniform(length(FamilyList)), FamilyList),
+    Series = lists:nth(random:uniform(length(SeriesList)), SeriesList),
+    Start = random:uniform(EndTimestamp-RangeSize) + (StartTimestamp - 1),
+    End = Start + RangeSize,
+    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s'", [BucketName, Start, End, Family, Series]))
+  end;
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
@@ -177,11 +186,6 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                 {key_reply, Bin} ->
                     Bin
             end
-    end;
-new({timestamp_ms}, Id) ->
-    fun() -> 
-      {Mega,Sec,Micro} = erlang:now(),
-      trunc((Mega*1000000 + Sec) * 1000 + (Micro * 0.001))
     end;
 %% Adapt a value generator. The function keygen would work if Id was added as 
 %% the last parameter. But, alas, it is added as the first.
