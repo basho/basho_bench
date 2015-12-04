@@ -35,7 +35,8 @@
 
 new(Id) ->
     Actors = basho_bench_config:get(cluster_actors, []),
-    {Name, Node} = Actor = lists:nth(random:uniform(length(Actors)), Actors),
+    Nth    = ( Id rem length(Actors) ) + 1,
+    {Name, Node} = Actor = lists:nth(Nth, Actors),
     case net_adm:ping(Node) of
         pang ->
             lager:error("~s is not available", [Node]),
