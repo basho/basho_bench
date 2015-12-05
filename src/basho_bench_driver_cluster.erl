@@ -35,7 +35,7 @@
 
 new(Id) ->
     Actors = basho_bench_config:get(cluster_actors, []),
-    Nth    = ( Id rem length(Actors) ) + 1,
+    Nth    = (Id - 1) rem length(Actors) + 1,
     {Name, Node} = Actor = lists:nth(Nth, Actors),
     case net_adm:ping(Node) of
         pang ->
