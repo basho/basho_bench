@@ -265,6 +265,11 @@ worker_next_op(State) ->
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
             {ok, State#state { driver_state = DriverState}};
 
+        {ok, ElapsedT, DriverState} ->
+            %% time is measured by external system
+            basho_bench_stats:op_complete(Next, ok, ElapsedT),
+            {ok, State#state { driver_state = DriverState}};
+
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
             basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
