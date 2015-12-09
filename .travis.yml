@@ -1,11 +1,22 @@
+sudo: false
 language: erlang
 notifications:
   webhooks: http://basho-engbot.herokuapp.com/travis?key=480c77ff15f4a07db659862802cc3df9e7a5d5be
   email: eng@basho.com
 otp_release:
+  - 17.4
   - R16B03-1
-  - R15B03-1
-  - R15B01
-  - R15B
-  - R14B04
-  - R14B03
+  - R16B02
+  - R16B01
+# At least one of the deps require min erlang R16. E.g. quickrand
+#  - R15B03-1
+#  - R15B01
+#  - R15B
+#  - R14B04
+#  - R14B03
+
+branches:
+  only:
+    - master
+    - statsbackend
+

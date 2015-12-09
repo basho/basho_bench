@@ -46,6 +46,12 @@
          {driver, basho_bench_driver_http_raw},
 
          %%
+         %% Stats Sink Driver module for the current test
+         %% By default:
+         %%    csv - csv file
+         %%    riemann - riemann server
+         %% {stats, {csv}},
+         %%
          %% Operations (and associated mix). Note that
          %% the driver may not implement every operation.
          %%
