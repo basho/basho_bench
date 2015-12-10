@@ -59,6 +59,7 @@ new(Id) ->
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
+            riakc_pb_socket:use_native_encoding(Pid, true),
             {ok, #state { pid = Pid,
                           bucket = Bucket,
                           ts = Ts,
