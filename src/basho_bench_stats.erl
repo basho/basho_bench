@@ -165,8 +165,7 @@ terminate(_Reason, #state{stats_writer=Module}=State) ->
     process_stats(os:timestamp(), State),
     report_total_errors(State),
 
-    Module:terminate({State#state.stats_writer,
-                                        State#state.stats_writer_data}).
+    Module:terminate(State#state.stats_writer_data).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -248,9 +247,8 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
 
     %% Write summary
-    Module:process_summary({State#state.stats_writer,
-                                              State#state.stats_writer_data},
-                                             Elapsed, Window, Oks, Errors),
+    Module:process_summary(State#state.stats_writer_data,
+                                            Elapsed, Window, Oks, Errors),
 
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
