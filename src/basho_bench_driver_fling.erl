@@ -37,7 +37,7 @@
           modname,
           tid,
           mode = ets,
-          nowrite = false
+          write = true
                }).
 
 -define(FLING_TID, '_bb_fling_tid').
@@ -49,7 +49,7 @@ fling_get_value({_K, V}) -> V.
 check_mailbox(State = #state{ pid = Pid }) ->
     receive
         nowrite ->
-            State#state{ nowrite = true };
+            State#state{ write = false };
         checkmode ->
             State#state{ mode = fling:mode(Pid) };
         Other ->
@@ -88,9 +88,9 @@ new(_Id) ->
     erlang:send_after(15000, self(), checkmode),
     {ok, #state{tid = Tid, modname = ModName, pid = Pid}}.
 
-run(put, _KeyGen, _ValueGen, State = #state{ nowrite = true }) ->
+run(put, _KeyGen, _ValueGen, State = #state{ write = false }) ->
     {ok, State};
-run(put, KeyGen, ValueGen, State = #state{ nowrite = false, pid = Pid }) ->
+run(put, KeyGen, ValueGen, State = #state{ write = true, pid = Pid }) ->
     Obj = {KeyGen(), ValueGen()},
     fling:put(Pid, Obj),
     NewState = check_mailbox(State),
