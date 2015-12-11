@@ -116,7 +116,14 @@ init([]) ->
 
     StatsWriter = basho_bench_config:get(stats, csv),
     {ok, StatsSinkModule} = normalize_name(StatsWriter),
-    false =/= code:is_loaded(StatsSinkModule),
+    _ = (catch StatsSinkModule:module_info()),
+    case code:is_loaded(StatsSinkModule) of
+        {file, _} ->
+            ok;
+        false ->
+            ?WARN("Cannot load module ~p (derived on ~p, from the config value of 'stats' or compiled default)\n",
+                  [StatsSinkModule, StatsWriter])
+    end,
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
@@ -165,8 +172,7 @@ terminate(_Reason, #state{stats_writer=Module}=State) ->
     process_stats(os:timestamp(), State),
     report_total_errors(State),
 
-    Module:terminate({State#state.stats_writer,
-                                        State#state.stats_writer_data}).
+    Module:terminate(State#state.stats_writer_data).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -248,9 +254,8 @@ process_stats(Now, #state{stats_writer=Module}=State) ->
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
 
     %% Write summary
-    Module:process_summary({State#state.stats_writer,
-                                              State#state.stats_writer_data},
-                                             Elapsed, Window, Oks, Errors),
+    Module:process_summary(State#state.stats_writer_data,
+                           Elapsed, Window, Oks, Errors),
 
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
