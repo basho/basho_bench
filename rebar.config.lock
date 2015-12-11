@@ -30,7 +30,7 @@
                      "15f0a63f4274bdeb9d26998ee3bd9881ead8a7f6"}},
        {riakc,".*",
               {git,"git://github.com/basho/riak-erlang-client",
-                   "end-to-end/timeseries"}},
+                   "mv-cpp-pb-timeseries1"}},
        {mochiweb,".*",
                  {git,"git://github.com/basho/mochiweb",
                       "9090c7942f9dcde4ddbf9f78429e289ff5600c18"}},
