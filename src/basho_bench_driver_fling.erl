@@ -46,12 +46,13 @@
 fling_get_key({K, _V}) -> K.
 fling_get_value({_K, V}) -> V.
 
-check_mailbox(State = #state{ pid = Pid }) ->
+check_mailbox(State = #state{ tid = T, modname = M }) ->
     receive
         nowrite ->
             State#state{ write = false };
         checkmode ->
-            State#state{ mode = fling:mode(Pid) };
+            {Mode, _} = fling:mode(T, M),
+            State#state{ mode = Mode };
         Other ->
             lager:warning("Got unknown message ~p", [Other]),
             State
@@ -95,10 +96,10 @@ run(put, KeyGen, ValueGen, State = #state{ write = true, pid = Pid }) ->
     fling:put(Pid, Obj),
     NewState = check_mailbox(State),
     {ok, NewState};
-run(get, KeyGen, _ValueGen, State = #state{ mode = ets, tid = Tid, modname = Mod }) ->
-    fling:get(ets, Tid, Mod, KeyGen()),
+run(get, KeyGen, _ValueGen, State = #state{ mode = ets, tid = Tid}) ->
+    fling:get({ets, Tid}, KeyGen()),
     NewState = check_mailbox(State),
     {ok, NewState};
-run(get, KeyGen, _ValueGen, State = #state{ mode = mg, tid = Tid, modname = Mod }) ->
-    fling:get(mg, Tid, Mod, KeyGen()),
+run(get, KeyGen, _ValueGen, State = #state{ mode = mg, modname = Mod }) ->
+    fling:get({mg, Mod}, KeyGen()),
     {ok, State}.
