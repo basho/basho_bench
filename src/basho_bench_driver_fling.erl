@@ -99,7 +99,8 @@ new(1) ->
     ValGenParams = basho_bench_config:get(value_generator, {fixed_bin, 100}),
     ValGen = basho_bench_valgen:new(ValGenParams, 1),
 
-    Data = generate_data(KeyGen, ValGen, 1000),
+    Iters = basho_bench_config:get(fling_data_gen_iterations, 1000),
+    Data = generate_data(KeyGen, ValGen, Iters),
     ets:insert(Tid, Data),
 
     Pid = fling:manage(Tid, fun fling_get_key/1, fun fling_get_value/1, ModName),
