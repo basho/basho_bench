@@ -35,9 +35,9 @@
 -record(state, {
           pid,
           modname,
-          tid,
-          mode = ets,
-          write = true
+          tid%,
+          %mode = ets,
+          %write = true
                }).
 
 -define(FLING_TID, '_bb_fling_tid').
@@ -46,60 +46,81 @@
 fling_get_key({K, _V}) -> K.
 fling_get_value({_K, V}) -> V.
 
-check_mailbox(State = #state{ tid = T, modname = M }) ->
-    receive
-        nowrite ->
-            State#state{ write = false };
-        checkmode ->
-            {Mode, _} = fling:mode(T, M),
-            State#state{ mode = Mode };
-        Other ->
-            lager:warning("Got unknown message ~p", [Other]),
-            State
-    after 0 ->
-              State
+%check_mailbox(State = #state{ tid = T, modname = M }) ->
+%    receive
+%        nowrite ->
+%            State#state{ write = false };
+%        checkmode ->
+%            {Mode, _} = fling:mode(T, M),
+%            State#state{ mode = Mode };
+%        Other ->
+%            lager:warning("Got unknown message ~p", [Other]),
+%            State
+%    after 0 ->
+%              State
+%    end.
+
+generate_data(K, V, N) ->
+    gen(K, V, [], N).
+
+gen(_K, _V, Acc, 0) ->
+    Acc;
+gen(K, V, Acc, N) ->
+    gen(K, V, [ {K(), V()} | Acc ], N-1).
+
+wait_until(_F, 0) -> timeout;
+wait_until(F, N) ->
+    case F() of
+        true ->
+            ok;
+        false ->
+            timer:sleep(1000),
+            wait_until(F, N-1)
     end.
 
-%% Initialize app
+mode_is_mg({mg, _}) -> true;
+mode_is_mg({ets, _}) -> false.
+
 new(1) ->
     application:load(fling),
-    application:set_env(fling, max_ticks, 5),
+    application:set_env(fling, max_ticks, 2),
     application:set_env(fling, secs_per_tick, 1),
     ok = application:start(fling),
 
     ModName = basho_bench_config:get(fling_modname, 'bb_fling$1'),
     TabName = basho_bench_config:get(fling_etsname, 'bb_fling'),
-    Tid = ets:new(TabName, [{read_concurrency, true}, {write_concurrency, true}]),
+    EtsOptions = basho_bench_config:get(fling_ets_options, []),
+    Tid = ets:new(TabName, EtsOptions),
+
+    %% We're going to generate our data now and promote it, then measure
+    %% gets
+    KeyGenParams = basho_bench_config:get(key_generator, {uniform_int, 1000}),
+    KeyGen = basho_bench_keygen:new(KeyGenParams, 1),
+    ValGenParams = basho_bench_config:get(value_generator, {fixed_bin, 100}),
+    ValGen = basho_bench_valgen:new(ValGenParams, 1),
+
+    Data = generate_data(KeyGen, ValGen, 1000),
+    ets:insert(Tid, Data),
+
     Pid = fling:manage(Tid, fun fling_get_key/1, fun fling_get_value/1, ModName),
+    wait_until(fun() -> mode_is_mg(fling:mode(Tid, ModName)) end, 20),
 
     %% yes, evil to share state through application params.
     %% like you haven't done worse...
     application:set_env(fling, ?FLING_TID, Tid),
     application:set_env(fling, ?FLING_PID, Pid),
 
-    erlang:send_after(1500, self(), nowrite),
-    erlang:send_after(15000, self(), checkmode),
     {ok, #state{tid = Tid, modname = ModName, pid = Pid}};
 
 new(_Id) ->
     {ok, Tid} = application:get_env(fling, ?FLING_TID),
     {ok, Pid} = application:get_env(fling, ?FLING_PID),
     ModName = basho_bench_config:get(fling_modname, 'bb_fling$1'),
-    erlang:send_after(1500, self(), nowrite),
-    erlang:send_after(15000, self(), checkmode),
     {ok, #state{tid = Tid, modname = ModName, pid = Pid}}.
 
-run(put, _KeyGen, _ValueGen, State = #state{ write = false }) ->
-    {ok, State};
-run(put, KeyGen, ValueGen, State = #state{ write = true, pid = Pid }) ->
-    Obj = {KeyGen(), ValueGen()},
-    fling:put(Pid, Obj),
-    NewState = check_mailbox(State),
-    {ok, NewState};
-run(get, KeyGen, _ValueGen, State = #state{ mode = ets, tid = Tid}) ->
+run(get_ets, KeyGen, _ValueGen, State = #state{tid = Tid}) ->
     fling:get({ets, Tid}, KeyGen()),
-    NewState = check_mailbox(State),
-    {ok, NewState};
-run(get, KeyGen, _ValueGen, State = #state{ mode = mg, modname = Mod }) ->
+    {ok, State};
+run(get_mg, KeyGen, _ValueGen, State = #state{modname = Mod}) ->
     fling:get({mg, Mod}, KeyGen()),
     {ok, State}.
