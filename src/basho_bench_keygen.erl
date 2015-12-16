@@ -123,7 +123,7 @@ new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTi
   fun() ->
     Family = lists:nth(random:uniform(length(FamilyList)), FamilyList),
     Series = lists:nth(random:uniform(length(SeriesList)), SeriesList),
-    Start = random:uniform(EndTimestamp-RangeSize) + (StartTimestamp - 1),
+    Start = random:uniform((EndTimestamp-StartTimestamp-RangeSize)) + (StartTimestamp - 1),
     End = Start + RangeSize,
     lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s'", [BucketName, Start, End, Family, Series]))
   end;
