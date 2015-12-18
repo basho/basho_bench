@@ -95,16 +95,25 @@ function plot_per_op_kind() {
     OPERATION=$1
     FILE=$2
     KIND=$3
+    DISPLAY_SCALE=1000
     case "${KIND}" in
+        "min")    COL_POS=4 ;;
         "mean")   COL_POS=5 ;;
         "medean") COL_POS=6 ;;
         "95th")   COL_POS=7 ;;
         "99th")   COL_POS=8 ;;
         "99.9th") COL_POS=9 ;;
         "max")    COL_POS=10 ;;
+        "errors")
+            # This column is count, not time duration.
+            # Be Careful about / Don't get fooled by vertical axis label.
+            # It may be useful to use options "-k errors" to dispaly
+            # this column only and "-p" to set the label.
+            COL_POS=11
+            DISPLAY_SCALE=1 ;;
         *)        Usage ;;
     esac
-    echo "    \"${FILE}\" using 1:(\$${COL_POS}/1000) with \\"
+    echo "    \"${FILE}\" using 1:(\$${COL_POS}/${DISPLAY_SCALE}) with \\"
     echo "        ${PLOT_STYLE} \\"
     # If plotting only 1 directory, do not add its name
     if [ "${TEST_DIR}" == "${THIS_TEST_DIR}" ]; then
