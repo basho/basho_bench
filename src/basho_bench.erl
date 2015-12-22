@@ -70,6 +70,8 @@ main(Args) ->
     application:set_env(lager, crash_log, CrashLog),
     lager:start(),
 
+    application:ensure_all_started(couch),
+
     %% Make sure this happens after starting lager or failures wont
     %% show.
     basho_bench_config:load(Configs),
