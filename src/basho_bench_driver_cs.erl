@@ -63,7 +63,7 @@ new(ID) ->
     erlang:put(disconnect_freq, Disconnect),
 
     %% Get our measurement units: ops/sec, Byte/sec, KB/sec, KiB/sec, MB/sec, MiB/sec.
-    %% Throw a run-time exception if the config file has cs_measurement_units set 
+    %% Throw a run-time exception if the config file has cs_measurement_units set
     %% to an unrecognized value.
     {RF_name, ReportFun} =
         %% Use standard IEC units for KB/s, KiB/s, MB/s, MiB/s.
@@ -100,7 +100,7 @@ new(ID) ->
          length(OpsList) > 1 of
         true ->
             lager:log(
-              warn, self(),
+              warning, self(),
               "Mixing delete and non-delete operations together with "
               "~p measurements unit can yield nonsense results!\n\n",
               [RF_name]);
