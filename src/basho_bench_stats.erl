@@ -66,8 +66,8 @@ op_complete(Op, {ok, Units}, ElapsedUs) ->
         true ->
             gen_server:cast({global, ?MODULE}, {Op, {ok, Units}, ElapsedUs});
         false ->
-            folsom_metrics:notify({latencies, Op}, ElapsedUs),
-            folsom_metrics:notify({units, Op}, {inc, Units})
+            folsom_metrics:notify_existing_metric({latencies, Op}, ElapsedUs, histogram),
+            folsom_metrics:notify_existing_metric({units, Op}, {inc, Units}, counter)
     end,
     ok;
 op_complete(Op, Result, ElapsedUs) ->
@@ -155,8 +155,8 @@ handle_cast({Op, {ok, Units}, ElapsedUs}, State = #state{last_write_time = LWT, 
         true ->
             NewState = State
     end,
-    folsom_metrics:notify({latencies, Op}, ElapsedUs),
-    folsom_metrics:notify({units, Op}, {inc, Units}),
+    folsom_metrics:notify_existing_metric({latencies, Op}, ElapsedUs, histogram),
+    folsom_metrics:notify_existing_metric({units, Op}, {inc, Units}, counter),
     {noreply, NewState};
 handle_cast(_, State) ->
     {noreply, State}.
