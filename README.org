@@ -21,7 +21,7 @@
 
 ** Quick Start
 
-   You must have [[http://erlang.org/download.html][Erlang/OTP R13B03]] or later to build and run Basho
+   You must have [[http://erlang.org/download.html][Erlang/OTP R16]] or later to build and run Basho
    Bench, and [[http://www.r-project.org/][R]] to generate graphs of your benchmarks.  A sane
    GNU-style build system is also required if you want to use =make=
    to build the project.
