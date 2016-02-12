@@ -1,81 +1,86 @@
-{application, basho_bench,
- [{description, "Riak Benchmarking Suite"},
-  {vsn, git},
-  {modules, []},
-  {registered, [ basho_bench_sup ]},
-  {applications, [kernel,
-                  stdlib,
-                  lager,
-                  sasl]},
-  {mod, {basho_bench_app, []}},
-  {env, [
-	 %% Run mode: How should basho_bench started as a separate node, or part of an 
-	 %% other node. The default is standalone, other option is included.
-	 {app_run_mode, standalone},
-	 
-         %%
-         %% Mode of load generation:
-         %% max - Generate as many requests as possible per worker
-         %% {rate, Rate} - Exp. distributed Mean reqs/sec
-         %%
-         {mode, {rate, 5}},
+{application, basho_bench, [
+    {description, "Riak Benchmarking Suite"},
+    {vsn, git},
+    {modules, []},
+    {registered, [basho_bench_sup]},
+    {applications, [
+        kernel,
+        stdlib,
+        lager,
+        sasl,
+        couch
+    ]},
+    {mod, {basho_bench_app, []}},
+    {env, [
+        %% Run mode: How should basho_bench started as a separate node, or part of an 
+        %% other node. The default is standalone, other option is included.
+        {app_run_mode, standalone},
 
-         %%
-         %% Default log level
-         %%
-         {log_level, debug},
+        %%
+        %% Mode of load generation:
+        %% max - Generate as many requests as possible per worker
+        %% {rate, Rate} - Exp. distributed Mean reqs/sec
+        %%
+        {mode, {rate, 5}},
 
-         %%
-         %% Base test output directory
-         %%
-         {test_dir, "tests"},
+        %%
+        %% Default log level
+        %%
+        {log_level, debug},
 
-         %%
-         %% Test duration (minutes)
-         %%
-         {duration, 5},
+        %%
+        %% Base test output directory
+        %%
+        {test_dir, "tests"},
 
-         %%
-         %% Number of concurrent workers
-         %%
-         {concurrent, 3},
+        %%
+        %% Test duration (minutes)
+        %%
+        {duration, 5},
 
-         %%
-         %% Driver module for the current test
-         %%
-         {driver, basho_bench_driver_http_raw},
+        %%
+        %% Number of concurrent workers
+        %%
+        {concurrent, 3},
 
-         %%
-         %% Stats Sink Driver module for the current test
-         %% By default:
-         %%    csv - csv file
-         %%    riemann - riemann server
-         %% {stats, {csv}},
-         %%
-         %% Operations (and associated mix). Note that
-         %% the driver may not implement every operation.
-         %%
-         {operations, [{get, 4},
-                       {put, 4},
-                       {delete, 1}]},
+        %%
+        %% Driver module for the current test
+        %%
+        {driver, basho_bench_driver_http_raw},
 
-         %%
-         %% Interval on which to report latencies and status (seconds)
-         %%
-         {report_interval, 10},
+        %%
+        %% Stats Sink Driver module for the current test
+        %% By default:
+        %%    csv - csv file
+        %%    riemann - riemann server
+        %% {stats, {csv}},
+        %%
+        %% Operations (and associated mix). Note that
+        %% the driver may not implement every operation.
+        %%
+        {operations, [
+            {get, 4},
+            {put, 4},
+            {delete, 1}
+        ]},
 
-         %%
-         %% Key generators
-         %%
-         %% {uniform_int, N} - Choose a uniformly distributed integer between 0 and N
-         %%
-         {key_generator, {uniform_int, 100000}},
+        %%
+        %% Interval on which to report latencies and status (seconds)
+        %%
+        {report_interval, 10},
 
-         %%
-         %% Value generators
-         %%
-         %% {fixed_bin, N} - Fixed size binary blob of N bytes
-         %%
-         {value_generator, {fixed_bin, 100}}
-        ]}
+        %%
+        %% Key generators
+        %%
+        %% {uniform_int, N} - Choose a uniformly distributed integer between 0 and N
+        %%
+        {key_generator, {uniform_int, 100000}},
+
+        %%
+        %% Value generators
+        %%
+        %% {fixed_bin, N} - Fixed size binary blob of N bytes
+        %%
+        {value_generator, {fixed_bin, 100}}
+    ]}
 ]}.
