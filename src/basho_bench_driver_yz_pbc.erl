@@ -23,9 +23,14 @@
 
 -export([new/1,
          run/4,
-         json_valgen/3]).
+         json_valgen/3,
+         init_cache/1,
+         get_cache/3]).
 
 -include("basho_bench.hrl").
+
+-define(ETS_TID, atom_to_list(?MODULE)).
+-define(NAME(N), list_to_atom(?ETS_TID ++ "_" ++ atom_to_list(N))).
 
 -record(state, { pid,
                  bucket,
@@ -70,6 +75,8 @@ new(Id) ->
         _ ->
             ok
     end,
+
+    ok = init_cache(json_template),
 
     Ips0  = basho_bench_config:get(riakc_pb_ips, [{127,0,0,1}]),
 
@@ -422,10 +429,12 @@ roll_list(List) ->
     [lists:last(List) | lists:sublist(List, length(List) - 1)].
 
 json_valgen(_Pid, TemplateFile, ValgenConfig) ->
-  {_, Template} = file:read_file(TemplateFile),
+  ok = init_cache(json_template),
+  Template = get_cache(json_template, {filename, TemplateFile}, fun() -> {_, T} = file:read_file(TemplateFile), binary_to_list(T) end),
+
   fun() ->
     Data = eval(ValgenConfig, []),
-    list_to_binary(io_lib:format(Template, Data))
+    list_to_binary(lists:flatten(io_lib:format(Template, Data)))
   end.
 
 eval([], Accum) ->
@@ -459,3 +468,25 @@ for_each_line(Device, Proc, Accum) ->
             NewAccum = Proc(Line, Accum),
             for_each_line(Device, Proc, NewAccum)
     end.
+
+init_cache(CacheName) ->
+  RealName = ?NAME(CacheName),
+  case ets:info(RealName) of
+      undefined ->
+          RealName = ets:new(RealName, [
+              named_table, {read_concurrency, true}, public, {write_concurrency, true}
+          ]),
+          ok;
+      _ -> ok
+  end.
+
+get_cache(CacheName, Key, FunResult) ->
+  RealName = ?NAME(CacheName),
+  case ets:lookup(RealName, Key) of
+    [] ->
+      % Not found, create it.
+      V = FunResult(),
+      ets:insert(RealName, {Key, V}),
+      V;
+    [{Key, R}] -> R % Found, return the value.
+  end.
