@@ -25,7 +25,10 @@
          run/4,
          json_valgen/3,
          init_cache/1,
-         get_cache/3]).
+         get_cache/3,
+         string_valgen/2,
+         string_valgen/1,
+         boolean_valgen/0]).
 
 -include("basho_bench.hrl").
 
@@ -427,6 +430,27 @@ run(counter_val, KeyGen, _ValueGen, State) ->
 %% ====================================================================
 roll_list(List) ->
     [lists:last(List) | lists:sublist(List, length(List) - 1)].
+
+boolean_valgen() ->
+    bool(random:uniform(2)).
+
+bool(1) -> "true";
+bool(2) -> "false".
+
+string_valgen(Length) ->
+    AllowedChars = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
+                    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+                    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
+                    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
+                    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
+    string_valgen(Length, AllowedChars).
+
+string_valgen(Length, AllowedChars) ->
+    lists:foldl(fun(_, Acc) ->
+                        [lists:nth(random:uniform(length(AllowedChars)),
+                                   AllowedChars)]
+                            ++ Acc
+                end, [], lists:seq(1, Length)).
 
 json_valgen(_Pid, TemplateFile, ValgenConfig) ->
   ok = init_cache(json_template),
