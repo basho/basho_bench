@@ -33,6 +33,7 @@
 -record(state, { client,
                  bucket,
                  last_key=undefined,
+                 set_key_gen_name = undefined,
                  remove_set, %% The set name to perform a remove on
                  remove_ctx, %% The context of a get from `remove_set'
                  remove_value, %% a value from a get to `remove_set'
@@ -58,6 +59,7 @@ new(Id) ->
     MyNode  = basho_bench_config:get(riakclient_mynode, [basho_bench, longnames]),
     Bucket  = basho_bench_config:get(riakclient_bucket, {<<"sets">>, <<"test">>}),
     BatchSize = basho_bench_config:get(riakclient_sets_batchsize, 1000),
+    SetKeyGen = basho_bench_config:get(riakclient_sets_keygen_name, a),
 
     %% Try to spin up net_kernel
     case net_kernel:start(MyNode) of
@@ -83,7 +85,8 @@ new(Id) ->
         {error, Reason2} ->
             ?FAIL_MSG("Failed get a bigset_client to ~p: ~p\n", [TargetNode, Reason2]);
         {ok, Client} ->
-            {ok, #state { client = Client, bucket=Bucket, batch_size=BatchSize }}
+            {ok, #state { client = Client, bucket=Bucket, batch_size=BatchSize,
+                          set_key_gen_name=SetKeyGen}}
     end.
 
 run(read, KeyGen, _ValueGen, State) ->
@@ -114,13 +117,14 @@ run(insert, KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 run(insert_pl, KeyGen, ValueGen, State) ->
-    #state{client=C, bucket=B, last_key=LastKey0} = State,
+    #state{client=C, bucket=B, last_key=LastKey0,
+           set_key_gen_name=SKGN} = State,
     {Member, LastKey} = try
                             {ValueGen(), LastKey0}
                         catch
                             throw:{stop, empty_keygen} ->
                                 ?DEBUG("Empty keygen, reset~n", []),
-                                basho_bench_keygen:reset_sequential_int_state(),
+                                basho_bench_keygen:reset_sequential_int_state(SKGN),
                                 {ValueGen(), undefined}
                         end,
 

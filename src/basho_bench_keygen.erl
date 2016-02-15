@@ -24,7 +24,9 @@
 -export([new/2,
          dimension/1,
          sequential_int_generator/4]).
--export([reset_sequential_int_state/0]).        % Internal driver use only.
+% Internal driver use only.
+-export([reset_sequential_int_state/0,
+         reset_sequential_int_state/1]).
 
 -include("basho_bench.hrl").
 
@@ -89,6 +91,13 @@ new({sequential_int, MaxKey}, Id)
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     fun() -> sequential_int_generator(Ref, MaxKey, Id, DisableProgress) end;
+new({named_sequential_int, Name, MaxKey}, Id)
+  when is_integer(MaxKey), MaxKey > 0 ->
+    ?WARN("Are you sure that you want to use 'sequential_int'?\n"
+          "For most use cases, 'partitioned_sequential_int' is the better choice.\n", []),
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    fun() -> sequential_int_generator(Name, MaxKey, Id, DisableProgress) end;
 new({sequential_int, StartKey, MaxKey}, Id)
   when is_integer(StartKey), StartKey > 0,
        is_integer(MaxKey), MaxKey > 0,
@@ -356,4 +365,14 @@ reset_sequential_int_state() ->
             end;
         [] ->
             ok
+    end.
+
+reset_sequential_int_state(Name) ->
+    Sigens = [{X, N} || {{sigen, X}, N} <- element(2, process_info(self(),
+                                                                   dictionary))],
+    case proplists:get_value(Name, Sigens) of
+        undefined -> ok;
+        _ ->
+            ?DEBUG("Resetting val gen for ~p ~p~n", [self(), Name]),
+            erlang:put({sigen, Name}, 0)
     end.

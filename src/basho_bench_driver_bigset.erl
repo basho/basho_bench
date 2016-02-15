@@ -144,7 +144,8 @@ run(batch_insert, KeyGen, ValueGen, State) ->
                          {_, []} ->
                              %% Exhausted value gen, new key
                              Key = KeyGen(),
-                             ?DEBUG("New set ~p~n", [Key]),
+
+                             ?DEBUG("New set after exhausted ~p~n", [Key]),
                              basho_bench_keygen:reset_sequential_int_state(),
                              {Key, gen_members(BatchSize, ValueGen)};
                          {undefined, List} ->
