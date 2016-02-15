@@ -123,6 +123,18 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id)
         basho_bench_config:get(disable_sequential_int_progress_report, false),
     ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
     fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
+new({named_partitioned_sequential_int, Name, StartKey, NumKeys}, Id)
+  when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
+    Workers = basho_bench_config:get(concurrent),
+    Range = NumKeys div Workers,
+    MinValue = StartKey + Range * (Id - 1),
+    MaxValue = StartKey +
+               % Last worker picks up remainder to include entire range
+               case Workers == Id of true-> NumKeys; false -> Range * Id end,
+    DisableProgress =
+        basho_bench_config:get(disable_sequential_int_progress_report, false),
+    ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
+    fun() -> sequential_int_generator(Name, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     fun() -> random:uniform(MaxKey) end;
