@@ -148,14 +148,16 @@ run(insert_pl, KeyGen, ValueGen, State) ->
             {error, Reason, State2}
     end;
 run(batch_insert, KeyGen, ValueGen, State) ->
-    #state{client=C, bucket=B, batch_size=BatchSize, last_key=LastKey0} = State,
+    #state{client=C, bucket=B, batch_size=BatchSize,
+           last_key=LastKey0,
+           set_key_gen_name=SKGN} = State,
 
     {Set, Members} = case {LastKey0, gen_members(BatchSize, ValueGen)} of
                          {_, []} ->
                              %% Exhausted value gen, new key
                              Key = KeyGen(),
                              ?DEBUG("New set ~p~n", [Key]),
-                             basho_bench_keygen:reset_sequential_int_state(),
+                             basho_bench_keygen:reset_sequential_int_state(SKGN),
                              {Key, gen_members(BatchSize, ValueGen)};
                          {undefined, List} ->
                              %% We have no active set, so generate a
