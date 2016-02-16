@@ -23,14 +23,18 @@
 
 -export([new/1,
          run/4,
-         json_valgen/3,
          init_cache/1,
          get_cache/3,
-         string_valgen/2,
-         string_valgen/1,
-         boolean_valgen/0]).
+         json_val/2,
+         string_val/2,
+         string_val/1,
+         eval_valgen/2]).
 
 -include("basho_bench.hrl").
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 -define(ETS_TID, atom_to_list(?MODULE)).
 -define(NAME(N), list_to_atom(?ETS_TID ++ "_" ++ atom_to_list(N))).
@@ -431,42 +435,53 @@ run(counter_val, KeyGen, _ValueGen, State) ->
 roll_list(List) ->
     [lists:last(List) | lists:sublist(List, length(List) - 1)].
 
-boolean_valgen() ->
-    bool(random:uniform(2)).
-
-bool(1) -> "true";
-bool(2) -> "false".
-
-string_valgen(Length) ->
-    AllowedChars = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m",
-                    "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
-                    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M",
-                    "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
-                    "0", "1", "2", "3", "4", "5", "6", "7", "8", "9"],
-    string_valgen(Length, AllowedChars).
-
-string_valgen(Length, AllowedChars) ->
-    lists:foldl(fun(_, Acc) ->
-                        [lists:nth(random:uniform(length(AllowedChars)),
-                                   AllowedChars)]
-                            ++ Acc
-                end, [], lists:seq(1, Length)).
-
-json_valgen(_Pid, TemplateFile, ValgenConfig) ->
-  ok = init_cache(json_template),
-  Template = get_cache(json_template, {filename, TemplateFile}, fun() -> {_, T} = file:read_file(TemplateFile), binary_to_list(T) end),
-
-  fun() ->
-    Data = eval(ValgenConfig, []),
-    list_to_binary(lists:flatten(io_lib:format(Template, Data)))
-  end.
+eval_valgen(_Pid, ValgenConfig) ->
+    fun() ->
+            list_to_binary(eval(ValgenConfig, []))
+    end.
 
 eval([], Accum) ->
-  lists:reverse(Accum);
+    lists:reverse(Accum);
+eval([{function, {F, A}} | Rest], Accum) ->
+    eval([{function, {?MODULE, F, A}} | Rest], Accum);
 eval([{function, {M, F, A}} | Rest], Accum) ->
-  eval(Rest, [erlang:apply(M, F, eval(A, [])) | Accum]);
+    eval(Rest, [erlang:apply(M, F, eval(A, [])) | Accum]);
+eval([{repeat, 1, Action, _Sep, RepeatAccum} | Rest], Accum) ->
+    Last = [eval(Action, []) | RepeatAccum],
+    eval(Rest, [lists:flatten(lists:reverse(Last)) | Accum]);
+eval([{repeat, Count, Action, Sep, RepeatAccum} | Rest], Accum) ->
+    This = [eval(Action, []) ++ Sep | RepeatAccum],
+    eval([{repeat, Count - 1, Action, Sep, This} | Rest], Accum);
+eval([{repeat, Count, Action, Sep} | Rest], Accum) ->
+    eval([{repeat, Count, Action, Sep, []} | Rest], Accum);
 eval([A | Rest], Accum) ->
-  eval(Rest, [A | Accum]).
+    eval(Rest, [A | Accum]).
+
+string_val(Length) ->
+    AllowedChars = "abcdefghijklmnopqrstuvwxyz" ++
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZ" ++
+                    "0123456789",
+    string_val(Length, AllowedChars).
+
+string_val(Length, AllowedChars) ->
+    R = lists:foldl(fun(_, Acc) ->
+                            [lists:nth(random:uniform(length(AllowedChars)),
+                                       AllowedChars)]
+                                ++ Acc
+                    end, [], lists:seq(1, Length)),
+    lists:flatten(R).
+
+json_val({file, TemplateFile}, ValgenConfig) ->
+    ok = init_cache(json_template),
+    Template = get_cache(json_template, {filename, TemplateFile}, fun() -> {_, T} = file:read_file(TemplateFile), binary_to_list(T) end),
+    Data = eval(ValgenConfig, []),
+    lists:flatten(io_lib:format(Template, Data));
+json_val({raw, Template}, ValgenConfig) ->
+    Data = eval(ValgenConfig, []),
+    lists:flatten(io_lib:format(Template, Data));
+
+json_val(TemplateFile, ValgenConfig) ->
+    json_val({file, TemplateFile}, ValgenConfig).
 
 get_timeout_general() ->
     basho_bench_config:get(pb_timeout_general, ?TIMEOUT_GENERAL).
@@ -514,3 +529,39 @@ get_cache(CacheName, Key, FunResult) ->
       V;
     [{Key, R}] -> R % Found, return the value.
   end.
+
+
+%%%===================================================================
+%%% Tests
+%%%===================================================================
+
+-ifdef(TEST).
+
+nested_json_valgen_test_() ->
+{setup,
+     fun() ->
+             ok
+     end,
+     fun(_) ->
+             ok
+     end,
+     [
+      ?_test(begin
+                 random:seed(now()),
+                 JsonOuter = "{\"one\": [~s]}",
+                 JsonInner1 = "{\"two\": [~s]}",
+                 JsonInner2 = "{\"three\": \"~s\"}",
+                 Result = eval_valgen(0, [{function, {json_val, [{raw, JsonOuter}, [
+                   {function, {json_val, [{raw, JsonInner1}, [
+                     {repeat, 2, [
+                       {function, {json_val, [{raw, JsonInner2}, [
+                         {function, {string_val, [1, ["hello"]]}}
+                       ]]}}
+                     ], ","}
+                   ]]}}
+                 ]]}}]),
+                 Expected = <<"{\"one\": [{\"two\": [{\"three\": \"hello\"},{\"three\": \"hello\"}]}]}">>,
+                 ?assertEqual(Expected, Result())
+             end)]}.
+
+-endif.
