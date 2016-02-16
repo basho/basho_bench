@@ -472,7 +472,6 @@ string_val(Length, AllowedChars) ->
     lists:flatten(R).
 
 json_val({file, TemplateFile}, ValgenConfig) ->
-    ok = init_cache(json_template),
     Template = get_cache(json_template, {filename, TemplateFile}, fun() -> {_, T} = file:read_file(TemplateFile), binary_to_list(T) end),
     Data = eval(ValgenConfig, []),
     lists:flatten(io_lib:format(Template, Data));
