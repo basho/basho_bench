@@ -106,7 +106,6 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
   run(ts_sequential, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Timestamp = State#state.timestamp,
-    io:format("~p~n", [Timestamp]),
     Bucket = State#state.bucket,
     BatchSize = State#state.batch_size,
 
