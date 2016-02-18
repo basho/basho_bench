@@ -52,7 +52,8 @@ new(Id) ->
     Ts = basho_bench_config:get(ts, true),
     BatchSize = basho_bench_config:get(batch_size, 1),
     {Mega,Sec,Micro} = erlang:now(),
-    Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    Timestamp = basho_bench_config:get(start_timestamp, NowTimestamp),
     io:format("Worker ~p Starting Timestamp: ~p~n", [Id, Timestamp]),
     {ok, Hostname} = inet:gethostname(),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
@@ -105,6 +106,7 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
   run(ts_sequential, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Timestamp = State#state.timestamp,
+    io:format("~p~n", [Timestamp]),
     Bucket = State#state.bucket,
     BatchSize = State#state.batch_size,
 
