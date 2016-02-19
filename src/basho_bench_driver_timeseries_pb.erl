@@ -60,7 +60,7 @@ new(Id) ->
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
-            riakc_pb_socket:use_native_encoding(Pid, true),
+            %riakc_pb_socket:use_native_encoding(Pid, false),
             {ok, #state { pid = Pid,
                           bucket = Bucket,
                           ts = Ts,
@@ -117,17 +117,18 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
 
     case State#state.ts of
         true ->
-            case riakc_ts:put(Pid, Bucket, Val) of
-                ok ->
+            % case riakc_ts:put(Pid, Bucket, Val) of
+            %     ok ->
                     {ok, State#state{timestamp = Timestamp + BatchSize}};
-                {error, Reason} ->
-                    {error, Reason, State}
-            end;
+                % {error, Reason} ->
+                %     {error, Reason, State}
+            % end;
 
         false ->
             Key = <<(State#state.hostname)/binary,
                     (State#state.id)/binary,
                     (list_to_binary(integer_to_list(Timestamp)))/binary>>,
+            io:format("Key: ~p~n", [Key]),
             Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>}, Key, term_to_binary(Val)),
             case riakc_pb_socket:put(Pid, Obj) of
                 ok ->
@@ -141,9 +142,25 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
     Pid = State#state.pid,
     Query = KeyGen(),
 
-    case riakc_ts:query(Pid, Query) of
-      {error, Reason} ->
-        {error, Reason, State};
-      {_Schema, _Results} ->
-        {ok, State}
-    end.
+    % case State#state.ts of
+    %   true ->
+    %     % case riakc_ts:query(Pid, Query) of
+    %     %   {error, Reason} ->
+    %     %     {error, Reason, State};
+    %     %   {_Schema, _Results} ->
+    %         {ok, State};
+    %     %end;
+
+      % false ->
+        io:format("Key ~p~n", [Query]),
+        case riakc_pb_socket:get(Pid, {<<"GeoCheckin">>,<<"GeoCheckin">>}, Query) of
+          {ok, Obj} ->
+            io:format("~p~n", [Obj]),
+            {ok, State};
+          {error, notfound} ->
+            io:format("notfound~n"),
+            {ok, State};
+          {error, Reason} ->
+            {error, Reason, State}
+        % end
+      end.

@@ -127,6 +127,16 @@ new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTi
     End = Start + RangeSize,
     lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s'", [BucketName, Start, End, Family, Series]))
   end;
+
+new({kv_ts_query, _BucketName, FamilyList, SeriesList, StartTimestamp, EndTimestamp, RangeSize}, _Id) ->
+  random:seed(now()),
+  fun() ->
+    Family = list_to_binary(lists:nth(random:uniform(length(FamilyList)), FamilyList)),
+    Series = list_to_binary(lists:nth(random:uniform(length(SeriesList)), SeriesList)),
+    Timestamp = list_to_binary(integer_to_list(random:uniform((EndTimestamp-StartTimestamp-RangeSize)) + (StartTimestamp - 1))),
+    <<(Family)/binary, (Series)/binary, (Timestamp)/binary>>
+  end;
+
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
