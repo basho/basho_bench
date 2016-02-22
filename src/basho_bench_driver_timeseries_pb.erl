@@ -128,7 +128,7 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
             Key = <<(State#state.hostname)/binary,
                     (State#state.id)/binary,
                     (list_to_binary(integer_to_list(Timestamp)))/binary>>,
-            io:format("Key: ~p~n", [Key]),
+
             Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>}, Key, term_to_binary(Val)),
             case riakc_pb_socket:put(Pid, Obj) of
                 ok ->
@@ -152,10 +152,8 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
     %     %end;
 
       % false ->
-        io:format("Key ~p~n", [Query]),
         case riakc_pb_socket:get(Pid, {<<"GeoCheckin">>,<<"GeoCheckin">>}, Query) of
-          {ok, Obj} ->
-            io:format("~p~n", [Obj]),
+          {ok, _Obj} ->
             {ok, State};
           {error, notfound} ->
             io:format("notfound~n"),
