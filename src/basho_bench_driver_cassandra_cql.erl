@@ -63,7 +63,9 @@ new(Id) ->
     WriteConsistency = basho_bench_config:get(cassandra_write_consistency, ?CQERL_CONSISTENCY_QUORUM),
 
     {Mega,Sec,Micro} = erlang:now(),
-    Timestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
+    Timestamp = basho_bench_config:get(start_timestamp, NowTimestamp),
+
     {ok, Hostname} = inet:gethostname(),
     
     %% connect to client
@@ -83,10 +85,12 @@ new(Id) ->
             PutQueryText = iolist_to_binary(["UPDATE ", ColumnFamily,
                                              " SET ", ValueColumn, " = :val WHERE KEY = :key;"]),
             PutQuery = #cql_query{statement = PutQueryText, consistency = WriteConsistency},
+            
             TSPutText = iolist_to_binary(["INSERT INTO ", ColumnFamily,
                                           "(myfamily, myseries, time, time_quanta, myint, mytext, myfloat, mybool) 
                                            VALUES (:myfamily, :myseries, :time, :time_quanta, :myint, :mytext, :myfloat, :mybool);"]),
             TSPutQuery = #cql_query{statement = TSPutText, consistency = WriteConsistency},
+            
             DeleteQueryText = ["DELETE FROM ", ColumnFamily ," WHERE KEY = :key;"],
             DeleteQuery = #cql_query{statement = DeleteQueryText, consistency = WriteConsistency},
             GetCompositeQueryText = iolist_to_binary(["SELECT ", ValueColumn," FROM ", ColumnFamily ," WHERE ",
@@ -194,6 +198,7 @@ run(ts_put, _KeyGen, _ValueGen, State) ->
   Timestamp = State#state.timestamp,
   FifteenMinutesInSeconds = 900.0,
   Quanta = trunc(trunc((float(trunc(Timestamp / 1000.0)) / FifteenMinutesInSeconds)) * FifteenMinutesInSeconds) * 1000,
+  io:format("~p ~p ~p~n", [Timestamp, State#state.hostname, State#state.id]),
   ParameterizedQuery = TSPutQuery#cql_query{values = [{myfamily, State#state.hostname}, 
                                                       {myseries, State#state.id}, 
                                                       {time, Timestamp},
@@ -209,7 +214,10 @@ run(ts_put, _KeyGen, _ValueGen, State) ->
     Error ->
       io:format("Error: ~p~n", [Error]),
       {error, Error, State}
-  end.
+  end;
+
+run(ts_query, _KeyGen, _ValueGen, State) ->
+  {ok, State}.
 
 run_put(KeyGen, ValueGen,#state{client=C, put_query = PutQuery}=State) ->
     Key = KeyGen(),
