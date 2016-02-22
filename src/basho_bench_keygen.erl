@@ -125,7 +125,7 @@ new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTi
     Series = lists:nth(random:uniform(length(SeriesList)), SeriesList),
     Start = random:uniform((EndTimestamp-StartTimestamp-RangeSize)) + (StartTimestamp - 1),
     End = Start + RangeSize,
-    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s'", [BucketName, Start, End, Family, Series]))
+    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s';", [BucketName, Start, End, Family, Series]))
   end;
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->

@@ -198,7 +198,6 @@ run(ts_put, _KeyGen, _ValueGen, State) ->
   Timestamp = State#state.timestamp,
   FifteenMinutesInSeconds = 900.0,
   Quanta = trunc(trunc((float(trunc(Timestamp / 1000.0)) / FifteenMinutesInSeconds)) * FifteenMinutesInSeconds) * 1000,
-  io:format("~p ~p ~p~n", [Timestamp, State#state.hostname, State#state.id]),
   ParameterizedQuery = TSPutQuery#cql_query{values = [{myfamily, State#state.hostname}, 
                                                       {myseries, State#state.id}, 
                                                       {time, Timestamp},
@@ -216,8 +215,17 @@ run(ts_put, _KeyGen, _ValueGen, State) ->
       {error, Error, State}
   end;
 
-run(ts_query, _KeyGen, _ValueGen, State) ->
-  {ok, State}.
+run(ts_query, KeyGen, _ValueGen, State) ->
+  C = State#state.client,
+  Query = KeyGen(),
+  
+  case cqerl:run_query(C, Query) of
+    {ok, Results} ->
+      {ok, State};
+    Error ->
+      io:format("Error: ~p~n", [Error]),
+      {error, Error, State}
+    end.
 
 run_put(KeyGen, ValueGen,#state{client=C, put_query = PutQuery}=State) ->
     Key = KeyGen(),
