@@ -219,8 +219,9 @@ run(ts_query, KeyGen, _ValueGen, State) ->
   C = State#state.client,
   Query = KeyGen(),
   
-  case cqerl:run_query(C, Query) of
+  case cqerl:run_query(C, #cql_query{statement=Query, page_size=4096}) of
     {ok, Results} ->
+      _Rows = cqerl:all_rows(Results),
       {ok, State};
     Error ->
       io:format("Error: ~p~n", [Error]),
