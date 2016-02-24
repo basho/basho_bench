@@ -118,15 +118,22 @@ new({truncated_pareto_int, MaxKey}, Id) ->
     fun() -> erlang:min(MaxKey, Pareto()) end;
 new(uuid_v4, _Id) ->
     fun() -> basho_uuid:v4() end;
-new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTimestamp, RangeSize}, _Id) ->
+new({timeseries_query, BucketName, FName, FamilyList, SName, SeriesList, StartTimestamp, EndTimestamp, RangeSize}, _Id) ->
   random:seed(now()),
   fun() ->
     Family = lists:nth(random:uniform(length(FamilyList)), FamilyList),
     Series = lists:nth(random:uniform(length(SeriesList)), SeriesList),
     Start = random:uniform((EndTimestamp-StartTimestamp-RangeSize)) + (StartTimestamp - 1),
     End = Start + RangeSize,
-    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s';", [BucketName, Start, End, Family, Series]))
+    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND ~s='~s' AND ~s='~s';", [BucketName, Start, End, FName, Family, SName, Series]))
   end;
+new({timeseries_kv, FamilyList, SeriesList, StartTimestamp, EndTimestamp}, _Id) ->
+    fun() ->
+      Family = list_to_binary(lists:nth(random:uniform(length(FamilyList)), FamilyList)),
+      Series = list_to_binary(lists:nth(random:uniform(length(SeriesList)), SeriesList)),
+      Time = random:uniform((EndTimestamp-StartTimestamp-1)) + (StartTimestamp - 1),
+      [Family, Series, Time]
+    end;
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of

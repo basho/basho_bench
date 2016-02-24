@@ -32,7 +32,13 @@
                  id,
                  timestamp,
                  hostname,
-                 batch_size
+                 batch_size,
+                 families,
+                 series,
+                 templ,
+                 f1,
+                 f2,
+                 f3
                }).
 
 new(Id) ->
@@ -51,6 +57,12 @@ new(Id) ->
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     Ts = basho_bench_config:get(ts, true),
     BatchSize = basho_bench_config:get(batch_size, 1),
+    Families = basho_bench_config:get(riakts_families, ["Test"]),
+    Series = basho_bench_config:get(riakts_series, ["Test"]),
+    F1 = basho_bench_config:get(riakts_f1, ["Test"]),
+    F2 = basho_bench_config:get(riakts_f2, ["Test"]),
+    F3 = basho_bench_config:get(riakts_f3, ["Test"]),
+    Templ = basho_bench_config:get(riakts_templ, "~p~p~p~p~p~p~p~p~p~p"),
     {Mega,Sec,Micro} = erlang:now(),
     NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
     Timestamp = basho_bench_config:get(start_timestamp, NowTimestamp),
@@ -67,7 +79,13 @@ new(Id) ->
                           id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
                           timestamp = Timestamp,
                           hostname = list_to_binary(Hostname),
-                          batch_size = BatchSize
+                          batch_size = BatchSize,
+                          families = Families,
+                          series = Series,
+                          templ = Templ,
+                          f1 = F1,
+                          f2 = F2,
+                          f3 = F3
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -109,9 +127,21 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
     Bucket = State#state.bucket,
     BatchSize = State#state.batch_size,
 
+    Families = State#state.families,
+    Series = State#state.series,
+    F1 = State#state.f1,
+    F2 = State#state.f2,
+    F3 = State#state.f3,
+    Templ = State#state.templ,
+
     Val = lists:map(fun (X) ->
-                            [State#state.hostname, State#state.id,
-                             Timestamp + (X-1), 1, <<"test1">>, 1.0, true]
+                            [list_to_binary(lists:nth(random:uniform(length(Families)), Families)),
+                             list_to_binary(lists:nth(random:uniform(length(Series)), Series)),
+                             Timestamp + (X-1),
+                             list_to_binary(lists:nth(random:uniform(length(F1)), F1)),
+                             list_to_binary(lists:nth(random:uniform(length(F2)), F2)),
+                             list_to_binary(lists:nth(random:uniform(length(F3)), F3)),
+                             ts_templ(Templ)]
                     end,
                     lists:seq(1,BatchSize)),
 
@@ -125,25 +155,68 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
             end;
 
         false ->
-            Key = <<(State#state.hostname)/binary,
-                    (State#state.id)/binary,
+            [[Fam, Ser, _, _, _, _,Data]] = Val,
+            Key = <<(Fam)/binary,
+                    (Ser)/binary,
                     (list_to_binary(integer_to_list(Timestamp)))/binary>>,
-            Obj = riakc_obj:new({<<"GeoCheckin">>,<<"GeoCheckin">>}, Key, term_to_binary(Val)),
+            Obj = riakc_obj:new(Bucket, Key, Data),
             case riakc_pb_socket:put(Pid, Obj) of
-                ok ->
+                {ok, _} ->
                     {ok, State#state{timestamp = Timestamp + BatchSize}};
                 {error, Reason} ->
                     {error, Reason, State}
             end
     end;
 
-  run(ts_query, KeyGen, _ValueGen, State) ->
+run(ts_get, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pid,
+    Key = KeyGen(),
+
+    case State#state.ts of
+        true ->
+            case riakc_ts:get(Pid, State#state.bucket, Key, []) of
+                {error, Reason} ->
+                    {error, Reason, State};
+                {ok, _Results} ->
+                    {ok, State}
+            end;
+        false ->
+            [Family, Series, Time] = Key,
+            BinKey = <<(Family)/binary,
+                       (Series)/binary,
+                       (list_to_binary(integer_to_list(Time)))/binary>>,
+            case riakc_pb_socket:get(Pid, State#state.bucket, BinKey) of
+                {ok, _} ->
+                    {ok, State};
+                {error, notfound} ->
+                    {ok, State};
+                {error, disconnected} ->
+                    run(get, KeyGen, _ValueGen, State);
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
+    end;
+
+run(ts_query, KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Query = KeyGen(),
 
     case riakc_ts:query(Pid, Query) of
-      {error, Reason} ->
-        {error, Reason, State};
-      {_Schema, _Results} ->
-        {ok, State}
+        {error, Reason} ->
+            {error, Reason, State};
+        {_Schema, _Results} ->
+            {ok, State}
     end.
+
+ts_templ(Templ) ->
+    list_to_binary(io_lib:format(Templ, [
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100),
+                                         random:uniform(100)
+                         ])).
