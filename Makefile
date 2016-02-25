@@ -10,6 +10,9 @@ REBAR           ?= $(BASE_DIR)/rebar
 OVERLAY_VARS    ?=
 
 
+run: deps compile
+	erl -pa ./ebin -pa ./deps/*/ebin -s basho_bench
+
 all: deps compile
 	./rebar skip_deps=true escriptize
 
