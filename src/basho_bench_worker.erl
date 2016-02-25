@@ -177,22 +177,6 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 
 %%
-%% Stop a worker process via the supervisor and terminate the app
-%% if there are no workers remaining
-%%
-%% WARNING: Must run from a process other than the worker!
-%%
-stop_worker(SupChild) ->
-    ok = basho_bench_sup:stop_child(SupChild),
-    case basho_bench_sup:workers() of
-        [] ->
-            %% No more workers -- stop the system
-            basho_bench_app:stop();
-        _ ->
-            ok
-    end.
-
-%%
 %% Expand operations list into tuple suitable for weighted, random draw
 %%
 ops_tuple() ->
