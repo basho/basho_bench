@@ -153,18 +153,15 @@ handle_cast(run, State) ->
     {noreply, State}.
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    case Reason of
-        normal ->
-            %% Clean shutdown of the worker; spawn a process to terminate this
-            %% process via the supervisor API and make sure it doesn't restart.
-            spawn(fun() -> stop_worker(State#state.sup_id) end),
-            {noreply, State};
-
-        _ ->
+    #state{worker_pid=WorkerPid} = State,
+    case {Reason, Pid} of
+        {normal, _} ->
+            {stop, normal, State};
+        {_, WorkerPid} ->
             ?ERROR("Worker ~p exited with ~p~n", [Pid, Reason]),
             %% Worker process exited for some other reason; stop this process
             %% as well so that everything gets restarted by the sup
-            {stop, normal, State}
+            {stop, worker_died, State}
     end.
 
 terminate(_Reason, _State) ->
