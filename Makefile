@@ -38,8 +38,6 @@ locked-deps:
 	./rebar -C rebar.config.lock get-deps
 
 compile: deps
-	# Temp hack to work around https://github.com/basho/riak-erlang-client/issues/151
-	(cd deps/riak_pb ; ./rebar clean compile deps_dir=..)
 	@(./rebar compile)
 
 clean:
