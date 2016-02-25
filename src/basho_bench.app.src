@@ -8,7 +8,7 @@
         stdlib,
         lager,
         sasl,
-        couch
+        folsom
     ]},
     {mod, {basho_bench_app, []}},
     {env, [
