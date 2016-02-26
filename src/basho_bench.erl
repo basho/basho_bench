@@ -23,7 +23,7 @@
 
 -export([start/0]).
 
--export([setup_benchmark/1, run_benchmark/1, await_completion/1, main/1, md5/1]).
+-export([setup_benchmark/1, run_benchmark/1, await_completion/1, main/1, md5/1, get_test_dir/0]).
 -include("basho_bench.hrl").
 
 
@@ -70,7 +70,7 @@ setup_benchmark(Opts) ->
 
 
 run_benchmark(Configs) ->
-    TestDir = application:get_env(basho_bench, test_dir, "./"),
+    TestDir = get_test_dir(),
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
 
@@ -343,4 +343,11 @@ load_apps([App | Apps]) ->
         ok -> load_apps(Apps);
         {error, {already_loaded, basho_bench}} -> load_apps(Apps);
         {error, Reason} -> {error, App, Reason}
+    end.
+
+
+get_test_dir() ->
+    case application:get_env(basho_bench, test_dir) of
+        undefined -> error(unset_test_dir);
+        {ok, TestDir} -> TestDir
     end.
