@@ -21,12 +21,85 @@
 %% -------------------------------------------------------------------
 -module(basho_bench).
 
--export([main/1, md5/1]).
+-export([start/0]).
+
+-export([setup_benchmark/1, run_benchmark/1, await_completion/1, main/1, md5/1, get_test_dir/0]).
 -include("basho_bench.hrl").
+
+
+start() ->
+    application:ensure_all_started(basho_bench).
 
 %% ====================================================================
 %% API
 %% ====================================================================
+
+setup_benchmark(Opts) ->
+    BenchName = bench_name(Opts),
+    TestDir = test_dir(Opts, BenchName),
+    application:set_env(basho_bench, test_dir, TestDir),
+    basho_bench_config:set(test_id, BenchName),
+    ConsoleLagerLevel = application:get_env(basho_bench, log_level, debug),
+    ErrorLog = filename:join([TestDir, "error.log"]),
+    ConsoleLog = filename:join([TestDir, "console.log"]),
+    CrashLog = filename:join([TestDir, "crash.log"]),
+    % Stop/start lager in order to clear out old lager backend handlers
+    % if this is secondary benchmark run.
+    ok = application:stop(lager),
+    application:set_env(
+        lager,
+        handlers,
+        [
+            {lager_console_backend, ConsoleLagerLevel},
+            {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
+            {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
+        ]
+    ),
+    application:set_env(lager, crash_log, CrashLog),
+    load_apps([lager, basho_bench]),
+    lager:start(),
+    %% Log level can be overriden by the config files
+    CustomLagerLevel = basho_bench_config:get(log_level, debug),
+    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
+    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel),
+    case basho_bench_config:get(distribute_work, false) of 
+        true -> setup_distributed_work();
+        false -> ok
+    end,
+    ok.
+
+
+run_benchmark(Configs) ->
+    TestDir = get_test_dir(),
+    %% Init code path
+    add_code_paths(basho_bench_config:get(code_paths, [])),
+
+    %% If a source directory is specified, compile and load all .erl files found
+    %% there.
+    case basho_bench_config:get(source_dir, []) of
+        [] ->
+            ok;
+        SourceDir ->
+            load_source_files(SourceDir)
+    end,
+
+    %% Make sure this happens after starting lager or failures wont
+    %% show.
+    basho_bench_config:load(Configs),
+
+    %% Copy the config into the test dir for posterity
+    [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
+      || Config <- Configs ],
+
+    log_dimensions(),
+
+    basho_bench_sup:start_child(),
+    ok = basho_bench_stats:run(),
+    ok = basho_bench_measurement:run(),
+    ok = basho_bench_worker:run(basho_bench_worker_sup:workers()),
+    ok = basho_bench_duration:run(),
+    application:set_env(basho_bench_app, is_running, true).
+
 
 cli_options() ->
     [
@@ -43,76 +116,22 @@ main(Args) ->
     ok = maybe_show_usage(Opts),
     ok = maybe_net_node(Opts),
     ok = maybe_join(Opts),
-    BenchName = bench_name(Opts),
-    TestDir = test_dir(Opts, BenchName),
+    {ok, _} = start(),
+    setup_benchmark(Opts),
+    run_benchmark(Configs),
+    await_completion(infinity).
 
-    %% Load baseline configs
-    case application:load(basho_bench) of
-        ok -> ok;
-        {error, {already_loaded, basho_bench}} -> ok
+
+await_completion(Timeout) ->
+    MRef = erlang:monitor(process, whereis(basho_bench_duration)),
+    receive
+        {'DOWN', MRef, process, _Object, _Info} ->
+            done
+    after
+        Timeout ->
+            timeout
     end,
-    register(basho_bench, self()),
-    %% TODO: Move into a proper supervision tree, janky for now
-    {ok, _Pid} = basho_bench_config:start_link(),
-    basho_bench_config:set(test_id, BenchName),
-
-    application:load(lager),
-    ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
-    ErrorLog = filename:join([TestDir, "error.log"]),
-    ConsoleLog = filename:join([TestDir, "console.log"]),
-    CrashLog = filename:join([TestDir, "crash.log"]),
-    application:set_env(lager,
-                        handlers,
-                        [{lager_console_backend, ConsoleLagerLevel},
-                         {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
-                         {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
-                        ]),
-    application:set_env(lager, crash_log, CrashLog),
-    lager:start(),
-
-    %% Make sure this happens after starting lager or failures wont
-    %% show.
-    basho_bench_config:load(Configs),
-
-    %% Log level can be overriden by the config files
-    CustomLagerLevel = basho_bench_config:get(log_level),
-    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
-    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel),
-
-    %% Init code path
-    add_code_paths(basho_bench_config:get(code_paths, [])),
-
-    %% If a source directory is specified, compile and load all .erl files found
-    %% there.
-    case basho_bench_config:get(source_dir, []) of
-        [] ->
-            ok;
-        SourceDir ->
-            load_source_files(SourceDir)
-    end,
-
-    %% Copy the config into the test dir for posterity
-    [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
-      || Config <- Configs ],
-    case basho_bench_config:get(distribute_work, false) of 
-        true -> setup_distributed_work();
-        false -> ok
-    end,
-    %% Set our CWD to the test dir
-    ok = file:set_cwd(TestDir),
-    log_dimensions(),
-
-    %% Run pre_hook for user code preconditions
-    run_pre_hook(),
-    %% Spin up the application
-    ok = basho_bench_app:start(),
-
-    %% Pull the runtime duration from the config and sleep until that's passed OR
-    %% the supervisor process exits
-    Mref = erlang:monitor(process, whereis(basho_bench_sup)),
-    DurationMins = basho_bench_config:get(duration),
-    wait_for_stop(Mref, DurationMins).
-
+    application:set_env(basho_bench_app, is_running, false).
 
 %% ====================================================================
 %% Internal functions
@@ -180,30 +199,6 @@ test_dir(Opts, Name) ->
     [] = os:cmd(?FMT("rm -f ~s; ln -sf ~s ~s", [Link, TestDir, Link])),
     TestDir.
 
-wait_for_stop(Mref, infinity) ->
-    receive
-        {'DOWN', Mref, _, _, Info} ->
-            run_post_hook(),
-            ?CONSOLE("Test stopped: ~p\n", [Info])
-    end;
-wait_for_stop(Mref, DurationMins) ->
-    Duration = timer:minutes(DurationMins) + timer:seconds(1),
-    receive
-        {'DOWN', Mref, _, _, Info} ->
-            run_post_hook(),
-            ?CONSOLE("Test stopped: ~p\n", [Info]);
-        {shutdown, Reason, Exit} ->
-            run_post_hook(),
-            basho_bench_app:stop(),
-            ?CONSOLE("Test shutdown: ~s~n", [Reason]),
-            halt(Exit)
-
-    after Duration ->
-            run_post_hook(),
-            basho_bench_app:stop(),
-            ?CONSOLE("Test completed after ~p mins.\n", [DurationMins])
-    end.
-
 %%
 %% Construct a string suitable for use as a unique ID for this test run
 %%
@@ -267,18 +262,6 @@ load_source_files(Dir) ->
                         end
                 end,
     filelib:fold_files(Dir, ".*.erl", false, CompileFn, ok).
-
-run_pre_hook() ->
-    run_hook(basho_bench_config:get(pre_hook, no_op)).
-
-run_post_hook() ->
-    run_hook(basho_bench_config:get(post_hook, no_op)).
-
-run_hook({Module, Function}) ->
-    Module:Function();
-
-run_hook(no_op) ->
-    no_op.
 
 get_addr_args() ->
     {ok, IfAddrs} = inet:getifaddrs(),
@@ -352,3 +335,19 @@ md5(Bin) -> crypto:hash(md5, Bin).
 -else.
 md5(Bin) -> crypto:md5(Bin).
 -endif.
+
+load_apps([]) ->
+    ok;
+load_apps([App | Apps]) ->
+    case application:load(App) of
+        ok -> load_apps(Apps);
+        {error, {already_loaded, basho_bench}} -> load_apps(Apps);
+        {error, Reason} -> {error, App, Reason}
+    end.
+
+
+get_test_dir() ->
+    case application:get_env(basho_bench, test_dir) of
+        undefined -> error(unset_test_dir);
+        {ok, TestDir} -> TestDir
+    end.

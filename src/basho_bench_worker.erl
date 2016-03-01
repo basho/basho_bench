@@ -153,18 +153,15 @@ handle_cast(run, State) ->
     {noreply, State}.
 
 handle_info({'EXIT', Pid, Reason}, State) ->
-    case Reason of
-        normal ->
-            %% Clean shutdown of the worker; spawn a process to terminate this
-            %% process via the supervisor API and make sure it doesn't restart.
-            spawn(fun() -> stop_worker(State#state.sup_id) end),
-            {noreply, State};
-
-        _ ->
+    #state{worker_pid=WorkerPid} = State,
+    case {Reason, Pid} of
+        {normal, _} ->
+            {stop, normal, State};
+        {_, WorkerPid} ->
             ?ERROR("Worker ~p exited with ~p~n", [Pid, Reason]),
             %% Worker process exited for some other reason; stop this process
             %% as well so that everything gets restarted by the sup
-            {stop, normal, State}
+            {stop, worker_died, State}
     end.
 
 terminate(_Reason, _State) ->
@@ -178,22 +175,6 @@ code_change(_OldVsn, State, _Extra) ->
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
-
-%%
-%% Stop a worker process via the supervisor and terminate the app
-%% if there are no workers remaining
-%%
-%% WARNING: Must run from a process other than the worker!
-%%
-stop_worker(SupChild) ->
-    ok = basho_bench_sup:stop_child(SupChild),
-    case basho_bench_sup:workers() of
-        [] ->
-            %% No more workers -- stop the system
-            basho_bench_app:stop();
-        _ ->
-            ok
-    end.
 
 %%
 %% Expand operations list into tuple suitable for weighted, random draw
@@ -315,20 +296,11 @@ worker_next_op(State) ->
     end.
 
 needs_shutdown(State) ->
-    Parent = State#state.parent_pid,
     receive
-        {'EXIT', Pid, _Reason} ->
-            case Pid of
-                Parent ->
-                    %% Give the driver a chance to cleanup
-                    (catch (State#state.driver):terminate(normal,
-                                                          State#state.driver_state)),
-                    true;
-                _Else ->
-                    %% catch this so that selective recieve doesn't kill us when running
-                    %% the riakclient_driver
-                    false
-            end
+        {'EXIT', _Pid, _Reason} ->
+            (catch (State#state.driver):terminate(normal,
+                                                  State#state.driver_state)),
+            true
     after 0 ->
             false
     end.

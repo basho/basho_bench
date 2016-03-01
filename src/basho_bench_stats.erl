@@ -83,7 +83,7 @@ init([]) ->
     process_flag(priority, high),
 
     %% Spin up folsom
-    folsom:start(),
+    %% folsom:start(),
 
     %% Initialize an ETS table to track error and crash counters during
     %% reporting interval
