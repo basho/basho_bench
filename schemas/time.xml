@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<schema name="schedule" version="1.5">
+ <fields>
+
+   <field name="family"    type="string"  indexed="true" stored="true" />
+   <field name="series"    type="string"  indexed="true" stored="true" />
+   <field name="time"      type="long"    indexed="true" stored="true" />
+   <field name="myint"     type="int"     indexed="true" stored="false" />
+   <field name="myvarchar" type="string"  indexed="true" stored="false" />
+   <field name="mydouble"  type="double"  indexed="true" stored="false" />
+   <field name="mybool"    type="boolean" indexed="true" stored="false" />
+
+   <!-- All of these fields are required by Riak Search -->
+   <field name="_yz_id"   type="_yz_str" indexed="true" stored="true"  multiValued="false" required="true"/>
+   <field name="_yz_ed"   type="_yz_str" indexed="true" stored="false" multiValued="false"/>
+   <field name="_yz_pn"   type="_yz_str" indexed="true" stored="false" multiValued="false"/>
+   <field name="_yz_fpn"  type="_yz_str" indexed="true" stored="false" multiValued="false"/>
+   <field name="_yz_vtag" type="_yz_str" indexed="true" stored="false" multiValued="false"/>
+   <field name="_yz_rk"   type="_yz_str" indexed="true" stored="true"  multiValued="false"/>
+   <field name="_yz_rt"   type="_yz_str" indexed="true" stored="true"  multiValued="false"/>
+   <field name="_yz_rb"   type="_yz_str" indexed="true" stored="true"  multiValued="false"/>
+   <field name="_yz_err"  type="_yz_str" indexed="true" stored="false" multiValued="false"/>
+
+   <dynamicField name="*" type="ignored"  />
+ </fields>
+
+ <uniqueKey>_yz_id</uniqueKey>
+
+ <types>
+    <!-- YZ String: Used for non-analyzed fields -->
+    <fieldType name="_yz_str" class="solr.StrField" sortMissingLast="true" />
+
+    <fieldType name="string" class="solr.StrField" sortMissingLast="true" />
+    <fieldType name="boolean" class="solr.BoolField" sortMissingLast="true"/>
+    <fieldType name="int" class="solr.TrieIntField" precisionStep="0" positionIncrementGap="0"/>
+    <fieldType name="float" class="solr.TrieFloatField" precisionStep="0" positionIncrementGap="0"/>
+    <fieldType name="long" class="solr.TrieLongField" precisionStep="0" positionIncrementGap="0"/>
+    <fieldType name="double" class="solr.TrieDoubleField" precisionStep="0" positionIncrementGap="0"/>
+
+    <fieldtype name="ignored" stored="false" indexed="false" multiValued="true" class="solr.StrField" />
+ </types>
+</schema>

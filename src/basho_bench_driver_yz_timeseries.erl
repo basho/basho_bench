@@ -92,7 +92,7 @@ new(Id) ->
     Key = iolist_to_binary(io_lib:format("~s-~s-~p", [Hostname, Id, Timestamp])),
     %io:format("~p~n", [Key]),
 
-    D = {struct, [{family_s, Hostname}, {series_s, Id}, {time_i, Timestamp}, {myint_i, MyInt}, {mystring_s, MyString}, {mydouble_d, MyDouble}, {mybool_b, MyBool}]},
+    D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
     JD = iolist_to_binary(mochijson2:encode(D)),
     %io:format("~p~n", [JD]),
 
