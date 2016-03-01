@@ -33,11 +33,12 @@
 
 
 start_child() ->
+    Timeout = application:get_env(basho_bench, shutdown_timeout, 30000),
     RunSpec = {
         basho_bench_run_sup,
         {basho_bench_run_sup, start_link, []},
         temporary,
-        5000,
+        Timeout,
         worker,
         [basho_bench_run_sup]
     },

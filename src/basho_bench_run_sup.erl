@@ -6,7 +6,7 @@
 
 -export([init/1]).
 
--define(CHILD(I, Type), {I, {I, start_link, []}, transient, 30000, Type, [I]}).
+-define(CHILD(I, Type, Timeout), {I, {I, start_link, []}, transient, Timeout, Type, [I]}).
 
 
 start_link() ->
@@ -14,13 +14,14 @@ start_link() ->
 
 
 init([]) ->
+    Timeout = application:get_env(basho_bench, shutdown_timeout, 30000),
     MeasurementDriver = case basho_bench_config:get(measurement_driver, []) of
         [] -> [];
-        _Driver -> [?CHILD(basho_bench_measurement, worker)]
+        _Driver -> [?CHILD(basho_bench_measurement, worker, Timeout)]
     end,
     Spec = [
-        ?CHILD(basho_bench_duration, worker),
-        ?CHILD(basho_bench_stats, worker),
-        ?CHILD(basho_bench_worker_sup, supervisor)
+        ?CHILD(basho_bench_duration, worker, Timeout),
+        ?CHILD(basho_bench_stats, worker, Timeout),
+        ?CHILD(basho_bench_worker_sup, supervisor, Timeout)
     ] ++ MeasurementDriver,
     {ok, {{one_for_all, 0, 1}, Spec}}.
