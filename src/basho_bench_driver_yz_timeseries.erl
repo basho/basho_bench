@@ -85,7 +85,7 @@ new(Id) ->
     Id = State#state.id,
 
     MyInt = random:uniform(100),
-    MyString = list_to_binary(lists:foldl(fun(X, Str) -> [random:uniform(26) + 96 | Str] end, [], lists:seq(1,10))),
+    MyString = list_to_binary(lists:foldl(fun(_, Str) -> [random:uniform(26) + 96 | Str] end, [], lists:seq(1,10))),
     MyDouble = random:uniform() * 100,
     MyBool = lists:nth(random:uniform(2), [true, false]),
 
@@ -96,7 +96,15 @@ new(Id) ->
     JD = iolist_to_binary(mochijson2:encode(D)),
     %io:format("~p~n", [JD]),
 
-    Obj = riakc_obj:new({<<"GeoCheckin">>, <<"GeoCheckin">>}, Key, JD, <<"application/json">>), 
+    Buckets = [
+      {<<"GeoCheckin">>, <<"GeoCheckin">>},
+      {<<"GeoCheckin2">>, <<"GeoCheckin2">>}
+    ],
+
+    RndBucket = lists:nth(random:uniform(length(Buckets)), Buckets),
+    %io:format("~p~n", [RndBucket]),
+
+    Obj = riakc_obj:new(RndBucket, Key, JD, <<"application/json">>), 
     %io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
