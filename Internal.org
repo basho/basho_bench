@@ -1,0 +1,52 @@
+* Internal Overview
+** ------ Main Entry Points ---------------------
+** basho_bench_app(application): start/stop application
+*** start: Redirect SASL logging, check sasl/crypto available, start application
+** basho_bench: main entry point
+*** setup_benchmark: common initialization - logging, basic conditions, environment, loads applications
+*** run_benchmark: more init, load config, have basho_bench_sup start basho_bench_run_sup+children, send all run() msgs
+*** await_completion: monitors basho_bench_duration to finish, changes is_running mode
+*** main: wrapper for handling command line args, setup/run_benchmark
+*** load_source_files: compiles and loads driver contents of source_dir
+*** setup_distributed_work, deploy_module, distribute_app: distribute run across remote nodes
+** ------- Intermediate Supervisors/Servers -----
+** basho_bench_sup (supervisor): supervises basho_bench_run_sup
+** basho_bench_run_sup (supervisor): supervises basho_bench_duration/_stats/_measurement/_worker_sup
+** basho_bench_duration (gen_server): manages overall run time
+*** init: calls prehook when there is one
+*** handle(run): initializes timing information then calls maybe_end to loop until it's time to terminate
+*** terminate: stop basho_bench_worker_sup, call posthook, stop basho_bench_run_sup, mark app as stopped
+** basho_bench_stats (gen_server): setup and manage histogram table data
+*** init: initialize ETS tables, get list of OPs/measurements we want, init stats_writer, set first reporting timer
+*** handle_call(run): Schedule next report at report interval
+*** handle_cast: either record errors or post metrics for latest op
+*** handle_info(report): process periodic stats report
+*** terminate: final report plus errors, terminate stats_writer_data
+** basho_bench_measurement (gen_server): accepts timing measurements and reports to basho_bench_stats
+*** init: makes new measurement_driver based on config (??)
+*** handle_call(run): restart_measurements
+*** handle_call(take_measurement): calls basho_bench_stats:op_complete to report errors or timing results or handle crashes
+** basho_bench_worker_sup (supervisor): manages workers
+*** init: Get number concurrent workers needed, generate child specs for all; entry points for eprof profiling
+** basho_bench_worker (gen_server): invokes tests
+*** start_link: start_link_local or _distributed based on config flag
+*** run(Pids): send run/infinity message to workers
+*** init
+    + Setup RNG seed for worker sub-process to use; incorporate worker ID to ensure consistency in load-gen
+    + Gets config from environment (Driver, Ops, ShutdownOnError)
+    + Initialize key and value generation
+    + Use dedicated sub-process to do actual work so it can sleep/etc as needed and avoids unnecessary polling of message queue.
+*** ops_tuple: Expand operations list into tuple suitable for weighted, random draw
+*** worker_init: Trap exits from linked parent process; use this to ensure the driver gets a chance to cleanup; calls worker_idle_loop
+*** worker_idle_loop
+    + receive(init_driver): (Spin up the driver implementation)
+    + receive(run): based on mode, call max_worker_run_loop() or rate_worker_run_loop() (which is where we calculate rate control amounts, don't expect greater than one second
+*** worker_next_op/1
+    + Based on worker_next_op(State, OpTag) handle op_complete calls, errors, exti
+** ------- Supporting utilities -----------------
+** basho_bench_config (gen_server): load config file, support getters/setters
+** basho_bench_measurement_erlangvm: make RPC calls to Node, returning info on memory/cpu/processes/filehandles/et
+** basho_bench_stats_writer_*: various forms out stats output(basic, csv, ETS, riemann)
+** basho_bench_keygen: key generator patterns
+** basho_bench_valgen: value generator patterns
+** basho_bench_uuid: generates a random UUID, conversion utilities
