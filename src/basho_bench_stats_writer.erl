@@ -70,13 +70,20 @@ new({csv}, Ops, Measurements) ->
     %% Setup output file handles for dumping periodic CSV of histogram results.
     [erlang:put({csv_file, X}, measurement_csv_file(X)) || X <- Measurements],
 
+    TestDir = basho_bench:get_test_dir(),
     %% Setup output file w/ counters for total requests, errors, etc.
-    {ok, SummaryFile} = file:open("summary.csv", [raw, binary, write]),
+    {ok, SummaryFile} = file:open(
+        filename:join([TestDir, "/summary.csv"]),
+        [raw, binary, write]
+    ),
     file:write(SummaryFile, <<"elapsed, window, total, successful, failed\n">>),
 
     %% Setup errors file w/counters for each error.  Embedded commas likely
     %% in the error messages so quote the columns.
-    {ok, ErrorsFile} = file:open("errors.csv", [raw, binary, write]),
+    {ok, ErrorsFile} = file:open(
+        filename:join([TestDir, "errors.csv"]),
+        [raw, binary, write]
+    ),
     file:write(ErrorsFile, <<"\"error\",\"count\"\n">>),
 
     {SummaryFile, ErrorsFile};
@@ -159,13 +166,15 @@ report_latency({{riemann}, _},
 %% ====================================================================
 
 op_csv_file({Label, _Op}) ->
-    Fname = normalize_label(Label) ++ "_latencies.csv",
+    TestDir = basho_bench:get_test_dir(),
+    Fname = filename:join([TestDir, normalize_label(Label) ++ "_latencies.csv"]),
     {ok, F} = file:open(Fname, [raw, binary, write]),
     ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
     F.
 
 measurement_csv_file({Label, _Op}) ->
-    Fname = normalize_label(Label) ++ "_measurements.csv",
+    TestDir = basho_bench:get_test_dir(),
+    Fname = filename:join([TestDir, normalize_label(Label) ++ "_measurements.csv"]),
     {ok, F} = file:open(Fname, [raw, binary, write]),
     ok = file:write(F, <<"elapsed, window, n, min, mean, median, 95th, 99th, 99_9th, max, errors\n">>),
     F.
