@@ -21,7 +21,7 @@
 
 ** Quick Start
 
-   You must have [[http://erlang.org/download.html][Erlang/OTP R13B03]] or later to build and run Basho
+   You must have [[http://erlang.org/download.html][Erlang/OTP R16]] or later to build and run Basho
    Bench, and [[http://www.r-project.org/][R]] to generate graphs of your benchmarks.  A sane
    GNU-style build system is also required if you want to use =make=
    to build the project.
@@ -60,6 +60,17 @@ null device
           1 
 $ open tests/current/summary.png
 #+END_SRC
+
+** Running as an Application
+
+   You can also run basho_bench as an included app rather than an escript. In order to compile and run basho_bench as an included app, you can use =make run=. You can also include basho_bench as a dependency in another app. basho_bench can be started with =basho_bench:start()= or from the command-line with =erl -s basho_bench=. Once you have a shell with basho_bench running, you can run benchmarks with the following:
+
+#+BEGIN_SRC erlang
+basho_bench:setup_benchmark([]).
+basho_bench:run_benchmark(["/path/to/config"]).
+#+END_SRC
+
+=basho_bench:setup_benchmark/1= accepts a proplist of configuration options. These options are the same as the options which are passed to basho_bench via the command line when compiled as an escript.
 
 ** Troubleshooting Graph Generation
 
