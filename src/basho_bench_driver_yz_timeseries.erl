@@ -32,7 +32,8 @@
                  id,
                  timestamp,
                  hostname,
-                 batch_size
+                 batch_size,
+                 random_values
                }).
 
 new(Id) ->
@@ -53,6 +54,7 @@ new(Id) ->
     Bucket  = basho_bench_config:get(riakc_pb_bucket, {<<"GeoCheckin">>, <<"GeoCheckin">>}),
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     Ts = basho_bench_config:get(ts, true),
+    RandomValues = basho_bench_config:get(random_values, true),
     BatchSize = basho_bench_config:get(batch_size, 1),
     {Mega,Sec,Micro} = erlang:now(),
     NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
@@ -69,7 +71,8 @@ new(Id) ->
                           id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
                           timestamp = Timestamp,
                           hostname = list_to_binary(Hostname),
-                          batch_size = BatchSize
+                          batch_size = BatchSize,
+                          random_values = RandomValues
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -78,38 +81,58 @@ new(Id) ->
 
   run(put, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
-    Bucket = State#state.bucket,
+    _Bucket = State#state.bucket,
 
     Timestamp = State#state.timestamp,
     Hostname = State#state.hostname,
     Id = State#state.id,
 
-    MyInt = random:uniform(100),
-    MyString = list_to_binary(lists:foldl(fun(_, Str) -> [random:uniform(26) + 96 | Str] end, [], lists:seq(1,10))),
-    MyDouble = random:uniform() * 100,
-    MyBool = lists:nth(random:uniform(2), [true, false]),
+    RandomValues = State#state.random_values,
 
-    Key = iolist_to_binary(io_lib:format("~s-~s-~p", [Hostname, Id, Timestamp])),
-    %io:format("~p~n", [Key]),
-
-    D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
-    JD = iolist_to_binary(mochijson2:encode(D)),
-    %io:format("~p~n", [JD]),
+    {Key, Data} = get_kv(RandomValues, Hostname, Id, Timestamp),
 
     Buckets = [
       {<<"GeoCheckin">>, <<"GeoCheckin">>},
-      {<<"GeoCheckin2">>, <<"GeoCheckin2">>}
+      {<<"GeoCheckin2">>, <<"GeoCheckin2">>},
+      {<<"GeoCheckin3">>, <<"GeoCheckin3">>},
+      {<<"GeoCheckin4">>, <<"GeoCheckin4">>},
+      {<<"GeoCheckin5">>, <<"GeoCheckin5">>}
     ],
 
     RndBucket = lists:nth(random:uniform(length(Buckets)), Buckets),
     %io:format("~p~n", [RndBucket]),
 
-    Obj = riakc_obj:new(RndBucket, Key, JD, <<"application/json">>), 
-    %io:format("~p~n", [Obj]),
+    Obj = riakc_obj:new(RndBucket, Key, Data, <<"application/json">>), 
+    io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
       ok ->
         {ok, State#state{timestamp = Timestamp+1}};
       {error, Reason} ->
+        io:format("Error: ~p~n", [Reason]),
         {error, Reason, State}
     end.
+  
+get_kv(RandomValues, Hostname, Id, Timestamp) ->
+  if
+    RandomValues ->
+      MyInt = random:uniform(100),
+      MyString = list_to_binary(lists:foldl(fun(_, Str) -> [random:uniform(26) + 96 | Str] end, [], lists:seq(1,10))),
+      MyDouble = random:uniform() * 100,
+      MyBool = lists:nth(random:uniform(2), [true, false]),
+
+      Key = iolist_to_binary(io_lib:format("~s-~s-~p", [Hostname, Id, Timestamp])),
+      D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
+      JD = iolist_to_binary(mochijson2:encode(D)),
+      {Key, JD};
+    true ->
+      MyInt = 123,
+      MyString = <<"test1">>,
+      MyDouble = 1.5,
+      MyBool = true,
+
+      Key = iolist_to_binary(io_lib:format("~s-~s-~p", [Hostname, Id, Timestamp])),
+      D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
+      JD = iolist_to_binary(mochijson2:encode(D)),
+      {Key, JD}
+  end.

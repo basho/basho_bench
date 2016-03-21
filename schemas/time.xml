@@ -5,10 +5,10 @@
    <field name="family"    type="string"  indexed="true" stored="true" />
    <field name="series"    type="string"  indexed="true" stored="true" />
    <field name="time"      type="long"    indexed="true" stored="true" />
-   <field name="myint"     type="int"     indexed="false" stored="false" />
-   <field name="myvarchar" type="string"  indexed="false" stored="false" />
-   <field name="mydouble"  type="double"  indexed="false" stored="false" />
-   <field name="mybool"    type="boolean" indexed="false" stored="false" />
+   <field name="myint"     type="int"     indexed="true" stored="true" />
+   <field name="myvarchar" type="string"  indexed="true" stored="true" />
+   <field name="mydouble"  type="double"  indexed="true" stored="true" />
+   <field name="mybool"    type="boolean" indexed="true" stored="true" />
 
    <!-- All of these fields are required by Riak Search -->
    <field name="_yz_id"   type="_yz_str" indexed="true" stored="true"  multiValued="false" required="true"/>
