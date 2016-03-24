@@ -103,7 +103,7 @@ new(Id) ->
     %io:format("~p~n", [RndBucket]),
 
     Obj = riakc_obj:new(RndBucket, Key, Data, <<"application/json">>), 
-    io:format("~p~n", [Obj]),
+    %io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
       ok ->
@@ -111,7 +111,24 @@ new(Id) ->
       {error, Reason} ->
         io:format("Error: ~p~n", [Reason]),
         {error, Reason, State}
-    end.
+    end;
+
+  run(get, KeyGen, _ValueGen, State) ->
+    Pid = State#state.pid,
+    
+    BucketList = [<<"time">>,
+                  <<"time2">>,
+                  <<"time3">>,
+                  <<"time4">>,
+                  <<"time5">>
+                 ],
+    Bucket = lists:nth(random:uniform(length(BucketList)), BucketList),
+    Query = KeyGen(),
+    {ok, Results} = riakc_pb_socket:search(Pid, Bucket, Query),
+    %io:format("~p~n", [Results]),
+    {search_results, _, _, Count} = Results,
+    %io:format("Count: ~p~n", [Count]),
+    {ok, State}.
   
 get_kv(RandomValues, Hostname, Id, Timestamp) ->
   if

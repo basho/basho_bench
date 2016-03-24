@@ -118,6 +118,7 @@ new({truncated_pareto_int, MaxKey}, Id) ->
     fun() -> erlang:min(MaxKey, Pareto()) end;
 new(uuid_v4, _Id) ->
     fun() -> basho_uuid:v4() end;
+
 new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTimestamp, RangeSize}, _Id) ->
   random:seed(now()),
   fun() ->
@@ -127,6 +128,15 @@ new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTi
     End = Start + RangeSize,
     lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s';", [BucketName, Start, End, Family, Series]))
   end;
+
+new({yz_ts_query, StartTime, EndTime, RangeSize}, _Id) ->
+  random:seed(now()),
+  fun() ->
+    Start = random:uniform((EndTime-StartTime-RangeSize)) + (StartTime - 1),
+    End = Start + RangeSize,
+    lists:flatten(io_lib:format("time:[~p TO ~p]", [Start, End]))
+  end;
+
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
