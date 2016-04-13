@@ -26,7 +26,8 @@
 %% API
 -export([start_link/0,
          workers/0,
-         stop_child/1]).
+         stop_child/1,
+         active_workers/0]).
 
 %% Supervisor callbacks
 -export([init/1]).
@@ -45,6 +46,9 @@ workers() ->
 
 stop_child(Id) ->
     supervisor:terminate_child(?MODULE, Id).
+
+active_workers() ->
+    [X || X <- workers(), X =/= undefined].
 
 
 %% ===================================================================

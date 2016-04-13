@@ -124,6 +124,7 @@ main(Args) ->
 
 await_completion(Timeout) ->
     MRef = erlang:monitor(process, whereis(basho_bench_duration)),
+
     receive
         {'DOWN', MRef, process, _Object, _Info} ->
             done

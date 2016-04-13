@@ -1,3 +1,9 @@
+%% -------------------------------------------------------------------
+%% Check whether to exit besho_bench, exit conditions
+%%     1. run out of duration time
+%%     2. run out of operations even if the duration time had not up
+%% -------------------------------------------------------------------
+
 -module(basho_bench_duration).
 
 -behavior(gen_server).
@@ -15,7 +21,8 @@
     handle_cast/2,
     handle_info/2,
     terminate/2,
-    code_change/3
+    code_change/3,
+    worker_stopping/1
 ]).
 
 -record(state, {
@@ -47,7 +54,7 @@ init([]) ->
 
 handle_call(run, _From, State) ->
     DurationMins = basho_bench_config:get(duration, 1),
-    lager:info("Starting with duration: ~p", [DurationMins]),
+    ?INFO("Starting with duration: ~p", [DurationMins]),
     NewState = State#state{
         start=os:timestamp(),
         duration=DurationMins
@@ -59,6 +66,16 @@ handle_call(remaining, _From, State) ->
     Remaining = (Duration*60) - timer:now_diff(os:timestamp(), Start),
     maybe_end({reply, Remaining, State}).
 
+
+%% WorkerPid is basho_bench_worker's id, not the pid of actual driver
+handle_cast({worker_stopping, WorkerPid}, State) ->
+    case basho_bench_worker_sup:active_workers() -- [WorkerPid] of
+        [] ->
+            ?INFO("The application has stopped early!", []), 
+            {stop, {shutdown, normal}, State}; 
+        _ -> 
+            maybe_end({noreply, State}) 
+    end;
 
 handle_cast(_Msg, State) ->
     maybe_end({noreply, State}).
@@ -107,7 +124,6 @@ maybe_end(Return) ->
             {Reply0, ok, State0}
     end,
     #state{start=Start} = State,
-
     case State#state.duration of
         infinity ->
             Return;
@@ -131,3 +147,8 @@ run_hook({Module, Function}) ->
 
 run_hook(no_op) ->
     no_op.
+
+worker_stopping(WorkerPid) ->
+    %% WorkerPid is basho_bench_worker's id, not the pid of actual driver 
+    gen_server:cast(?MODULE, {worker_stopping, WorkerPid}),
+    ok.
