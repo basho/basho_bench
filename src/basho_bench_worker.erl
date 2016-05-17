@@ -129,6 +129,7 @@ init([SupChild, Id]) ->
     %%
     %% Link the worker and the sub-process to ensure that if either exits, the
     %% other goes with it.
+    %% WorkerPid is the driver process id which is linked with basho_bench_worker id
     WorkerPid = spawn_link(fun() -> worker_init(State) end),
     WorkerPid ! {init_driver, self()},
     receive
@@ -162,6 +163,9 @@ handle_info({'EXIT', Pid, Reason}, State) ->
     #state{worker_pid=WorkerPid} = State,
     case {Reason, Pid} of
         {normal, _} ->
+            %% Worker process exited normally
+            %% Stop this worker and check is there any other alive worker
+            basho_bench_duration:worker_stopping(self()),
             {stop, normal, State};
         {_, WorkerPid} ->
             ?ERROR("Worker ~p exited with ~p~n", [Pid, Reason]),
