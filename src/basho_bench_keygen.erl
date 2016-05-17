@@ -129,6 +129,18 @@ new({timeseries_query, BucketName, FamilyList, SeriesList, StartTimestamp, EndTi
     lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s';", [BucketName, Start, End, Family, Series]))
   end;
 
+new({timeseries_query_secondary, BucketName, FamilyList, SeriesList, StartTimestamp, EndTimestamp, RangeSize, SecondaryFieldName, FieldStart, FieldEnd, FieldRange}, _Id) ->
+  random:seed(now()),
+  fun() ->
+    Family = lists:nth(random:uniform(length(FamilyList)), FamilyList),
+    Series = lists:nth(random:uniform(length(SeriesList)), SeriesList),
+    Start = random:uniform((EndTimestamp-StartTimestamp-RangeSize)) + (StartTimestamp - 1),
+    End = Start + RangeSize,
+    FieldStartVal = random:uniform((FieldEnd-FieldStart-FieldRange)) + (FieldStart - 1),
+    FieldEndVal = FieldStartVal + FieldRange,
+    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s' AND ~s >= ~p AND ~s < ~p;", [BucketName, Start, End, Family, Series, SecondaryFieldName, FieldStartVal, SecondaryFieldName, FieldEndVal]))
+  end;
+
 new({yz_ts_query, StartTime, EndTime, RangeSize}, _Id) ->
   random:seed(now()),
   fun() ->

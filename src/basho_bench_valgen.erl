@@ -71,7 +71,7 @@ new({timeseries_data}, _Id) ->
         % Timestamps are current epoch in microseconds
         %Timestamp = (Mega*1000000 + Sec) * 1000000 + Micro,
 	    %Data = list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,1024))),
-        lists:map(fun (_) -> {Mega,Sec,Micro} = erlang:now(), [{time, (Mega*1000000 + Sec) * 1000000 + Micro}, float(random:uniform(9999)), float(random:uniform(9999))] end, lists:seq(1,25))
+        lists:map(fun (_) -> {Mega,Sec,Micro} = erlang:now(), [{time, (Mega*1000000 + Sec) * 1000000 + Micro}, float(random:uniform(9999)), float(random:uniform(9999)), random:uniform(100), <<"test">>, float(random:uniform(100)), true] end, lists:seq(1,1))
     end;
 new({rt_port}, _Id) ->
     fun() ->
