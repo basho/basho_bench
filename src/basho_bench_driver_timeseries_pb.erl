@@ -72,7 +72,7 @@ new(Id) ->
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort) of
         {ok, Pid} ->
-            riakc_pb_socket:use_native_encoding(Pid, true),
+            %%riakc_pb_socket:use_native_encoding(Pid, true),
             {ok, #state { pid = Pid,
                           bucket = Bucket,
                           ts = Ts,
@@ -135,23 +135,24 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
     Templ = State#state.templ,
 
     Val = lists:map(fun (X) ->
-                            [list_to_binary(lists:nth(random:uniform(length(Families)), Families)),
+                            {list_to_binary(lists:nth(random:uniform(length(Families)), Families)),
                              list_to_binary(lists:nth(random:uniform(length(Series)), Series)),
                              Timestamp + (X-1),
                              list_to_binary(lists:nth(random:uniform(length(F1)), F1)),
                              list_to_binary(lists:nth(random:uniform(length(F2)), F2)),
                              list_to_binary(lists:nth(random:uniform(length(F3)), F3)),
-                             ts_templ(Templ)]
+                             ts_templ(Templ)}
                     end,
                     lists:seq(1,BatchSize)),
 
     case State#state.ts of
         true ->
+	    lager:info("Val: ~p", [Val]),
             case riakc_ts:put(Pid, Bucket, Val) of
                 ok ->
                     {ok, State#state{timestamp = Timestamp + BatchSize}};
                 {error, Reason} ->
-                    {error, Reason, State}
+                    {error, Reason, State#state{timestamp = Timestamp + BatchSize}}
             end;
 
         false ->
@@ -164,7 +165,7 @@ run(fast_put_pb, KeyGen, ValueGen, State) ->
                 {ok, _} ->
                     {ok, State#state{timestamp = Timestamp + BatchSize}};
                 {error, Reason} ->
-                    {error, Reason, State}
+                    {error, Reason, State#state{timestamp = Timestamp + BatchSize}}
             end
     end;
 
