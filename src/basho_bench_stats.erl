@@ -114,15 +114,23 @@ init([]) ->
          folsom_metrics:new_counter({units, Op})
      end || Op <- Ops ++ Measurements],
 
-    StatsWriter = basho_bench_config:get(stats, {csv}),
-
+    StatsWriter = basho_bench_config:get(stats, csv),
+    {ok, StatsSinkModule} = normalize_name(StatsWriter),
+    _ = (catch StatsSinkModule:module_info()),
+    case code:is_loaded(StatsSinkModule) of
+        {file, _} ->
+            ok;
+        false ->
+            ?WARN("Cannot load module ~p (derived on ~p, from the config value of 'stats' or compiled default)\n",
+                  [StatsSinkModule, StatsWriter])
+    end,
     %% Schedule next write/reset of data
     ReportInterval = timer:seconds(basho_bench_config:get(report_interval)),
 
     {ok, #state{ ops = Ops ++ Measurements,
                  report_interval = ReportInterval,
-                 stats_writer = StatsWriter,
-                 stats_writer_data = basho_bench_stats_writer:new(StatsWriter, Ops, Measurements)}}.
+                 stats_writer = StatsSinkModule,
+                 stats_writer_data = StatsSinkModule:new(Ops, Measurements)}}.
 
 handle_call(run, _From, State) ->
     %% Schedule next report
@@ -159,13 +167,12 @@ handle_info(report, State) ->
     process_stats(Now, State),
     {noreply, State#state { last_write_time = Now, errors_since_last_report = false }}.
 
-terminate(_Reason, State) ->
+terminate(_Reason, #state{stats_writer=Module}=State) ->
     %% Do the final stats report and write the errors file
     process_stats(os:timestamp(), State),
     report_total_errors(State),
 
-    basho_bench_stats_writer:terminate({State#state.stats_writer,
-                                        State#state.stats_writer_data}).
+    Module:terminate(State#state.stats_writer_data).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -228,7 +235,7 @@ lookup_or_zero(Tab, Key) ->
     end.
 
 
-process_stats(Now, State) ->
+process_stats(Now, #state{stats_writer=Module}=State) ->
     %% Determine how much time has elapsed (seconds) since our last report
     %% If zero seconds, round up to one to avoid divide-by-zeros in reporting
     %% tools.
@@ -247,9 +254,8 @@ process_stats(Now, State) ->
     [folsom_metrics_counter:dec({units, Op}, OpAmount) || {Op, OpAmount} <- OkOpsRes],
 
     %% Write summary
-    basho_bench_stats_writer:process_summary({State#state.stats_writer,
-                                              State#state.stats_writer_data},
-                                             Elapsed, Window, Oks, Errors),
+    Module:process_summary(State#state.stats_writer_data,
+                           Elapsed, Window, Oks, Errors),
 
     %% Dump current error counts to console
     case (State#state.errors_since_last_report) of
@@ -268,18 +274,18 @@ process_stats(Now, State) ->
 %% Write latency info for a given op to the appropriate CSV. Returns the
 %% number of successful and failed ops in this window of time.
 %%
-report_latency(State, Elapsed, Window, Op) ->
+report_latency(#state{stats_writer=Module}=State, Elapsed, Window, Op) ->
     Stats = folsom_metrics:get_histogram_statistics({latencies, Op}),
     Errors = error_counter(Op),
     Units = folsom_metrics:get_metric_value({units, Op}),
 
-    basho_bench_stats_writer:report_latency({State#state.stats_writer,
+    Module:report_latency({State#state.stats_writer,
                                              State#state.stats_writer_data},
                                             Elapsed, Window, Op,
                                             Stats, Errors, Units),
     {Units, Errors}.
 
-report_total_errors(State) ->
+report_total_errors(#state{stats_writer=Module}=State) ->
     case ets:tab2list(basho_bench_total_errors) of
         [] ->
             ?INFO("No Errors.\n", []);
@@ -292,7 +298,7 @@ report_total_errors(State) ->
                                 ok; % per op total
                             false ->
                                 ?INFO("  ~p: ~p\n", [Key, Count]),
-                                basho_bench_stats_writer:report_error({State#state.stats_writer,
+                                Module:report_error({State#state.stats_writer,
                                                                        State#state.stats_writer_data},
                                                                       Key, Count)
                         end
@@ -307,3 +313,8 @@ consume_report_msgs() ->
     after 0 ->
             ok
     end.
+
+% Assuming all stats sink modules are prefixed with basho_bench_stats_writer_
+normalize_name(StatsSink) when is_atom(StatsSink) ->
+    {ok, list_to_atom("basho_bench_stats_writer_" ++ atom_to_list(StatsSink))};
+normalize_name(StatsSink) -> {error, {StatsSink, invalid_name}}.

@@ -21,7 +21,7 @@
 
 ** Quick Start
 
-   You must have [[http://erlang.org/download.html][Erlang/OTP R13B03]] or later to build and run Basho
+   You must have [[http://erlang.org/download.html][Erlang/OTP R16]] or later to build and run Basho
    Bench, and [[http://www.r-project.org/][R]] to generate graphs of your benchmarks.  A sane
    GNU-style build system is also required if you want to use =make=
    to build the project.
@@ -83,7 +83,7 @@ make results
    your benchmark. It is also straightforward -- with less than 200
    lines of Erlang code -- to create custom drivers that can exercise
    other systems or perform custom operations. These are covered more
-   in detail in the [[http://docs.basho.com/riak/latest/cookbooks/Benchmarking/][documentation]].
+   in detail in the [[http://docs.basho.com/riak/latest/ops/building/benchmarking/][documentation]].
 
 ** Benchmarking with riak-java-client
    The [[https://github.com/basho/riak-java-client][riak-java-client]] can be used to benchmark a Riak cluster. There
@@ -121,6 +121,28 @@ $ ./priv/gp_latencies.sh
    environment or quick sharing of result in chat.
 
    Also, you can plot multiple test runs on a single plot by using "-d" switch.
+
+** Benchmarking Erlang cluster
+
+   A typical benchmark scenario is that Basho Bench spawn Erlang VM and executes the driver inside. However, there is needs to catch performance metrics from an application executed remotely within dedicated environment (e.g. probe performance from live system; benchmark an application inside C or Java node, etc). Bash Bench implements a generic =basho_bench_driver_cluster= that acts as proxy. It uses Erlang distribution to delegate benchmark responsibility to remote actor, which is randomly selected from configured pool.
+
+   Basho Bench do not define how the actors are spawned within SUT. It only defined a communication protocol. The actor is responsible to handle the message:
+
+   ={pid(), atom(), key(), val()}=
+
+   - =pid()=  : request originator, actor shall respond to this process
+   - =atom()= : id of operation to execute as defined in config file
+   - =key()=  : materialized key value as defined by key generator function
+   - =val()=  : materialized value as defined by value generator function
+
+   The actor executes the request, measures performance and respond to originator process =pid()= with one of the message ={ok, microsecond()}= or ={error, reason()}=
+
+   See cluster.config example for details. Use following command to spawn benchmark
+
+#+BEGIN_SRC shell
+./basho_bench -C nocookie -N bb@127.0.0.1 -J erlang@127.0.0.1 examples/cluster.config
+#+END_SRC
+   
 
 ** Contributing
    We encourage contributions to Basho Bench from the community.
