@@ -141,6 +141,16 @@ new({timeseries_query_secondary, BucketName, FamilyList, SeriesList, StartTimest
     lists:flatten(io_lib:format("SELECT * FROM ~s WHERE time >= ~p AND time < ~p AND myfamily='~s' AND myseries='~s' AND ~s >= ~p AND ~s < ~p;", [BucketName, Start, End, Family, Series, SecondaryFieldName, FieldStartVal, SecondaryFieldName, FieldEndVal]))
   end;
 
+new({time_user_query, TableName, StartTime, EndTime, DayRange, UserCount}, _Id) ->
+  random:seed(now()),
+  MsPerDay = 86400000,
+  fun() ->
+    Start = random:uniform((EndTime-StartTime-(DayRange * MsPerDay))) + (StartTime - 1),
+    End = Start + (DayRange * MsPerDay),
+    UserID = 100000000000000000 + random:uniform(UserCount) - 1,
+    lists:flatten(io_lib:format("SELECT * FROM ~s WHERE UtcTime >= ~p AND UtcTime < ~p AND UserId = '~p'", [TableName, Start, End, UserID]))
+  end;
+
 new({yz_ts_query, StartTime, EndTime, RangeSize}, _Id) ->
   random:seed(now()),
   fun() ->
