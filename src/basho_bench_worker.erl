@@ -135,7 +135,7 @@ init([SupChild, Id]) ->
     receive
         driver_ready ->
             ok;
-        {driver_failed, Why} ->
+        {init_driver_failed, Why} ->
             exit({init_driver_failed, Why})
     end,
 
@@ -221,9 +221,9 @@ worker_idle_loop(State) ->
                     Caller ! driver_ready,
                     ok;
                 Error ->
-                    Caller ! {init_driver_failed, Error},
+                    ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error]),
                     DriverState = undefined, % Make erlc happy
-                    ?FAIL_MSG("Failed to initialize driver ~p: ~p\n", [Driver, Error])
+                    Caller ! {init_driver_failed, Error}
             end,
             worker_idle_loop(State#state { driver_state = DriverState });
         run ->
