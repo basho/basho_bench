@@ -88,6 +88,9 @@
         %%
         {value_generator, {fixed_bin, 100}},
 
-        {shutdown_timeout, 30000}
+        {shutdown_timeout, 30000},
+
+        % milliseconds to wait during basho_bench_duration:run
+        {duration_call_run_timeout, 5000}
     ]}
 ]}.

@@ -35,7 +35,8 @@
 
 
 run() ->
-    gen_server:call(?MODULE, run).
+    Timeout = basho_bench_config:get(duration_call_run_timeout),
+    gen_server:call(?MODULE, run, Timeout).
 
 
 remaining() ->
