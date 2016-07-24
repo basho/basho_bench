@@ -11,36 +11,36 @@ OVERLAY_VARS    ?=
 
 
 all: deps compile
-	./rebar skip_deps=true escriptize
+	$(REBAR) skip_deps=true escriptize
 
 .PHONY: deps compile rel lock locked-all locked-deps
 
 rel: deps compile
-	cd rel && ../rebar generate skip_deps=true $(OVERLAY_VARS)
+	cd rel && .$(REBAR) generate skip_deps=true $(OVERLAY_VARS)
 
 deps:
-	./rebar get-deps
+	$(REBAR) get-deps
 
 ##
 ## Lock Targets
 ##
 ##  see https://github.com/seth/rebar_lock_deps_plugin
 lock: deps compile
-	./rebar lock-deps
+	$(REBAR) lock-deps
 
 locked-all: locked-deps compile
 
 locked-deps:
 	@echo "Using rebar.config.lock file to fetch dependencies"
-	./rebar -C rebar.config.lock get-deps
+	$(REBAR) -C rebar.config.lock get-deps
 
 compile: deps
 	# Temp hack to work around https://github.com/basho/riak-erlang-client/issues/151
-	(cd deps/riak_pb ; ./rebar clean compile deps_dir=..)
-	@(./rebar compile)
+	(cd deps/riak_pb ; $(REBAR) clean compile deps_dir=..)
+	@($(REBAR) compile)
 
 clean:
-	@./rebar clean
+	@$(REBAR) clean
 
 distclean: clean
 	@rm -rf basho_bench deps
