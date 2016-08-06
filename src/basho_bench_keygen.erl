@@ -178,7 +178,7 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                     Bin
             end
     end;
-%% Adapt a value generator. The function keygen would work if Id was added as 
+%% Adapt a value generator. The function keygen would work if Id was added as
 %% the last parameter. But, alas, it is added as the first.
 new({valgen, ValGen}, Id) ->
     basho_bench_valgen:new(ValGen, Id);
@@ -227,7 +227,6 @@ pareto(Mean, Shape) ->
             U = 1 - random:uniform(),
             trunc((math:pow(U, S1) - 1) * S2)
     end.
-
 
 sequential_int_generator(Ref, MaxValue, Id, DisableProgress) ->
    %% A bit of evil here. We want to generate numbers in sequence and stop
