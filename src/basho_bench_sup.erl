@@ -34,7 +34,7 @@
 -include("basho_bench.hrl").
 
 %% Helper macro for declaring children of supervisor
--define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 5000, Type, [I]}).
+-define(CHILD(I, Type), {I, {I, start_link, []}, permanent, 30000, Type, [I]}).
 
 %% ===================================================================
 %% API functions
@@ -84,5 +84,5 @@ worker_specs(0, Acc) ->
 worker_specs(Count, Acc) ->
     Id = list_to_atom(lists:concat(['basho_bench_worker_', Count])),
     Spec = {Id, {basho_bench_worker, start_link, [Id, Count]},
-            permanent, 5000, worker, [basho_bench_worker]},
+            permanent, 30000, worker, [basho_bench_worker]},
     worker_specs(Count-1, [Spec | Acc]).
