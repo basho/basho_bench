@@ -59,9 +59,14 @@ init([]) ->
     %% Get the number concurrent workers we're expecting and generate child
     %% specs for each
 
-    %% intentionally left in to show where worker profiling start/stop calls go.
-    %% eprof:start(),
-    %% eprof:start_profiling([self()]),
+    case basho_bench_config:get(enable_eprof, false) of 
+        false ->
+            ok;
+        true ->
+            ?CONSOLE("Starting eprof profiling\n", []),
+            {ok, _Pid} = eprof:start(),
+            profiling = eprof:start_profiling([self()])
+    end,
 
     Workers = worker_specs(basho_bench_config:get(concurrent), []),
     {ok, {{one_for_one, 5, 10}, Workers}}.
