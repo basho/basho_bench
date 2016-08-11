@@ -102,6 +102,17 @@ terminate(Reason, #state{duration=DurationMins}) ->
             end
     end,
     run_hook(basho_bench_config:get(post_hook, no_op)),
+    case basho_bench_config:get(enable_eprof, false) of 
+        false ->
+            ok;
+        true ->
+            ?CONSOLE("Stopping eprof profiling", []),
+            EprofFile = filename:join(basho_bench:get_test_dir(), "eprof.log"),
+            eprof:stop_profiling(),
+            eprof:log(EprofFile),
+            eprof:analyze(total),
+            ?CONSOLE("Eprof output in ~p\n", [EprofFile])
+    end,
     supervisor:terminate_child(basho_bench_sup, basho_bench_run_sup),
     case Reason of
         {shutdown, normal} ->
