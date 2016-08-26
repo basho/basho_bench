@@ -118,7 +118,8 @@ terminate(Reason, #state{duration=DurationMins}) ->
                     ?CONSOLE("Stopping fprof profiling, writing to ~p\n", [FprofFile]),
                     fprof:trace(stop),
                     fprof:profile({file, FprofTraceFile}),
-                    fprof:analyse([{dest, FprofFile}]);
+                    fprof:analyse([{dest, FprofFile}]),
+                    file:delete(FprofTraceFile);
                 false ->
                     ok
             end
