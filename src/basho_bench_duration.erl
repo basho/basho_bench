@@ -103,15 +103,26 @@ terminate(Reason, #state{duration=DurationMins}) ->
     end,
     run_hook(basho_bench_config:get(post_hook, no_op)),
     case basho_bench_config:get(enable_eprof, false) of 
-        false ->
-            ok;
         true ->
             ?CONSOLE("Stopping eprof profiling", []),
             EprofFile = filename:join(basho_bench:get_test_dir(), "eprof.log"),
             eprof:stop_profiling(),
             eprof:log(EprofFile),
             eprof:analyze(total),
-            ?CONSOLE("Eprof output in ~p\n", [EprofFile])
+            ?CONSOLE("Eprof output in ~p\n", [EprofFile]);
+        false ->
+            case basho_bench_config:get(enable_fprof, false) of 
+                true -> 
+                    FprofTraceFile = filename:join(basho_bench:get_test_dir(), "fprofTrace.log"),
+                    FprofFile = filename:join(basho_bench:get_test_dir(), "fprof.log"),
+                    ?CONSOLE("Stopping fprof profiling, writing to ~p\n", [FprofFile]),
+                    fprof:trace(stop),
+                    fprof:profile({file, FprofTraceFile}),
+                    fprof:analyse([{dest, FprofFile}]),
+                    file:delete(FprofTraceFile);
+                false ->
+                    ok
+            end
     end,
     supervisor:terminate_child(basho_bench_sup, basho_bench_run_sup),
     case Reason of

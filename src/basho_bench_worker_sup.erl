@@ -60,12 +60,20 @@ init([]) ->
     %% specs for each
 
     case basho_bench_config:get(enable_eprof, false) of 
-        false ->
-            ok;
         true ->
             ?CONSOLE("Starting eprof profiling\n", []),
             {ok, _Pid} = eprof:start(),
-            profiling = eprof:start_profiling([self()])
+            profiling = eprof:start_profiling([self()]);
+        false ->
+            case basho_bench_config:get(enable_fprof, false) of 
+                true -> 
+                    FprofTraceFile = filename:join(basho_bench:get_test_dir(), "fprofTrace.log"),
+                    ?CONSOLE("Starting fprof profiling to ~p\n", [FprofTraceFile]),
+                    {ok, Pid} = fprof:start(),
+                    fprof:trace([start, {file, FprofTraceFile}]);
+                false -> 
+                    ok
+            end
     end,
 
     Workers = worker_specs(basho_bench_config:get(concurrent), []),
