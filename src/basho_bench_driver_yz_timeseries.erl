@@ -85,11 +85,10 @@ new(Id) ->
                       [TargetIp, TargetPort, Reason2])
     end.
 
-  run(put, _KeyGen, _ValueGen, State) ->
+  run(put, KeyGen, ValueGen, State) ->
     Pid = State#state.pid,
     _Bucket = State#state.bucket,
 
-    Timestamp = State#state.timestamp,
     Hostname = State#state.hostname,
     Id = State#state.id,
     IndexCount = State#state.index_count,
@@ -97,22 +96,24 @@ new(Id) ->
 
     RandomValues = State#state.random_values,
 
-    {Key, Data} = get_kv(RandomValues, Hostname, Id, Timestamp),
+    Key = KeyGen(),
+    Value = ValueGen(),
+
+    io:format("Key: ~p~n", [Key]),
+    io:format("Data: ~p~n", [Value]),
 
     BucketIndex = random:uniform(IndexCount) - 1,
     RndBucketName = list_to_binary(io_lib:format("GeoCheckin~p", [BucketIndex])),
     RndBucket = {RndBucketName, RndBucketName},
 
-    Obj = riakc_obj:new(RndBucket, Key, Data, <<"application/json">>), 
+    Obj = riakc_obj:new(RndBucket, Key, Value, <<"application/json">>), 
     
     io:format("Bucket: ~p~n", [RndBucket]),
-    io:format("Key: ~p~n", [Key]),
-    io:format("Data: ~p~n", [Data]),
     io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
       ok ->
-        {ok, State#state{timestamp = Timestamp+1}};
+        {ok, State};
       {error, Reason} ->
         io:format("Error: ~p~n", [Reason]),
         {error, Reason, State}
@@ -130,27 +131,3 @@ new(Id) ->
     {search_results, _, _, _Count} = Results,
     %io:format("Count: ~p~n", [Count]),
     {ok, State}.
-  
-get_kv(RandomValues, Hostname, Id, Timestamp) ->
-  if
-    RandomValues ->
-      MyInt = random:uniform(100),
-      MyString = list_to_binary(lists:foldl(fun(_, Str) -> [random:uniform(26) + 96 | Str] end, [], lists:seq(1,10))),
-      MyDouble = random:uniform() * 100,
-      MyBool = lists:nth(random:uniform(2), [true, false]),
-
-      Key = iolist_to_binary(io_lib:format("~s-~s-~p", [Hostname, Id, Timestamp])),
-      D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
-      JD = iolist_to_binary(mochijson2:encode(D)),
-      {Key, JD};
-    true ->
-      MyInt = 123,
-      MyString = <<"test1">>,
-      MyDouble = 1.5,
-      MyBool = true,
-
-      Key = iolist_to_binary(io_lib:format("~s-~s-~p", [Hostname, Id, Timestamp])),
-      D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
-      JD = iolist_to_binary(mochijson2:encode(D)),
-      {Key, JD}
-  end.

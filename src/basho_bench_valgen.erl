@@ -73,6 +73,16 @@ new({timeseries_data}, _Id) ->
 	    %Data = list_to_binary(lists:map(fun (_) -> random:uniform(95)+31 end, lists:seq(1,1024))),
         lists:map(fun (_) -> {Mega,Sec,Micro} = erlang:now(), [{time, (Mega*1000000 + Sec) * 1000000 + Micro}, float(random:uniform(9999)), float(random:uniform(9999)), random:uniform(100), <<"test">>, float(random:uniform(100)), true] end, lists:seq(1,1))
     end;
+new({ts_yz_json}, _Id) ->
+    fun() ->
+        MyInt = random:uniform(100),
+        MyString = list_to_binary(lists:foldl(fun(_, Str) -> [random:uniform(26) + 96 | Str] end, [], lists:seq(1,10))),
+        MyDouble = random:uniform() * 100,
+        MyBool = lists:nth(random:uniform(2), [true, false]),
+
+        D = {struct, [{myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
+        iolist_to_binary(mochijson2:encode(D))
+    end;
 new({rt_port}, _Id) ->
     fun() ->
         [[<<"family1">>, <<"seriesX">>, 100, 1, <<"test1">>, 1.0, true]]

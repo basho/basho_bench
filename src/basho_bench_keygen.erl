@@ -149,6 +149,15 @@ new({yz_ts_query, StartTime, EndTime, RangeSize}, _Id) ->
     lists:flatten(io_lib:format("time:[~p TO ~p]", [Start, End]))
   end;
 
+new({ts_sequential, MaxTimestamp}, Id) ->
+  {ok, Hostname} = inet:gethostname(),
+  Ref = make_ref(),
+  DisableProgress = basho_bench_config:get(disable_sequential_int_progress_report, false),
+  fun() -> 
+    Timestamp = sequential_int_generator(Ref, MaxTimestamp, Id, DisableProgress),
+    iolist_to_binary(io_lib:format("~s-~p-~p", [Hostname, Id, Timestamp]))
+  end;
+
 new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
