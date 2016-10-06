@@ -155,7 +155,7 @@ new({ts_sequential, MaxTimestamp}, Id) ->
   DisableProgress = basho_bench_config:get(disable_sequential_int_progress_report, false),
   fun() -> 
     Timestamp = sequential_int_generator(Ref, MaxTimestamp, Id, DisableProgress),
-    iolist_to_binary(io_lib:format("~s-~p-~p", [Hostname, Id, Timestamp]))
+    {Hostname, Id, Timestamp}
   end;
 
 new({function, Module, Function, Args}, Id)

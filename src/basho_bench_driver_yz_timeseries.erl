@@ -88,27 +88,29 @@ new(Id) ->
   run(put, KeyGen, ValueGen, State) ->
     Pid = State#state.pid,
     _Bucket = State#state.bucket,
-
-    Hostname = State#state.hostname,
-    Id = State#state.id,
     IndexCount = State#state.index_count,
     DebugOutput = State#state.debug,
 
     RandomValues = State#state.random_values,
 
-    Key = KeyGen(),
-    Value = ValueGen(),
+    {Hostname, Id, Timestamp} = KeyGen(),
+    {MyInt, MyString, MyDouble, MyBool} = ValueGen(),
+
+    Key = iolist_to_binary(io_lib:format("~s-~p-~p", [Hostname, Id, Timestamp])),
+
+    D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
+    Value = iolist_to_binary(mochijson2:encode(D)),
 
     io:format("Key: ~p~n", [Key]),
     io:format("Data: ~p~n", [Value]),
 
     BucketIndex = random:uniform(IndexCount) - 1,
     RndBucketName = list_to_binary(io_lib:format("GeoCheckin~p", [BucketIndex])),
-    RndBucket = {RndBucketName, RndBucketName},
+    Bucket = {RndBucketName, RndBucketName},
 
-    Obj = riakc_obj:new(RndBucket, Key, Value, <<"application/json">>), 
+    Obj = riakc_obj:new(Bucket, Key, Value, <<"application/json">>), 
     
-    io:format("Bucket: ~p~n", [RndBucket]),
+    io:format("Bucket: ~p~n", [Bucket]),
     io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
