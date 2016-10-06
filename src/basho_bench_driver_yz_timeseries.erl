@@ -101,17 +101,11 @@ new(Id) ->
     D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
     Value = iolist_to_binary(mochijson2:encode(D)),
 
-    io:format("Key: ~p~n", [Key]),
-    io:format("Data: ~p~n", [Value]),
-
     BucketIndex = random:uniform(IndexCount) - 1,
     RndBucketName = list_to_binary(io_lib:format("GeoCheckin~p", [BucketIndex])),
     Bucket = {RndBucketName, RndBucketName},
 
     Obj = riakc_obj:new(Bucket, Key, Value, <<"application/json">>), 
-    
-    io:format("Bucket: ~p~n", [Bucket]),
-    io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
       ok ->
@@ -123,7 +117,7 @@ new(Id) ->
 
   run(get, KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
-     IndexCount = State#state.index_count,
+    IndexCount = State#state.index_count,
     
     BucketIndex = random:uniform(IndexCount) - 1,
     Bucket = list_to_binary(io_lib:format("time~p", [BucketIndex])),
