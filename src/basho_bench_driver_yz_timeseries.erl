@@ -34,7 +34,8 @@
                  hostname,
                  batch_size,
                  random_values,
-                 index_count
+                 index_count,
+                 debug
                }).
 
 new(Id) ->
@@ -61,6 +62,7 @@ new(Id) ->
     NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
     Timestamp = basho_bench_config:get(start_timestamp, NowTimestamp),
     IndexCount = basho_bench_config:get(index_count, 5),
+    DebugOutput = basho_bench_config:get(debuf, false),
     io:format("Worker ~p Starting Timestamp: ~p~n", [Id, Timestamp]),
     {ok, Hostname} = inet:gethostname(),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
@@ -75,7 +77,8 @@ new(Id) ->
                           hostname = list_to_binary(Hostname),
                           batch_size = BatchSize,
                           random_values = RandomValues,
-                          index_count = IndexCount
+                          index_count = IndexCount,
+                          debug = DebugOutput
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -90,6 +93,7 @@ new(Id) ->
     Hostname = State#state.hostname,
     Id = State#state.id,
     IndexCount = State#state.index_count,
+    DebugOutput = State#state.debug,
 
     RandomValues = State#state.random_values,
 
@@ -98,10 +102,13 @@ new(Id) ->
     BucketIndex = random:uniform(IndexCount) - 1,
     RndBucketName = list_to_binary(io_lib:format("GeoCheckin~p", [BucketIndex])),
     RndBucket = {RndBucketName, RndBucketName},
-    %io:format("Bucket: ~p~n", [RndBucket]),
 
     Obj = riakc_obj:new(RndBucket, Key, Data, <<"application/json">>), 
-    %io:format("~p~n", [Obj]),
+    
+    io:format("Bucket: ~p~n", [RndBucket]),
+    io:format("Key: ~p~n", [Key]),
+    io:format("Data: ~p~n", [Data]),
+    io:format("~p~n", [Obj]),
 
     case riakc_pb_socket:put(Pid, Obj) of
       ok ->
@@ -120,7 +127,7 @@ new(Id) ->
     Query = KeyGen(),
     {ok, Results} = riakc_pb_socket:search(Pid, Bucket, Query),
     %io:format("~p~n", [Results]),
-    {search_results, _, _, Count} = Results,
+    {search_results, _, _, _Count} = Results,
     %io:format("Count: ~p~n", [Count]),
     {ok, State}.
   
