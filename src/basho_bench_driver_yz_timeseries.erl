@@ -93,13 +93,8 @@ new(Id) ->
 
     RandomValues = State#state.random_values,
 
-    {Hostname, Id, Timestamp} = KeyGen(),
-    {MyInt, MyString, MyDouble, MyBool} = ValueGen(),
-
-    Key = iolist_to_binary(io_lib:format("~s-~p-~p", [Hostname, Id, Timestamp])),
-
-    D = {struct, [{family, Hostname}, {series, Id}, {time, Timestamp}, {myint, MyInt}, {mystring, MyString}, {mydouble, MyDouble}, {mybool, MyBool}]},
-    Value = iolist_to_binary(mochijson2:encode(D)),
+    Key = KeyGen(),
+    Value= ValueGen(),
 
     BucketIndex = random:uniform(IndexCount) - 1,
     RndBucketName = list_to_binary(io_lib:format("GeoCheckin~p", [BucketIndex])),

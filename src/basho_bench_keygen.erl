@@ -81,9 +81,12 @@ new({concat_binary, OneGen, TwoGen}, Id) ->
     fun() ->
             <<(Gen1())/binary, (Gen2())/binary>>
     end;
-new({term_to_binary, InputGen}, Id) ->
+new({term_to_bin, InputGen}, Id) ->
     Gen = new(InputGen, Id),
     fun() -> term_to_binary(Gen()) end;
+new({iolist_to_bin, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> iolist_to_binary(Gen()) end;
 new({sequential_int, MaxKey}, Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     ?WARN("Are you sure that you want to use 'sequential_int'?\n"
@@ -152,13 +155,13 @@ new({yz_ts_query, StartTime, EndTime, RangeSize}, _Id) ->
     lists:flatten(io_lib:format("time:[~p TO ~p]", [Start, End]))
   end;
 
-new({ts_sequential, MaxTimestamp}, Id) ->
+new({ts_sequential_str, MaxTimestamp}, Id) ->
   {ok, Hostname} = inet:gethostname(),
   Ref = make_ref(),
   DisableProgress = basho_bench_config:get(disable_sequential_int_progress_report, false),
   fun() -> 
     Timestamp = sequential_int_generator(Ref, MaxTimestamp, Id, DisableProgress),
-    {Hostname, Id, Timestamp}
+    io_lib:format("~s-~p-~p", [Hostname, Id, Timestamp])
   end;
 
 new({function, Module, Function, Args}, Id)
