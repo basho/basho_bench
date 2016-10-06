@@ -81,6 +81,9 @@ new({concat_binary, OneGen, TwoGen}, Id) ->
     fun() ->
             <<(Gen1())/binary, (Gen2())/binary>>
     end;
+new({term_to_binary, InputGen}, Id) ->
+    Gen = new(InputGen, Id),
+    fun() -> term_to_binary(Gen()) end;
 new({sequential_int, MaxKey}, Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     ?WARN("Are you sure that you want to use 'sequential_int'?\n"
