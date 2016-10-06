@@ -33,7 +33,8 @@
                  timestamp,
                  hostname,
                  batch_size,
-                 random_values
+                 random_values,
+                 index_count
                }).
 
 new(Id) ->
@@ -59,6 +60,7 @@ new(Id) ->
     {Mega,Sec,Micro} = erlang:now(),
     NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
     Timestamp = basho_bench_config:get(start_timestamp, NowTimestamp),
+    IndexCount = basho_bench_config:get(index_count, 5),
     io:format("Worker ~p Starting Timestamp: ~p~n", [Id, Timestamp]),
     {ok, Hostname} = inet:gethostname(),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
@@ -72,7 +74,8 @@ new(Id) ->
                           timestamp = Timestamp,
                           hostname = list_to_binary(Hostname),
                           batch_size = BatchSize,
-                          random_values = RandomValues
+                          random_values = RandomValues,
+                          index_count = IndexCount
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -86,21 +89,16 @@ new(Id) ->
     Timestamp = State#state.timestamp,
     Hostname = State#state.hostname,
     Id = State#state.id,
+    IndexCount = State#state.index_count,
 
     RandomValues = State#state.random_values,
 
     {Key, Data} = get_kv(RandomValues, Hostname, Id, Timestamp),
 
-    Buckets = [
-      {<<"GeoCheckin">>, <<"GeoCheckin">>},
-      {<<"GeoCheckin2">>, <<"GeoCheckin2">>},
-      {<<"GeoCheckin3">>, <<"GeoCheckin3">>},
-      {<<"GeoCheckin4">>, <<"GeoCheckin4">>},
-      {<<"GeoCheckin5">>, <<"GeoCheckin5">>}
-    ],
-
-    RndBucket = lists:nth(random:uniform(length(Buckets)), Buckets),
-    %io:format("~p~n", [RndBucket]),
+    BucketIndex = random:uniform(IndexCount) - 1,
+    RndBucketName = list_to_binary(io_lib:format("GeoCheckin~p", [BucketIndex])),
+    RndBucket = {RndBucketName, RndBucketName},
+    %io:format("Bucket: ~p~n", [RndBucket]),
 
     Obj = riakc_obj:new(RndBucket, Key, Data, <<"application/json">>), 
     %io:format("~p~n", [Obj]),
@@ -115,14 +113,10 @@ new(Id) ->
 
   run(get, KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
+     IndexCount = State#state.index_count,
     
-    BucketList = [<<"time">>,
-                  <<"time2">>,
-                  <<"time3">>,
-                  <<"time4">>,
-                  <<"time5">>
-                 ],
-    Bucket = lists:nth(random:uniform(length(BucketList)), BucketList),
+    BucketIndex = random:uniform(IndexCount) - 1,
+    Bucket = list_to_binary(io_lib:format("time~p", [BucketIndex])),
     Query = KeyGen(),
     {ok, Results} = riakc_pb_socket:search(Pid, Bucket, Query),
     %io:format("~p~n", [Results]),
