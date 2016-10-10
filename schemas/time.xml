@@ -2,9 +2,7 @@
 <schema name="schedule" version="1.5">
  <fields>
 
-   <field name="family"    type="string"  indexed="true" stored="true" />
-   <field name="series"    type="string"  indexed="true" stored="true" />
-   <field name="time"      type="long"    indexed="true" stored="true" />
+
    <field name="myint"     type="int"     indexed="true" stored="true" />
    <field name="myvarchar" type="string"  indexed="true" stored="true" />
    <field name="mydouble"  type="double"  indexed="true" stored="true" />
