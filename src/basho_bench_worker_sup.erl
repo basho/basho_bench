@@ -59,23 +59,7 @@ init([]) ->
     %% Get the number concurrent workers we're expecting and generate child
     %% specs for each
 
-    case basho_bench_config:get(enable_eprof, false) of 
-        true ->
-            ?CONSOLE("Starting eprof profiling\n", []),
-            {ok, _Pid} = eprof:start(),
-            profiling = eprof:start_profiling([self()]);
-        false ->
-            case basho_bench_config:get(enable_fprof, false) of 
-                true -> 
-                    FprofTraceFile = filename:join(basho_bench:get_test_dir(), "fprofTrace.log"),
-                    ?CONSOLE("Starting fprof profiling to ~p\n", [FprofTraceFile]),
-                    {ok, Pid} = fprof:start(),
-                    fprof:trace([start, {file, FprofTraceFile}]);
-                false -> 
-                    ok
-            end
-    end,
-
+    basho_bench_profiler:maybe_start_profiler(basho_bench_config:get(enable_profiler, false)),
     Workers = worker_specs(basho_bench_config:get(concurrent), []),
     {ok, {{one_for_one, 5, 10}, Workers}}.
 
