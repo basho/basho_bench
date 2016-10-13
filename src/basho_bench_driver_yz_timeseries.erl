@@ -27,6 +27,7 @@
 -include("basho_bench.hrl").
 
 -record(state, { pid,
+                 connection_info,
                  bucket,
                  ts,
                  id,
@@ -59,28 +60,23 @@ new(Id) ->
     {Mega,Sec,Micro} = erlang:now(),
     NowTimestamp = (Mega*1000000 + Sec)*1000 + round(Micro/1000),
     Timestamp = basho_bench_config:get(start_timestamp, NowTimestamp),
-    io:format("Worker ~p Starting Timestamp: ~p~n", [Id, Timestamp]),
+    %lager:debug("Worker ~p Starting Timestamp: ~p~n", [Id, Timestamp]),
     {ok, Hostname} = inet:gethostname(),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
      ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
-    case riakc_pb_socket:start_link(TargetIp, TargetPort) of
-        {ok, Pid} ->
-            {ok, #state { pid = Pid,
-                          bucket = Bucket,
-                          ts = Ts,
-                          id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
-                          timestamp = Timestamp,
-                          hostname = list_to_binary(Hostname),
-                          batch_size = BatchSize,
-                          random_values = RandomValues
-            }};
-        {error, Reason2} ->
-            ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
-                      [TargetIp, TargetPort, Reason2])
-    end.
+    {ok, #state { pid = undefined,
+        connection_info = {TargetIp, TargetPort},
+        bucket = Bucket,
+        ts = Ts,
+        id = list_to_binary(lists:flatten(io_lib:format("~p", [Id]))),
+        timestamp = Timestamp,
+        hostname = list_to_binary(Hostname),
+        batch_size = BatchSize,
+        random_values = RandomValues
+    }}.
 
-  run(put, _KeyGen, _ValueGen, State) ->
-    Pid = State#state.pid,
+run(put, _KeyGen, _ValueGen, State) ->
+    %Pid = State#state.pid,
     _Bucket = State#state.bucket,
 
     Timestamp = State#state.timestamp,
@@ -104,16 +100,10 @@ new(Id) ->
 
     Obj = riakc_obj:new(RndBucket, Key, Data, <<"application/json">>), 
     %io:format("~p~n", [Obj]),
+    State2 = get_connection(State),
+    do_put(Obj, State2);
 
-    case riakc_pb_socket:put(Pid, Obj) of
-      ok ->
-        {ok, State#state{timestamp = Timestamp+1}};
-      {error, Reason} ->
-        io:format("Error: ~p~n", [Reason]),
-        {error, Reason, State}
-    end;
-
-  run(get, KeyGen, _ValueGen, State) ->
+run(get, KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     
     BucketList = [<<"time">>,
@@ -129,6 +119,41 @@ new(Id) ->
     {search_results, _, _, Count} = Results,
     %io:format("Count: ~p~n", [Count]),
     {ok, State}.
+
+get_connection(#state{pid=undefined, connection_info={TargetIp, TargetPort}} = State) ->
+    case catch riakc_pb_socket:start_link(TargetIp, TargetPort, [queue_if_disconnected]) of
+        {ok, Pid} ->
+            lager:info("Establish connection to ~p:~p", [TargetIp, TargetPort]),
+            State#state{pid=Pid};
+        %{error, _Reason} ->
+            %lager:error("Unable to establish connection to ~p:~p because: ~p", [TargetIp, TargetPort, Reason]),
+            %State;
+        _SomethingElseEntirely ->
+            timer:sleep(1000),
+            State
+    end;
+get_connection(#state{pid=_Pid} = State) ->
+    State.
+
+do_put(_Obj, #state{pid=undefined} = State) ->
+    %{error, no_connection, State};
+    {ok, State};
+do_put(Obj, #state{pid=Pid, timestamp=Timestamp, connection_info={TargetIp, _TargetPort}} = State) ->
+    case catch riakc_pb_socket:put(Pid, Obj) of
+        ok ->
+            %case TargetIp of
+            %    "riak102" -> io:format(".");
+            %    _ -> ok
+            %end,
+            {ok, State#state{timestamp=Timestamp + 1}};
+        {error, Reason} ->
+            lager:info("An error ocurred putting object.  Reason: ~p", [Reason]),
+            %{error, Reason, State#state{pid=undefined}};
+            {ok, State#state{pid=undefined}};
+        _SomethingElseEntirely ->
+            {ok, State#state{pid=undefined}}
+            %{error, SomethingElseEntirely}
+    end.
   
 get_kv(RandomValues, Hostname, Id, Timestamp) ->
   if
