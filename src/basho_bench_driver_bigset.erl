@@ -94,7 +94,7 @@ run(read, KeyGen, _ValueGen, State) ->
     #state{client=C} = State,
 
     case bigset_client:read(Key, [], C) of
-        {ok, {ctx, Ctx}, {elems, Set}} ->
+        {ok, {ctx, _Ctx}, {elems, _Set}} ->
        	  {ok, State};
         {error, not_found} ->
             {ok, State};
@@ -178,7 +178,18 @@ run(remove, _KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
+    end;
+run(is_member, KeyGen, ValueGen, State) ->
+    #state{client=C} = State,
+    Member = ValueGen(),
+    Set = KeyGen(),
+    case bigset_client:is_member(Set, Member, [], C) of
+        {ok, _Subset} ->
+            {ok, State};
+        {error, Reason}  ->
+            {error, Reason, State}
     end.
+
 
 
 

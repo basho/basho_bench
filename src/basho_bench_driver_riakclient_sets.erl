@@ -103,6 +103,25 @@ run(read, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(is_member, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    Member = ValueGen(),
+    #state{client=C, bucket=B} = State,
+    case C:get(B, Key, []) of
+        {ok, Res} ->
+            {{_Ctx, Values}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
+            %% Now check for membership
+            case lists:member(Member, Values) of
+                true ->
+                    {ok, State};
+                false ->
+                    {ok, State}
+            end;
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 run(insert, KeyGen, ValueGen, State) ->
     #state{client=C, bucket=B} = State,
     Member = ValueGen(),
