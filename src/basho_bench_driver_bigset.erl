@@ -38,7 +38,8 @@
                  remove_set, %% The set name to perform a remove on
                  remove_ctx, %% The context of a get from `remove_set'
                  remove_value, %% The values from a get to `remove_set'
-                 batch_size %% how many adds in a batch
+                 batch_size, %% how many adds in a batch
+                 subset_max %% largest subset to generate for query
                }).
 
 %% ====================================================================
@@ -60,6 +61,7 @@ new(Id) ->
     MyNode  = basho_bench_config:get(bigset_mynode, [basho_bench, longnames]),
     BatchSize = basho_bench_config:get(bigset_batchsize, 1000),
     SetValGen = basho_bench_config:get(bigset_valgen_name, a),
+    SubsetMax = basho_bench_config:get(bigset_subset_max, BatchSize),
 
     %% Try to spin up net_kernel
     case net_kernel:start(MyNode) of
@@ -85,8 +87,10 @@ new(Id) ->
         {error, Reason2} ->
             ?FAIL_MSG("Failed get a bigset_client to ~p: ~p\n", [TargetNode, Reason2]);
         Client ->
-            {ok, #state { client = Client, batch_size=BatchSize,
-                          set_val_gen_name=SetValGen }}
+            {ok, #state {client = Client,
+                         batch_size=BatchSize,
+                         set_val_gen_name=SetValGen,
+                         subset_max=SubsetMax}}
     end.
 
 run(read, KeyGen, _ValueGen, State) ->
@@ -95,11 +99,11 @@ run(read, KeyGen, _ValueGen, State) ->
 
     case bigset_client:read(Key, [], C) of
         {ok, {ctx, _Ctx}, {elems, _Set}} ->
-       	  {ok, State};
+            {ok, State};
         {error, not_found} ->
             {ok, State};
         {error, Reason} ->
-	     ?FAIL_MSG("error on read ~p~n", [Reason]),
+            ?FAIL_MSG("error on read ~p~n", [Reason]),
             {error, Reason, State}
     end;
 run(insert, KeyGen, ValueGen, State) ->
@@ -185,6 +189,19 @@ run(is_member, KeyGen, ValueGen, State) ->
     Set = KeyGen(),
     case bigset_client:is_member(Set, Member, [], C) of
         {ok, _Subset} ->
+            {ok, State};
+        {error, Reason}  ->
+            {error, Reason, State}
+    end;
+run(subset, KeyGen, ValueGen, State) ->
+    #state{client=C, subset_max=SubSetMax} = State,
+
+    SubSetSize = random:uniform(SubSetMax),
+
+    Subset = [ValueGen() || _ <- lists:seq(1, SubSetSize)],
+    Set = KeyGen(),
+    case bigset_client:is_subset(Set, Subset, [], C) of
+        {ok, _Res} ->
             {ok, State};
         {error, Reason}  ->
             {error, Reason, State}

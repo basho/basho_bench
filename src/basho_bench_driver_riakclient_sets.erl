@@ -37,7 +37,8 @@
                  remove_set, %% The set name to perform a remove on
                  remove_ctx, %% The context of a get from `remove_set'
                  remove_value, %% a value from a get to `remove_set'
-                 batch_size %% in batch inserts, how many at once
+                 batch_size, %% in batch inserts, how many at once
+                 subset_max %% largest subset query to generate
                }).
 
 %% ====================================================================
@@ -60,6 +61,7 @@ new(Id) ->
     Bucket  = basho_bench_config:get(riakclient_bucket, {<<"sets">>, <<"test">>}),
     BatchSize = basho_bench_config:get(riakclient_sets_batchsize, 1000),
     SetValGen = basho_bench_config:get(riakclient_sets_valgen_name, a),
+    SubsetMax = basho_bench_config:get(riakclient_sets_subset_max, BatchSize),
 
     %% Try to spin up net_kernel
     case net_kernel:start(MyNode) of
@@ -86,7 +88,8 @@ new(Id) ->
             ?FAIL_MSG("Failed get a bigset_client to ~p: ~p\n", [TargetNode, Reason2]);
         {ok, Client} ->
             {ok, #state { client = Client, bucket=Bucket, batch_size=BatchSize,
-                          set_val_gen_name=SetValGen}}
+                          set_val_gen_name=SetValGen,
+                          subset_max=SubsetMax}}
     end.
 
 run(read, KeyGen, _ValueGen, State) ->
@@ -112,6 +115,28 @@ run(is_member, KeyGen, ValueGen, State) ->
             {{_Ctx, Values}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
             %% Now check for membership
             case lists:member(Member, Values) of
+                true ->
+                    {ok, State};
+                false ->
+                    {ok, State}
+            end;
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(subset, KeyGen, ValueGen, State) ->
+    #state{client=C, subset_max=SubSetMax, bucket=B} = State,
+
+    SubSetSize = random:uniform(SubSetMax),
+
+    Subset = [ValueGen() || _ <- lists:seq(1, SubSetSize)],
+    Key = KeyGen(),
+    case C:get(B, Key, []) of
+        {ok, Res} ->
+            {{_Ctx, Values}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
+            %% Now check for subset
+            case sets:is_subset(sets:from_list(Subset), sets:from_list(Values)) of
                 true ->
                     {ok, State};
                 false ->
