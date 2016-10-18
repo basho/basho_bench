@@ -148,9 +148,11 @@ do_put(Obj, #state{pid=Pid, timestamp=Timestamp, connection_info={TargetIp, _Tar
             {ok, State#state{timestamp=Timestamp + 1}};
         {error, Reason} ->
             lager:info("An error ocurred putting object.  Reason: ~p", [Reason]),
+           riakc_pb_socket:stop(Pid),
             %{error, Reason, State#state{pid=undefined}};
             {ok, State#state{pid=undefined}};
         _SomethingElseEntirely ->
+           riakc_pb_socket:stop(Pid),
             {ok, State#state{pid=undefined}}
             %{error, SomethingElseEntirely}
     end.
