@@ -301,6 +301,8 @@ read_range([], _) ->
 read_range(Values, [Start, End]) ->
     read_range(Values, Start, End, []).
 
+read_range([], _S, _E, Acc) ->
+    Acc;
 read_range([H | _], _Start, End, Acc) when H > End ->
     Acc;
 read_range([H | Rest], Start, End, Acc) when H >= Start ->
