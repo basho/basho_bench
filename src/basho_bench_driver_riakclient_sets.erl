@@ -147,6 +147,24 @@ run(subset, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+run(range, KeyGen, ValueGen, State) ->
+    #state{client=C, bucket=B} = State,
+
+    Key = KeyGen(),
+
+    RangeQ = lists:sort([ValueGen(), ValueGen()]),
+
+    case C:get(B, Key, []) of
+        {ok, Res} ->
+            {{_Ctx, Values}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
+            %% Now pull that range
+            Range = read_range(Values, RangeQ),
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
 run(insert, KeyGen, ValueGen, State) ->
     #state{client=C, bucket=B} = State,
     Member = ValueGen(),
@@ -277,4 +295,14 @@ ping_each([Node | Rest]) ->
         pang ->
             ?FAIL_MSG("Failed to ping node ~p\n", [Node])
     end.
+
+read_range(Values, [Start, End]) ->
+    read_range(Values, Start, End, []).
+
+read_range([H | _], _Start, End, Acc) when H > End ->
+    Acc;
+read_range([H | Rest], Start, End, Acc) when H >= Start ->
+    read_range(Rest, Start, End, [H | Acc]);
+read_range([H | Rest], Start, End, Acc) when H < Start ->
+    read_range(Rest, Start, End, Acc).
 
