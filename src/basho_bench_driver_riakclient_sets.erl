@@ -296,6 +296,8 @@ ping_each([Node | Rest]) ->
             ?FAIL_MSG("Failed to ping node ~p\n", [Node])
     end.
 
+read_range([], _) ->
+    [];
 read_range(Values, [Start, End]) ->
     read_range(Values, Start, End, []).
 
