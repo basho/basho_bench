@@ -158,7 +158,7 @@ run(range, KeyGen, ValueGen, State) ->
         {ok, Res} ->
             {{_Ctx, Values}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
             %% Now pull that range
-            Range = read_range(Values, RangeQ),
+            _Range = read_range(Values, RangeQ),
             {ok, State};
         {error, notfound} ->
             {ok, State};

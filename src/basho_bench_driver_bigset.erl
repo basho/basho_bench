@@ -193,6 +193,20 @@ run(is_member, KeyGen, ValueGen, State) ->
         {error, Reason}  ->
             {error, Reason, State}
     end;
+run(range, KeyGen, ValueGen, State) ->
+    Key = KeyGen(),
+    [Start, End] = lists:sort([ValueGen(), ValueGen()]),
+    #state{client=C} = State,
+
+    case bigset_client:read(Key, [{range_start, Start}, {range_end, End}], C) of
+        {ok, {ctx, _Ctx}, {elems, _Set}} ->
+            {ok, State};
+        {error, not_found} ->
+            {ok, State};
+        {error, Reason} ->
+            ?FAIL_MSG("error on read ~p~n", [Reason]),
+            {error, Reason, State}
+    end;
 run(subset, KeyGen, ValueGen, State) ->
     #state{client=C, subset_max=SubSetMax} = State,
 
