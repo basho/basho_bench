@@ -46,16 +46,28 @@ new(Id) ->
 			?FAIL_MSG("Failed to connect to redis at ~p:~p: ~p\n", [TargetIp, TargetPort, Reason])
 	end.
 
-run(put, KeyGen, ValueGen, State) ->
-	case eredis:q(State#state.c, ["SET", KeyGen(), ValueGen()]) of
+get_key(KeyGen, #state{bucket = Bucket}) -> 
+    KeyNum = integer_to_list(KeyGen()),
+    lists:flatten([Bucket, ":", KeyNum]).
+
+run(set, KeyGen, ValueGen, State) ->
+    Key = get_key(KeyGen, State),
+	case eredis:q(State#state.c, ["SET", Key, ValueGen()]) of
+		{ok, _} -> 
+			{ok, State};
+		{error, Reason} -> 
+			{error, Reason, State}
+	end;
+run(del, KeyGen, _ValueGen, State) ->
+    Key = get_key(KeyGen, State),
+	case eredis:q(State#state.c, ["DEL", Key]) of
 		{ok, _} -> 
 			{ok, State};
 		{error, Reason} -> 
 			{error, Reason, State}
 	end;
 run(get, KeyGen, _ValueGen, State) ->
-	KeyNum = KeyGen(),
-	Key = lists:flatten(State#state.bucket ++ io_lib:format(":~p", [KeyNum])), 
+    Key = get_key(KeyGen, State),
 	case eredis:q(State#state.c, ["GET", Key]) of
 		{ok, _} ->
 			{ok, State};
