@@ -48,7 +48,7 @@ maybe_terminate_profiler(eprof, Dir) ->
     eprof:log(EprofFile),
     eprof:analyze(total),
     ?CONSOLE("Eprof output in ~p\n", [EprofFile]);
-maybe_terminate_profiler(eprof, Dir) ->
+maybe_terminate_profiler(fprof, Dir) ->
     FprofTraceFile = filename:join(Dir, "fprofTrace.log"),
     FprofFile = filename:join(Dir, "fprof.log"),
     ?CONSOLE("Stopping fprof profiling, writing to ~p\n", [FprofFile]),
