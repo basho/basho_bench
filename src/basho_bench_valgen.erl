@@ -64,6 +64,18 @@ new({uniform_int, MaxVal}, _Id)
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
     fun() -> random:uniform(MinVal, MaxVal) end;
+new({semi_compressible, MinSize, MeanSize}, Id)
+    when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
+    Source1 = init_source(Id),
+    RandomStrs = lists:map(fun(X) ->
+                                SL = lists:map(fun(_X) ->
+                                                    random:uniform(95) + 31
+                                                    end,
+                                                lists:seq(1, 128)),
+                                {X, list_to_binary(SL)} end,
+                            lists:seq(1, 16)),
+    VSize = MinSize + trunc(-math:log(random:uniform()) * Mean),
+    fun() -> semi_compressible_value(VSize, RandomStrs, Source1) end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 
@@ -115,3 +127,26 @@ data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
                   [SourceCfg, SourceSz, BlockSize]),
             Source
     end.
+
+semi_compressible_value(Size,
+                        RandomStrings,
+                        {SourceCfg, SourceSz, Source}) ->
+    CompressibleSize = (Size div 3) * 2,
+    Chunks = CompressibleSize div 128,
+    CompressiblePart = random_binary(Chunks,
+                                        <<>>,
+                                        length(RandomStrings),
+                                        RandomStrings),
+    UncompressibleSize = Size - byte_size(CompressiblePart),
+    UncompressiblePart = date_block({SourceCfg, SourceSz, Source},
+                                        UncompressibleSize),
+    <<CompressiblePart/binary, UncompressiblePart/binary>>.
+
+random_binary(0, RandomBin, _StringCount, _RandomStrings) ->
+    RandomBin;
+random_binary(Chunks, RandomBin, StringCount, RandomStrings) ->
+    {_R, Bin} = lists:keyfind(random:uniform(StringCount), 1 RandomStrings),
+    random_binary(Chunks - 1,
+                    <<Bin/binary, RandomBin/binary>>,
+                    Stringcount,
+                    RandomStrings).
