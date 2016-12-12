@@ -185,7 +185,7 @@ run(remove, KeyGen, ValueGen, State) ->
                 {error, Reason} ->
                     {error, Reason, State}
             end;
-        {ok , []} ->
+        {ok, _} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
