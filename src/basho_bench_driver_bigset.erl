@@ -173,13 +173,18 @@ run(batch_insert, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State2}
     end;
-run(remove, _KeyGen, _ValueGen, State) ->
-    #state{client=C, remove_set=Key, remove_ctx=Ctx, remove_value=RemoveVal} = State,
-    case bigset_client:update(Key, [], [RemoveVal], [{ctx, Ctx}], C) of
-        ok ->
-            {ok, State};
-        {error, notfound} ->
-            {ok, State};
+run(remove, KeyGen, ValueGen, State) ->
+    #state{client=C} = State,
+    Member = ValueGen(),
+    Set = KeyGen(),
+    case bigset_client:is_member(Set, Member, [], C) of
+        {ok, RemList} ->
+            case bigset_client:update(Set, [], RemList, [], C) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
