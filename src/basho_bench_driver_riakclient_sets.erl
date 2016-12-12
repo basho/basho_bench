@@ -241,14 +241,30 @@ run(batch_insert, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State2}
     end;
-run(remove, _KeyGen, _ValueGen, State) ->
-    #state{client=C, remove_set=Key, remove_ctx=Ctx, remove_value=RemoveVal, bucket=B} = State,
-    O = riak_kv_crdt:new(B, Key, riak_dt_orswot),
-    Opp = riak_kv_crdt:operation(riak_dt_orswot, {remove, RemoveVal}, Ctx),
-    Options1 = [{crdt_op, Opp}],
-    case C:put(O, Options1) of
-        ok ->
-            {ok, State};
+run(remove, KeyGen, ValueGen, State) ->
+    #state{client=C,  bucket=B} = State,
+    Key = KeyGen(),
+    Member = ValueGen(),
+    case C:get(B, Key, []) of
+        {ok, Res} ->
+            {{Ctx, Values}, _Stats} = riak_kv_crdt:value(Res, riak_dt_orswot),
+            %% Now check for membership
+            case lists:member(Member, Values) of
+                true ->
+                    O = riak_kv_crdt:new(B, Key, riak_dt_orswot),
+                    Opp = riak_kv_crdt:operation(riak_dt_orswot, {remove, Member}, Ctx),
+                    Options1 = [{crdt_op, Opp}],
+                    case C:put(O, Options1) of
+                        ok ->
+                            {ok, State};
+                        {error, notfound} ->
+                            {ok, State};
+                        {error, Reason} ->
+                            {error, Reason, State}
+                    end;
+                false ->
+                    {ok, State}
+            end;
         {error, notfound} ->
             {ok, State};
         {error, Reason} ->

@@ -178,13 +178,15 @@ run(remove, KeyGen, ValueGen, State) ->
     Member = ValueGen(),
     Set = KeyGen(),
     case bigset_client:is_member(Set, Member, [], C) of
-        {ok, RemList} ->
+        {ok, [{Member, _Ctx}]=RemList} ->
             case bigset_client:update(Set, [], RemList, [], C) of
                 ok ->
                     {ok, State};
                 {error, Reason} ->
                     {error, Reason, State}
             end;
+        {ok , []} ->
+            {ok, State};
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -249,10 +251,6 @@ accumulate_members(BS, Gen, Acc) ->
             ?DEBUG("ValGen exhausted~n", []),
             lists:reverse(Acc)
     end.
-
-random_element(Vals) ->
-    Nth = crypto:rand_uniform(1, length(Vals)),
-    lists:nth(Nth, Vals).
 
 ping_each([]) ->
     ok;
