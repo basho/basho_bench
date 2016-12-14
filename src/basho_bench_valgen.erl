@@ -64,7 +64,7 @@ new({uniform_int, MaxVal}, _Id)
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
     fun() -> random:uniform(MinVal, MaxVal) end;
-new({semi_compressible, MinSize, MeanSize}, Id)
+new({semi_compressible, MinSize, Mean}, Id)
     when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
     Source1 = init_source(Id),
     RandomStrs = lists:map(fun(X) ->
@@ -138,15 +138,15 @@ semi_compressible_value(Size,
                                         length(RandomStrings),
                                         RandomStrings),
     UncompressibleSize = Size - byte_size(CompressiblePart),
-    UncompressiblePart = date_block({SourceCfg, SourceSz, Source},
+    UncompressiblePart = data_block({SourceCfg, SourceSz, Source},
                                         UncompressibleSize),
     <<CompressiblePart/binary, UncompressiblePart/binary>>.
 
 random_binary(0, RandomBin, _StringCount, _RandomStrings) ->
     RandomBin;
 random_binary(Chunks, RandomBin, StringCount, RandomStrings) ->
-    {_R, Bin} = lists:keyfind(random:uniform(StringCount), 1 RandomStrings),
+    {_R, Bin} = lists:keyfind(random:uniform(StringCount), 1, RandomStrings),
     random_binary(Chunks - 1,
                     <<Bin/binary, RandomBin/binary>>,
-                    Stringcount,
+                    StringCount,
                     RandomStrings).
