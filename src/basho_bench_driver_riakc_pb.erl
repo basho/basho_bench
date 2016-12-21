@@ -36,6 +36,7 @@
                  dw,
                  pw,
                  rw,
+                 ttl,
                  content_type,
                  search_queries,
                  query_step_interval,
@@ -83,6 +84,7 @@ new(Id) ->
     RW = basho_bench_config:get(riakc_pb_rw, Replies),
     PW = basho_bench_config:get(riakc_pb_pw, Replies),
     PR = basho_bench_config:get(riakc_pb_pr, Replies),
+    TTL = basho_bench_config:get(obj_ttl, 999),
     SearchQs = basho_bench_config:get(riakc_pb_search_queries, []),
     SearchQStepIval = basho_bench_config:get(query_step_interval, 60),
     Bucket  = basho_bench_config:get(riakc_pb_bucket, <<"test">>),
@@ -106,6 +108,7 @@ new(Id) ->
                           dw = DW,
                           rw = RW,
                           pw = PW,
+                          ttl = TTL,
                           content_type = CT,
                           search_queries = SearchQs,
                           query_step_interval = SearchQStepIval,
@@ -312,6 +315,21 @@ run(put, KeyGen, ValueGen, State) ->
             run(put, KeyGen, ValueGen, State);  % suboptimal, but ...
         {error, Reason} ->
             {error, Reason, State}
+    end;
+run (put_ttl, KeyGen, ValueGen, State) ->
+    Robj = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen(), State#state.content_type),
+    MD = riakc_obj:get_metadata(Robj),
+    Robj1 = riakc_obj:update_metadata(Robj, riakc_obj:set_ttl(MD, State#state.ttl)),
+
+    case riakc_pb_socket:put(State#state.pid, Robj1, [{w, State#state.w},
+                                                     {dw, State#state.dw}], State#state.timeout_write) of
+        ok ->
+            {ok, State};
+        {error, disconnected} ->
+            run(put, KeyGen, ValueGen, State);
+        {error, Reason} ->
+            {error, Reason, State}
+
     end;
 run(update, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
