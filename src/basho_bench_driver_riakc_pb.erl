@@ -246,6 +246,7 @@ run({team, player, addition}, KeyGen, ValueGen, State) ->
                                     end, M)
                      end,
                      State#state.bucket, Key, [create]),
+    io:format("~p~n", [Result]),
     case Result of
         ok ->
             {ok, State};
@@ -321,8 +322,10 @@ run (put_ttl, KeyGen, ValueGen, State) ->
     MD = riakc_obj:get_metadata(Robj),
     Robj1 = riakc_obj:update_metadata(Robj, riakc_obj:set_ttl(MD, State#state.ttl)),
 
-    case riakc_pb_socket:put(State#state.pid, Robj1, [{w, State#state.w},
-                                                     {dw, State#state.dw}], State#state.timeout_write) of
+    Result = riakc_pb_socket:put(State#state.pid, Robj1, [{w, State#state.w}, {dw, State#state.dw}], State#state.timeout_write),
+    io:format("~p~n", [Result]),
+
+    case Result of
         ok ->
             {ok, State};
         {error, disconnected} ->
