@@ -323,8 +323,7 @@ run (put_ttl, KeyGen, ValueGen, State) ->
     Robj1 = riakc_obj:update_metadata(Robj, riakc_obj:set_ttl(MD, State#state.ttl)),
 
     Result = riakc_pb_socket:put(State#state.pid, Robj1, [{w, State#state.w}, {dw, State#state.dw}], State#state.timeout_write),
-    io:format("~p~n", [Result]),
-
+    
     case Result of
         ok ->
             {ok, State};
