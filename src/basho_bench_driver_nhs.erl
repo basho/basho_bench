@@ -31,27 +31,28 @@
           http_host,
           http_port,
           recordBucket,
-          docBucket,
+          documentBucket,
           pb_timeout,
           http_timeout
          }).
 
 -define(POSTCODE_AREAS,
-                [{1, "AB"}, {2, "AL"}, {3, "B", {4, "BA", {5, "BB"}, {6, "BD"},
-                {7, "BH"}, {8, "BL"}, {9, "BN"}, {10, "BR"}, {11, "BS"},
-                {12, "BT"}, {13, "CA"}, {14, "CB"}, {15, "CF"}, {16, "CH"},
-                {17, "CM"}, {18, "CO"}, {19, "CR"}, {20, "CT"}, {21, "CV"},
-                {22, "CW"}, {23, "DA"}, {24, "DD"}, {25, "DE"}, {26, "DG"},
-                {27, "DH"}, {28, "DL"}, {29, "DN"}, {30, "DT"}, {31, "DU"},
-                {32, "E"}, {33, "EC"}, {34, "EH"}, {35, "EN"}, {36, "EX"},
-                {37, "FK"}, {38, "FY"}, {39, "G"}, {40, "GL"}, {41, "GU"},
-                {42, "HA"}, {43, "HD"}, {44, "HG"}, {45, "HP"}, {46, "HR"},
-                {47, "HS"}, {48, "HU"}, {49, "HX"}, {50, "IG"}, {51, "IP"},
-                {52, "IV"}, {53, "KA"}, {54, "KT"}, {55, "KW"}, {56, "KY"},
-                {57, "L"}, {58, "LA"}, {59, "LD"}, {60, "LE"}, {61, "LL"},
-                {62, "LS"}, {63, "LU"}, {64, "M"}, {65, "ME"}, {66, "MK"},
-                {67, "ML"}, {68, "N"}, {69, "NE"}, {70, "NG"}, {71, "MM"},
-                {72, "NP"}, {73, "NR"}, {74, "NW"}, {75, "OL"}, {76, "OX"}]).
+                [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"}, 
+                {6, "BD"}, {7, "BH"}, {8, "BL"}, {9, "BN"}, {10, "BR"}, 
+                {11, "BS"}, {12, "BT"}, {13, "CA"}, {14, "CB"}, {15, "CF"}, 
+                {16, "CH"}, {17, "CM"}, {18, "CO"}, {19, "CR"}, {20, "CT"}, 
+                {21, "CV"}, {22, "CW"}, {23, "DA"}, {24, "DD"}, {25, "DE"}, 
+                {26, "DG"}, {27, "DH"}, {28, "DL"}, {29, "DN"}, {30, "DT"}, 
+                {31, "DU"}, {32, "E"}, {33, "EC"}, {34, "EH"}, {35, "EN"}, 
+                {36, "EX"}, {37, "FK"}, {38, "FY"}, {39, "G"}, {40, "GL"}, 
+                {41, "GU"}, {42, "HA"}, {43, "HD"}, {44, "HG"}, {45, "HP"}, 
+                {46, "HR"}, {47, "HS"}, {48, "HU"}, {49, "HX"}, {50, "IG"}, 
+                {51, "IP"}, {52, "IV"}, {53, "KA"}, {54, "KT"}, {55, "KW"}, 
+                {56, "KY"}, {57, "L"}, {58, "LA"}, {59, "LD"}, {60, "LE"}, 
+                {61, "LL"}, {62, "LS"}, {63, "LU"}, {64, "M"}, {65, "ME"}, 
+                {66, "MK"}, {67, "ML"}, {68, "N"}, {69, "NE"}, {70, "NG"}, 
+                {71, "MM"}, {72, "NP"}, {73, "NR"}, {74, "NW"}, {75, "OL"}, 
+                {76, "OX"}]).
 -define(DATETIME_FORMAT, "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w").
 -define(DATE_FORMAT, "~b-~2..0b-~2..0b").
 
@@ -133,7 +134,7 @@ run(update_with2i, KeyGen, ValueGen, State) ->
     Robj0 =
         case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
             {ok, Robj} ->
-                RObj;
+                Robj;
             {error, notfound} ->
                 riak_object:new(Bucket, Key)
         end,
@@ -159,8 +160,8 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     Key = generate_uniquekey(),
     Value = non_compressible_value(6000),
     
-    Robj0 = riak_object:new(Bucket, Key)
-    MD0 = riakc_obj:get_update_metadata(Robj0),
+    Robj0 = riak_object:new(Bucket, Key),
+    MD1 = riakc_obj:get_update_metadata(Robj0),
     MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
@@ -204,7 +205,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
     
-    Rand Year = random:uniform(70) + 1950,
+    RandYear = random:uniform(70) + 1950,
     DoBStart = integer_to_list(RandYear) ++ "0101",
     DoBEnd = integer_to_list(RandYear) ++ "0110",
     
@@ -240,6 +241,22 @@ json_get(Url, State) ->
             {error, Other}
     end.
 
+to_binary(B) when is_binary(B) ->
+    B;
+to_binary(I) when is_integer(I) ->
+    list_to_binary(integer_to_list(I));
+to_binary(L) when is_list(L) ->
+    list_to_binary(L).
+
+ensure_module(Module) ->
+    case code:which(Module) of
+        non_existing ->
+            ?FAIL_MSG("~s requires " ++ atom_to_list(Module) ++ 
+                            " module to be available on code path.\n", 
+                        [?MODULE]);
+        _ ->
+            ok
+    end.
 
 %% ====================================================================
 %% Index seeds
@@ -265,7 +282,7 @@ dateofbirth_index() ->
     {{Y, M, D},
         _} = calendar:gregorian_seconds_to_datetime(Delta + 61000000000),
     F = lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])) ++ "|" ++
-            base64::encode_to_string(crypto:rand_bytes(4)),
+            base64:encode_to_string(crypto:rand_bytes(4)),
     [list_to_binary(F)].
 
 lastmodified_index() ->
@@ -273,7 +290,7 @@ lastmodified_index() ->
         {Hr, Min, Sec}} = calendar:now_to_datetime(os:timestamp()),
     F = lists:flatten(io_lib:format(?DATETIME_FORMAT,
                                         [Year, Month, Day, Hr, Min, Sec])),
-    [lists_to_binary(F)].
+    [list_to_binary(F)].
     
 
 generate_uniquekey() ->
@@ -284,7 +301,7 @@ generate_uniquekey() ->
     F ++ [base64:encode_to_string(crypto:rand_bytes(4))],
     list_to_binary(F).
 
-non_compressable_value(Size) ->
+non_compressible_value(Size) ->
     crypto:rand_bytes(Size).
 
 
