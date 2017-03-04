@@ -66,16 +66,11 @@ new({uniform_int, MinVal, MaxVal}, _Id)
     fun() -> random:uniform(MinVal, MaxVal) end;
 new({semi_compressible, MinSize, Mean}, Id)
     when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
-    Source1 = init_source(Id),
-    RandomStrs = lists:map(fun(X) ->
-                                SL = lists:map(fun(_X) ->
-                                                    random:uniform(95) + 31
-                                                    end,
-                                                lists:seq(1, 128)),
-                                {X, list_to_binary(SL)} end,
-                            lists:seq(1, 16)),
-    VSize = MinSize + trunc(-math:log(random:uniform()) * Mean),
-    fun() -> semi_compressible_value(VSize, RandomStrs, Source1) end;
+    Source1 = init_altsource(Id),
+    fun() ->
+        data_block(Source,
+                    MinSize + trunc(basho_bench_stats:exponential(1 / Mean)))
+    end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 
@@ -116,37 +111,50 @@ init_source(Id, Path) ->
     end,
     {?VAL_GEN_BLOB_CFG, size(Bin), Bin}.
 
-data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
-    case SourceSz - BlockSize > 0 of
-        true ->
-            Offset = random:uniform(SourceSz - BlockSize),
-            <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
-            Slice;
-        false ->
-            ?WARN("~p is too small ~p < ~p\n",
-                  [SourceCfg, SourceSz, BlockSize]),
-            Source
-    end.
+init_altsource(Id) ->
+    init_altsource(Id, basho_bench_config:get(?VAL_GEN_BLOB_CFG, undefined)).
 
-semi_compressible_value(Size,
-                        RandomStrings,
-                        {SourceCfg, SourceSz, Source}) ->
-    CompressibleSize = (Size div 3) * 2,
-    Chunks = CompressibleSize div 128,
-    CompressiblePart = random_binary(Chunks,
-                                        <<>>,
-                                        length(RandomStrings),
-                                        RandomStrings),
-    UncompressibleSize = Size - byte_size(CompressiblePart),
-    UncompressiblePart = data_block({SourceCfg, SourceSz, Source},
-                                        UncompressibleSize),
-    <<CompressiblePart/binary, UncompressiblePart/binary>>.
+init_altsource(1, undefined) ->
+    SourceSz = basho_bench_config:get(?VAL_GEN_SRC_SIZE, 96*1048576),
+    ?INFO("Random source: calling crypto:rand_bytes(~w) (override with the '~w' config option\n", [SourceSz, ?VAL_GEN_SRC_SIZE]),
+    GenRandStrFun = fun(_X) -> random:uniform(95) + 31 end,
+    RandomStrs =
+        lists:map(fun(X) ->
+                        SL = lists:map(GenRandStrFun, lists:seq(1, 128)),
+                        {X, list_to_binary(SL)}
+                    end,
+                    lists:seq(1, 16)),
+    ComboBlockFun =
+        fun(_X, Acc) =
+            Bin1 = crypto_randbytes(4096),
+            Bin2 = create_random_textblock(16, RandomStrs),
+            <<Acc/binary, Bin1/binary, Bin2/binary>>
+        end,
+    Bytes = lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 8192)),
+    try
+        ?TAB = ets:new(?TAB, [public, named_table]),
+        true = ets:insert(?TAB, {x, Bytes})
+    catch _:_ -> rerunning_id_1_init_source_table_already_exists
+    end,
+    ?INFO("Random source: finished crypto:rand_bytes(~w)\n", [SourceSz]),
+    {?VAL_GEN_SRC_SIZE, SourceSz, Bytes};
+init_altsource(_Id, undefined) ->
+    [{_, Bytes}] = ets:lookup(?TAB, x),
+    {?VAL_GEN_SRC_SIZE, size(Bytes), Bytes};
+init_altsource(Id, Path) ->
+    {Path, {ok, Bin}} = {Path, file:read_file(Path)},
+    if Id == 1 -> ?DEBUG("path source ~p ~p\n", [size(Bin), Path]);
+       true    -> ok
+    end,
+    {?VAL_GEN_BLOB_CFG, size(Bin), Bin}.
 
-random_binary(0, RandomBin, _StringCount, _RandomStrings) ->
-    RandomBin;
-random_binary(Chunks, RandomBin, StringCount, RandomStrings) ->
-    {_R, Bin} = lists:keyfind(random:uniform(StringCount), 1, RandomStrings),
-    random_binary(Chunks - 1,
-                    <<Bin/binary, RandomBin/binary>>,
-                    StringCount,
-                    RandomStrings).
+create_random_textblock(BlockLength, RandomStrs) ->
+    GetRandomBlockFun =
+        fun(X, Acc) ->
+            random:uniform(min(X, 16)),
+            {Rand, Block} = lists:keyfind(Rand, 1, RandomStrs),
+            <<Acc/binary, Block/binary>>
+        end,
+    lists:foldl(GetRandomBlockFun, <<>>, lists:seq(1, BlockLength)).
+    
+
