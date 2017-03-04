@@ -66,7 +66,7 @@ new({uniform_int, MinVal, MaxVal}, _Id)
     fun() -> random:uniform(MinVal, MaxVal) end;
 new({semi_compressible, MinSize, Mean}, Id)
     when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
-    Source1 = init_altsource(Id),
+    Source = init_altsource(Id),
     fun() ->
         data_block(Source,
                     MinSize + trunc(basho_bench_stats:exponential(1 / Mean)))
@@ -125,8 +125,8 @@ init_altsource(1, undefined) ->
                     end,
                     lists:seq(1, 16)),
     ComboBlockFun =
-        fun(_X, Acc) =
-            Bin1 = crypto_randbytes(4096),
+        fun(_X, Acc) ->
+            Bin1 = crypto:rand_bytes(4096),
             Bin2 = create_random_textblock(16, RandomStrs),
             <<Acc/binary, Bin1/binary, Bin2/binary>>
         end,
@@ -151,10 +151,22 @@ init_altsource(Id, Path) ->
 create_random_textblock(BlockLength, RandomStrs) ->
     GetRandomBlockFun =
         fun(X, Acc) ->
-            random:uniform(min(X, 16)),
+            Rand = random:uniform(min(X, 16)),
             {Rand, Block} = lists:keyfind(Rand, 1, RandomStrs),
             <<Acc/binary, Block/binary>>
         end,
     lists:foldl(GetRandomBlockFun, <<>>, lists:seq(1, BlockLength)).
+
+data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
+    case SourceSz - BlockSize > 0 of
+        true ->
+            Offset = random:uniform(SourceSz - BlockSize),
+            <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
+            Slice;
+        false ->
+            ?WARN("~p is too small ~p < ~p\n",
+                  [SourceCfg, SourceSz, BlockSize]),
+            Source
+    end.
     
 
