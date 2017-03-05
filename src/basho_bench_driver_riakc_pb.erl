@@ -406,15 +406,16 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
     District = Area ++ integer_to_list(random:uniform(26)),
     StartKey = District ++ "|" ++ "a",
     EndKey = District ++ "|" ++ "b",
-    case riakc_pb_socket:get_index(Pid, 
-                                    Bucket, 
-                                    <<"postcode_bin">>,
-                                    list_to_binary(StartKey), 
-                                    list_to_binary(EndKey),
-                                    State#state.timeout_general, 
-                                    State#state.timeout_general) of
+    case riakc_pb_socket:get_index_range(Pid, 
+                                          Bucket, 
+                                          <<"postcode_bin">>,
+                                          list_to_binary(StartKey), 
+                                          list_to_binary(EndKey),
+                                          [{timeout, State#state.timeout_general},
+                                            {return_terms, true}]) of
         {ok, Results} ->
-            io:format("2i query returned ~w results~n", [length(Results)]),
+            {results, ResultList} = Results,
+            io:format("2i query returned ~w results~n", [length(ResultList)]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
