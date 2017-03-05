@@ -58,6 +58,26 @@
         [{map, {jsfun, <<"Riak.mapValuesJson">>}, none, false},
          {reduce, {jsfun, <<"Riak.reduceSum">>}, none, true}]).
 
+-define(POSTCODE_AREAS,
+                [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"}, 
+                {6, "BD"}, {7, "BH"}, {8, "BL"}, {9, "BN"}, {10, "BR"}, 
+                {11, "BS"}, {12, "BT"}, {13, "CA"}, {14, "CB"}, {15, "CF"}, 
+                {16, "CH"}, {17, "CM"}, {18, "CO"}, {19, "CR"}, {20, "CT"}, 
+                {21, "CV"}, {22, "CW"}, {23, "DA"}, {24, "DD"}, {25, "DE"}, 
+                {26, "DG"}, {27, "DH"}, {28, "DL"}, {29, "DN"}, {30, "DT"}, 
+                {31, "DU"}, {32, "E"}, {33, "EC"}, {34, "EH"}, {35, "EN"}, 
+                {36, "EX"}, {37, "FK"}, {38, "FY"}, {39, "G"}, {40, "GL"}, 
+                {41, "GU"}, {42, "HA"}, {43, "HD"}, {44, "HG"}, {45, "HP"}, 
+                {46, "HR"}, {47, "HS"}, {48, "HU"}, {49, "HX"}, {50, "IG"}, 
+                {51, "IP"}, {52, "IV"}, {53, "KA"}, {54, "KT"}, {55, "KW"}, 
+                {56, "KY"}, {57, "L"}, {58, "LA"}, {59, "LD"}, {60, "LE"}, 
+                {61, "LL"}, {62, "LS"}, {63, "LU"}, {64, "M"}, {65, "ME"}, 
+                {66, "MK"}, {67, "ML"}, {68, "N"}, {69, "NE"}, {70, "NG"}, 
+                {71, "MM"}, {72, "NP"}, {73, "NR"}, {74, "NW"}, {75, "OL"}, 
+                {76, "OX"}]).
+-define(DATETIME_FORMAT, "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w").
+-define(DATE_FORMAT, "~b-~2..0b-~2..0b").
+
 %% ====================================================================
 %% API
 %% ====================================================================
@@ -109,7 +129,7 @@ new(Id) ->
                           content_type = CT,
                           search_queries = SearchQs,
                           query_step_interval = SearchQStepIval,
-                          start_time = erlang:now(),
+                          start_time = erlang:timestamp(),
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
                           timeout_general = get_timeout_general(),
@@ -346,6 +366,38 @@ run(update, KeyGen, ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+
+%% Update an object with secondary indexes.
+run(update_with2i, KeyGen, ValueGen, State) ->
+    Pid = State#state.pid,
+    Key = KeyGen(),
+    Value = ValueGen(),
+    
+    Robj0 =
+        case riakc_pb_socket:get(Pid, 
+                                  State#state.bucket, 
+                                  Key, 
+                                  State#state.timeout_read) of
+            {ok, Robj} ->
+                Robj;
+            {error, notfound} ->
+                riak_object:new(State#state.bucket, Key)
+        end,
+    
+    MD0 = riakc_obj:get_update_metadata(Robj0),
+    MD1 = riakc_obj:clear_scondary_indexes(MD0),
+    MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
+    Robj1 = riakc_obj:update_value(Robj0, Value),
+    Robj2 = riakc_obj:update_metadata(Robj1, MD2),
+
+    %% Write the object...
+    case riakc_pb_socket:put(Pid, Robj2, State#state.timeout_write) of
+        ok ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
 run(update_existing, KeyGen, ValueGen, State) ->
     Key = KeyGen(),
     case riakc_pb_socket:get(State#state.pid, State#state.bucket,
@@ -409,7 +461,7 @@ run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
 run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_time=StartTime, query_step_interval=Interval}=State) ->
     [{Index, Query, Options}|_] = SearchQs,
 
-    Now = erlang:now(),
+    Now = erlang:timestamp(),
     case timer:now_diff(Now, StartTime) of
         _MicroSec when _MicroSec > (Interval * 1000000) ->
             NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
@@ -609,3 +661,41 @@ get_timeout(Name) when Name == pb_timeout_read;
 
 get_connect_options() ->
     basho_bench_config:get(pb_connect_options, [{auto_reconnect, true}]).
+
+
+%% ====================================================================
+%% Index seeds
+%% ====================================================================
+
+
+generate_binary_indexes() ->
+    [{{binary_index, "postcode"}, postcode_index()},
+        {{binary_index, "dateofbirth"}, dateofbirth_index()},
+        {{binary_index, "lastmodified"}, lastmodified_index()}].
+
+postcode_index() ->
+    NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
+    lists:map(fun(_X) -> 
+                    L = length(?POSTCODE_AREAS),
+                    Area = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
+                    District = Area ++ integer_to_list(random:uniform(26)),
+                    F = District ++ "|" ++ NotVeryNameLikeThing,
+                    list_to_binary(F) end,
+                lists:seq(1, random:uniform(3))).
+
+dateofbirth_index() ->
+    Delta = random:uniform(2500000000),
+    {{Y, M, D},
+        _} = calendar:gregorian_seconds_to_datetime(Delta + 61000000000),
+    F = lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])) ++ "|" ++
+            base64:encode_to_string(crypto:rand_bytes(4)),
+    [list_to_binary(F)].
+
+lastmodified_index() ->
+    {{Year, Month, Day},
+        {Hr, Min, Sec}} = calendar:now_to_datetime(os:timestamp()),
+    F = lists:flatten(io_lib:format(?DATETIME_FORMAT,
+                                        [Year, Month, Day, Hr, Min, Sec])),
+    [list_to_binary(F)].
+    
+
