@@ -129,7 +129,7 @@ new(Id) ->
                           content_type = CT,
                           search_queries = SearchQs,
                           query_step_interval = SearchQStepIval,
-                          start_time = erlang:timestamp(),
+                          start_time = os:timestamp(),
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
                           timeout_general = get_timeout_general(),
@@ -381,11 +381,11 @@ run(update_with2i, KeyGen, ValueGen, State) ->
             {ok, Robj} ->
                 Robj;
             {error, notfound} ->
-                riak_object:new(State#state.bucket, Key)
+                riakc_obj:new(State#state.bucket, Key)
         end,
     
     MD0 = riakc_obj:get_update_metadata(Robj0),
-    MD1 = riakc_obj:clear_scondary_indexes(MD0),
+    MD1 = riakc_obj:clear_secondary_indexes(MD0),
     MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
@@ -395,6 +395,29 @@ run(update_with2i, KeyGen, ValueGen, State) ->
         ok ->
             {ok, State};
         {error, Reason} ->
+            {error, Reason, State}
+    end;
+
+run(query_postcode, _KeyGen, _ValueGen, State) ->
+    Pid = State#state.pid,
+    Bucket = State#state.bucket,
+    L = length(?POSTCODE_AREAS),
+    {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
+    District = Area ++ integer_to_list(random:uniform(26)),
+    StartKey = District ++ "|" ++ "a",
+    EndKey = District ++ "|" ++ "b",
+    case riakc_pb_socket:get_index(Pid, 
+                                    Bucket, 
+                                    <<"postcode_bin">>,
+                                    list_to_binary(StartKey), 
+                                    list_to_binary(EndKey),
+                                    State#state.timeout_general, 
+                                    State#state.timeout_general) of
+        {ok, Results} ->
+            io:format("2i query returned ~w results~n", [length(Results)]),
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end;
 
@@ -461,7 +484,7 @@ run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
 run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_time=StartTime, query_step_interval=Interval}=State) ->
     [{Index, Query, Options}|_] = SearchQs,
 
-    Now = erlang:timestamp(),
+    Now = os:timestamp(),
     case timer:now_diff(Now, StartTime) of
         _MicroSec when _MicroSec > (Interval * 1000000) ->
             NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
@@ -677,7 +700,7 @@ postcode_index() ->
     NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
     lists:map(fun(_X) -> 
                     L = length(?POSTCODE_AREAS),
-                    Area = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
+                    {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
                     District = Area ++ integer_to_list(random:uniform(26)),
                     F = District ++ "|" ++ NotVeryNameLikeThing,
                     list_to_binary(F) end,
