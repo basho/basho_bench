@@ -414,7 +414,7 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
         {ok, Results} ->
-            {results, ResultList} = Results,
+            {index_results_v1, undefined, ResultList, undefined} = Results,
             io:format("2i query returned ~w results~n", [length(ResultList)]),
             {ok, State};
         {error, Reason} ->
