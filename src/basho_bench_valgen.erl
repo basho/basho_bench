@@ -115,8 +115,6 @@ init_altsource(Id) ->
     init_altsource(Id, basho_bench_config:get(?VAL_GEN_BLOB_CFG, undefined)).
 
 init_altsource(1, undefined) ->
-    SourceSz = basho_bench_config:get(?VAL_GEN_SRC_SIZE, 96*1048576),
-    ?INFO("Random source: calling crypto:rand_bytes(~w) (override with the '~w' config option\n", [SourceSz, ?VAL_GEN_SRC_SIZE]),
     GenRandStrFun = fun(_X) -> random:uniform(95) + 31 end,
     RandomStrs =
         lists:map(fun(X) ->
@@ -131,12 +129,13 @@ init_altsource(1, undefined) ->
             <<Acc/binary, Bin1/binary, Bin2/binary>>
         end,
     Bytes = lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 8192)),
+    SourceSz = byte_size(Bytes),
     try
         ?TAB = ets:new(?TAB, [public, named_table]),
         true = ets:insert(?TAB, {x, Bytes})
     catch _:_ -> rerunning_id_1_init_source_table_already_exists
     end,
-    ?INFO("Random source: finished crypto:rand_bytes(~w)\n", [SourceSz]),
+    ?INFO("Finished generating random source size (~w)\n", [SourceSz]),
     {?VAL_GEN_SRC_SIZE, SourceSz, Bytes};
 init_altsource(_Id, undefined) ->
     [{_, Bytes}] = ets:lookup(?TAB, x),
