@@ -513,6 +513,13 @@ run(counter_val, KeyGen, _ValueGen, State) ->
             run(counter_val, KeyGen, _ValueGen, State);
         {error, Reason} ->
             {error, Reason, State}
+    end;
+run(listbuckets, _KeyGen, _ValueGen, State) ->
+    case riakc_pb_socket:list_buckets(State#state.pid) of
+      {ok, _Buckets} ->
+          {ok, State};
+      Error ->
+          {error, Error, State}
     end.
 
 
