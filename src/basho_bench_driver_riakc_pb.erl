@@ -414,8 +414,13 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
         {ok, Results} ->
-            {index_results_v1, undefined, ResultList, undefined} = Results,
-            io:format("2i query returned ~w results~n", [length(ResultList)]),
+            case Results of 
+                {index_results_v1, undefined, ResultList, undefined} ->
+                    io:format("2i query returned ~w results~n", [length(ResultList)]),
+                    ok;
+                _ ->
+                    ok
+            end,
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
