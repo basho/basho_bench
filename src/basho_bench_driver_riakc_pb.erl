@@ -46,7 +46,8 @@
                  timeout_read,
                  timeout_write,
                  timeout_listkeys,
-                 timeout_mapreduce
+                 timeout_mapreduce,
+                 bucket_count
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -91,6 +92,7 @@ new(Id) ->
                       riakc_pb_preloaded_keys, undefined),
     CT = basho_bench_config:get(riakc_pb_content_type, "application/octet-stream"),
     warn_bucket_mr_correctness(PreloadedKeys),
+    BucketCount = basho_bench_config:get(bucket_count, 1),
 
     %% Choose the target node using our ID as a modulus
     Targets = basho_bench_config:normalize_ips(Ips, Port),
@@ -116,7 +118,8 @@ new(Id) ->
                           timeout_read = get_timeout(pb_timeout_read),
                           timeout_write = get_timeout(pb_timeout_write),
                           timeout_listkeys = get_timeout(pb_timeout_listkeys),
-                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce)
+                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce),
+                          bucket_count = BucketCount
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -303,7 +306,14 @@ run(get_existing, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(put, KeyGen, ValueGen, State) ->
-    Robj = riakc_obj:new(State#state.bucket, KeyGen(), ValueGen(), State#state.content_type),
+    if
+      State#state.bucket_count > 1 ->
+        Bucket = get_bucket(State#state.bucket_count);
+      true ->
+        Bucket = State#state.bucket
+    end,
+
+    Robj = riakc_obj:new(Bucket, KeyGen(), ValueGen(), State#state.content_type),
     case riakc_pb_socket:put(State#state.pid, Robj, [{w, State#state.w},
                                                      {dw, State#state.dw}], State#state.timeout_write) of
         ok ->
@@ -609,3 +619,7 @@ get_timeout(Name) when Name == pb_timeout_read;
 
 get_connect_options() ->
     basho_bench_config:get(pb_connect_options, [{auto_reconnect, true}]).
+
+get_bucket(BucketCount) ->
+  BucketNumber = lists:flatten(io_lib:format("~p", [random:uniform(BucketCount)])),
+  list_to_binary(string:concat("Bucket", BucketNumber)).
