@@ -24,10 +24,11 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/2,
-         start_link_local/2,
+-export([start_link/3,
+         start_link_local/3,
          run/1,
-         stop/1]).
+         stop/1
+]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -42,6 +43,8 @@
                  driver,
                  driver_state,
                  api_pass_state,
+                 worker_type,
+                 local_config,
                  shutdown_on_error,
                  ops,
                  ops_len,
@@ -56,20 +59,20 @@
 %% API
 %% ====================================================================
 
-start_link(SupChild, Id) ->
-    case basho_bench_config:get(distribute_work, false) of 
-        true -> 
-            start_link_distributed(SupChild, Id);
-        false -> 
-            start_link_local(SupChild, Id)
+start_link(SupChild, Id, WorkerConf) ->
+    case basho_bench_config:get(distribute_work, false) of
+        true ->
+            start_link_distributed(SupChild, Id, WorkerConf);
+        false ->
+            start_link_local(SupChild, Id, WorkerConf)
     end.
 
-start_link_distributed(SupChild, Id) ->
+start_link_distributed(SupChild, Id, WorkerConf) ->
     Node = pool:get_node(),
-    rpc:block_call(Node, ?MODULE, start_link_local, [SupChild, Id]).
+    rpc:block_call(Node, ?MODULE, start_link_local, [SupChild, Id, WorkerConf]).
 
-start_link_local(SupChild, Id) ->
-    gen_server:start_link(?MODULE, [SupChild, Id], []).
+start_link_local(SupChild, Id, WorkerConf) ->
+    gen_server:start_link(?MODULE, [SupChild, Id, WorkerConf], []).
 
 run(Pids) ->
     [ok = gen_server:call(Pid, run, infinity) || Pid <- Pids],
@@ -83,7 +86,10 @@ stop(Pids) ->
 %% gen_server callbacks
 %% ====================================================================
 
-init([SupChild, Id]) ->
+init([SupChild, {WorkerType, WorkerId, WorkerGlobalId}=Id, WorkerConf]) ->
+    %% Set local worker config here and for subprocess during worker_init
+    basho_bench_config:set_local_config(WorkerConf),
+
     %% Setup RNG seed for worker sub-process to use; incorporate the ID of
     %% the worker to ensure consistency in load-gen
     %%
@@ -99,23 +105,27 @@ init([SupChild, Id]) ->
             now -> now()
         end,
 
-    RngSeed = {A1+Id, A2+Id, A3+Id},
+    RngSeed = {A1 + WorkerGlobalId, A2 + WorkerGlobalId, A3 + WorkerGlobalId},
 
     %% Pull all config settings from environment
-    Driver  = basho_bench_config:get(driver),
-    Ops     = ops_tuple(),
+    Driver = basho_bench_config:get(driver),
+    Operations = basho_bench_config:get(operations),
+    Ops = ops_tuple(Operations),
     ShutdownOnError = basho_bench_config:get(shutdown_on_error, false),
 
     %% Check configuration for flag enabling new API that passes opaque State object to support accessor functions
-
-    State0 = #state { id = Id, 
+    State0 = #state { id = Id,
                      api_pass_state = basho_bench_config:get(api_pass_state),
                      driver = Driver,
+                     local_config = WorkerConf,
+                     worker_type = WorkerType,
                      shutdown_on_error = ShutdownOnError,
-                     ops = Ops, ops_len = size(Ops),
+                     ops = Ops,
+                     ops_len = size(Ops),
                      rng_seed = RngSeed,
                      parent_pid = self(),
-                     sup_id = SupChild},
+                     sup_id = SupChild
+                     },
 
     %% Finally, initialize key and value generation. We pass in our ID to the
     %% initialization to enable (optional) key/value space partitioning
@@ -148,7 +158,6 @@ init([SupChild, Id]) ->
         false ->
             ok
     end,
-
     {ok, State#state { worker_pid = WorkerPid }}.
 
 handle_call(run, _From, State) ->
@@ -180,8 +189,6 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-
-
 %% ====================================================================
 %% Internal functions
 %% ====================================================================
@@ -189,21 +196,24 @@ code_change(_OldVsn, State, _Extra) ->
 %%
 %% Expand operations list into tuple suitable for weighted, random draw
 %%
-ops_tuple() ->
+ops_tuple(Operations) ->
     F =
         fun({OpTag, Count}) ->
                 lists:duplicate(Count, {OpTag, OpTag});
            ({Label, OpTag, Count}) ->
+                lists:duplicate(Count, {Label, OpTag});
+           ({Label, OpTag, Count, _OptionsList}) ->
                 lists:duplicate(Count, {Label, OpTag})
         end,
-    Ops = [F(X) || X <- basho_bench_config:get(operations, [])],
+    Ops = [F(X) || X <- Operations],
     list_to_tuple(lists:flatten(Ops)).
-
 
 worker_init(State) ->
     %% Trap exits from linked parent process; use this to ensure the driver
     %% gets a chance to cleanup
     process_flag(trap_exit, true),
+    %% Publish local config into worker subprocess
+    basho_bench_config:set_local_config(State#state.local_config),
     random:seed(State#state.rng_seed),
     worker_idle_loop(State).
 
@@ -212,11 +222,11 @@ worker_idle_loop(State) ->
     receive
         {init_driver, Caller} ->
             %% Spin up the driver implementation, optionally support new approach of passing State
-            DriverNew = case State#state.api_pass_state of 
+            DriverNew = case State#state.api_pass_state of
                     false -> catch(Driver:new(State#state.id));
                      _ -> catch(Driver:new(State#state.id, State))
                 end,
-            case DriverNew of 
+            case DriverNew of
                 {ok, DriverState} ->
                     Caller ! driver_ready,
                     ok;
@@ -243,20 +253,25 @@ worker_idle_loop(State) ->
             end
     end.
 
+%% Traditional call to run/4 passing OpTag, keygen, valgen, and driver state
 worker_next_op2(#state{api_pass_state=false}=State, OpTag) ->
     catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,State#state.driver_state);
+%% When using api_pass_state, call run/3 passing Optag, driver state and worker state,
+%% then use accessors to get_keygen or get_valgen using State
 worker_next_op2(State, OpTag) ->
-   catch (State#state.driver):run(OpTag, State#state.driver_state, State).
+    catch (State#state.driver):run(OpTag, State#state.driver_state, State).
 
 worker_next_op(State) ->
-    Next = element(random:uniform(State#state.ops_len), State#state.ops),
-    {_Label, OpTag} = Next,
+    {Label, OpTag} = element(random:uniform(State#state.ops_len), State#state.ops),
     Start = os:timestamp(),
     Result = worker_next_op2(State, OpTag),
     ElapsedUs = erlang:max(0, timer:now_diff(os:timestamp(), Start)),
+
+    OpName = { basho_bench_stats:worker_op_name(State#state.worker_type, Label),
+               basho_bench_stats:worker_op_name(State#state.worker_type, OpTag)},
     case Result of
         {Res, DriverState} when Res == ok orelse element(1, Res) == ok ->
-            basho_bench_stats:op_complete(Next, Res, ElapsedUs),
+            basho_bench_stats:op_complete(OpName, Res, ElapsedUs),
             {ok, State#state { driver_state = DriverState}};
 
         {Res, DriverState} when Res == silent orelse element(1, Res) == silent ->
@@ -264,12 +279,12 @@ worker_next_op(State) ->
 
         {ok, ElapsedT, DriverState} ->
             %% time is measured by external system
-            basho_bench_stats:op_complete(Next, ok, ElapsedT),
+            basho_bench_stats:op_complete(OpName, ok, ElapsedT),
             {ok, State#state { driver_state = DriverState}};
 
         {error, Reason, DriverState} ->
             %% Driver encountered a recoverable error
-            basho_bench_stats:op_complete(Next, {error, Reason}, ElapsedUs),
+            basho_bench_stats:op_complete(OpName, {error, Reason}, ElapsedUs),
             State#state.shutdown_on_error andalso
                 erlang:send_after(500, basho_bench,
                                   {shutdown, "Shutdown on errors requested", 1}),
@@ -278,7 +293,7 @@ worker_next_op(State) ->
         {'EXIT', Reason} ->
             %% Driver crashed, generate a crash error and terminate. This will take down
             %% the corresponding worker which will get restarted by the appropriate supervisor.
-            basho_bench_stats:op_complete(Next, {error, crash}, ElapsedUs),
+            basho_bench_stats:op_complete(OpName, {error, crash}, ElapsedUs),
 
             %% Give the driver a chance to cleanup
             (catch (State#state.driver):terminate({'EXIT', Reason}, State#state.driver_state)),
@@ -351,9 +366,11 @@ rate_worker_run_loop(State, Lambda) ->
             exit(ExitReason)
     end.
 
-add_generators(#state{api_pass_state = ApiPassState,id=Id}=State) ->
-    KeyGen = init_generators(ApiPassState, basho_bench_config:get(key_generator), Id, basho_bench_keygen),
-    ValGen = init_generators(ApiPassState, basho_bench_config:get(value_generator), Id, basho_bench_valgen),
+add_generators(#state{api_pass_state=ApiPassState, id=Id}=State) ->
+    {_WorkerType, WorkerId, _WorkerGlobalId} = Id,
+    % KeyGen needs to know WorkerId within a WorkerType (local concurrent) number of workers sharing a thread
+    KeyGen = init_generators(ApiPassState, basho_bench_config:get(key_generator), WorkerId, basho_bench_keygen),
+    ValGen = init_generators(ApiPassState, basho_bench_config:get(value_generator), WorkerId, basho_bench_valgen),
     State#state{keygen=KeyGen, valgen=ValGen}.
 
 %% Not passing state API - expect non-list spec or error during new attempt
