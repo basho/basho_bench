@@ -46,10 +46,15 @@
                  timeout_read,
                  timeout_write,
                  timeout_listkeys,
-                 timeout_mapreduce
+                 timeout_mapreduce,
+                 twoi_qcount = 0 :: integer(),
+                 twoi_rcount = 0 :: integer()
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
+
+% the bigger the number the less frequent the logs of 2i query results
+-define(RANDOMLOG_FREQ, 5000). 
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -414,14 +419,24 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
         {ok, Results} ->
-            case Results of 
-                {index_results_v1, undefined, ResultList, undefined} ->
-                    io:format("2i query returned ~w results~n", [length(ResultList)]),
-                    ok;
-                _ ->
-                    ok
-            end,
-            {ok, State};
+            record_2i_results(Results, State);
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end;
+run(query_dob, _KeyGen, _ValueGen, State) ->
+    R = random:uniform(2500000000),
+    DOB_SK = pick_dateofbirth(R),
+    DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 2)),
+    case riakc_pb_socket:get_index_range(Pid, 
+                                          Bucket, 
+                                          <<"dateofbirth_bin">>,
+                                          list_to_binary(DOB_SK), 
+                                          list_to_binary(DOB=EK),
+                                          [{timeout, State#state.timeout_general},
+                                            {return_terms, true}]) of
+        {ok, Results} ->
+            record_2i_results(Results, State);
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n", [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
@@ -713,12 +728,17 @@ postcode_index() ->
                 lists:seq(1, random:uniform(3))).
 
 dateofbirth_index() ->
-    Delta = random:uniform(2500000000),
-    {{Y, M, D},
-        _} = calendar:gregorian_seconds_to_datetime(Delta + 61000000000),
-    F = lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])) ++ "|" ++
+    F = pick_dateofbirth() ++ "|" ++
             base64:encode_to_string(crypto:rand_bytes(4)),
     [list_to_binary(F)].
+
+pick_dateofbirth() ->
+    pick_dateofbirth(random:uniform(2500000000)).
+
+pick_dateofbirth(Delta) ->
+    {{Y, M, D},
+        _} = calendar:gregorian_seconds_to_datetime(Delta + 61000000000),
+    lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])).
 
 lastmodified_index() ->
     {{Year, Month, Day},
@@ -728,3 +748,36 @@ lastmodified_index() ->
     [list_to_binary(F)].
     
 
+record_2i_results(Results, State) ->
+    RCount_ThisQuery = 
+        case Results of 
+            {index_results_v1, undefined, ResultList, undefined} ->
+                length(ResultList);
+            _ ->
+                0
+        end,
+    QCount = State#state.twoi_qcount + 1,
+    RCount = State#state.twoi_rcount + RCount_ThisQuery,
+    case random:uniform(?RANDOMLOG_FREQ) < QCount of
+        true ->
+            AvgRSize = RCount / QCount,
+            TS = timer:now_diff(os:timestamp(),
+                                State#state.start_time) / 1000000,
+            io:format("After ~w seconds average result size of ~.2f",
+                        [AvgRSize]),
+            {ok, State#state{twoi_qcount = 0, twoi_rcount = 0}};
+        false ->
+            {ok, State#state{twoi_qcount = QCount, twoi_rcount = RCount}}
+    end.
+
+format_time() ->
+    format_time(localtime_ms()).
+
+localtime_ms() ->
+    {_, _, Micro} = Now = os:timestamp(),
+    {Date, {Hours, Minutes, Seconds}} = calendar:now_to_local_time(Now),
+    {Date, {Hours, Minutes, Seconds, Micro div 1000 rem 1000}}.
+
+format_time({{Y, M, D}, {H, Mi, S, Ms}}) ->
+    io_lib:format("~b-~2..0b-~2..0b", [Y, M, D]) ++ "T" ++
+        io_lib:format("~2..0b:~2..0b:~2..0b.~3..0b", [H, Mi, S, Ms]).
