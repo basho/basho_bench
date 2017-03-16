@@ -54,7 +54,7 @@
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
 
 % the bigger the number the less frequent the logs of 2i query results
--define(RANDOMLOG_FREQ, 5000). 
+-define(RANDOMLOG_FREQ, 50000). 
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -429,12 +429,12 @@ run(query_dob, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.bucket,
     R = random:uniform(2500000000),
     DOB_SK = pick_dateofbirth(R),
-    DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 2)),
+    DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 3)),
     case riakc_pb_socket:get_index_range(Pid, 
                                           Bucket, 
                                           <<"dateofbirth_bin">>,
                                           list_to_binary(DOB_SK), 
-                                          list_to_binary(DOB_EK),
+                                          list_to_binary(DOB_EK ++ "~"),
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
         {ok, Results} ->
@@ -765,7 +765,7 @@ record_2i_results(Results, State) ->
             AvgRSize = RCount / QCount,
             TS = timer:now_diff(os:timestamp(),
                                 State#state.start_time) / 1000000,
-            io:format("After ~w seconds average result size of ~.2f",
+            io:format("After ~w seconds average result size of ~.2f~n",
                         [TS, AvgRSize]),
             {ok, State#state{twoi_qcount = 0, twoi_rcount = 0}};
         false ->
