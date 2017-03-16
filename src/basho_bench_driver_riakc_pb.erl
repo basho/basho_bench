@@ -425,6 +425,8 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(query_dob, _KeyGen, _ValueGen, State) ->
+    Pid = State#state.pid,
+    Bucket = State#state.bucket,
     R = random:uniform(2500000000),
     DOB_SK = pick_dateofbirth(R),
     DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 2)),
@@ -432,7 +434,7 @@ run(query_dob, _KeyGen, _ValueGen, State) ->
                                           Bucket, 
                                           <<"dateofbirth_bin">>,
                                           list_to_binary(DOB_SK), 
-                                          list_to_binary(DOB=EK),
+                                          list_to_binary(DOB_EK),
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
         {ok, Results} ->
@@ -764,20 +766,8 @@ record_2i_results(Results, State) ->
             TS = timer:now_diff(os:timestamp(),
                                 State#state.start_time) / 1000000,
             io:format("After ~w seconds average result size of ~.2f",
-                        [AvgRSize]),
+                        [TS, AvgRSize]),
             {ok, State#state{twoi_qcount = 0, twoi_rcount = 0}};
         false ->
             {ok, State#state{twoi_qcount = QCount, twoi_rcount = RCount}}
     end.
-
-format_time() ->
-    format_time(localtime_ms()).
-
-localtime_ms() ->
-    {_, _, Micro} = Now = os:timestamp(),
-    {Date, {Hours, Minutes, Seconds}} = calendar:now_to_local_time(Now),
-    {Date, {Hours, Minutes, Seconds, Micro div 1000 rem 1000}}.
-
-format_time({{Y, M, D}, {H, Mi, S, Ms}}) ->
-    io_lib:format("~b-~2..0b-~2..0b", [Y, M, D]) ++ "T" ++
-        io_lib:format("~2..0b:~2..0b:~2..0b.~3..0b", [H, Mi, S, Ms]).
