@@ -60,17 +60,56 @@ init([]) ->
     %% specs for each
 
     basho_bench_profiler:maybe_start_profiler(basho_bench_config:get(enable_profiler, false)),
-    Workers = worker_specs(basho_bench_config:get(concurrent), []),
-    {ok, {{one_for_one, 5, 10}, Workers}}.
+
+    WorkerSpecs = worker_specs(basho_bench_config:get(workers, [])),
+    {ok, {{one_for_one, 5, 10}, WorkerSpecs}}.
+
 
 %% ===================================================================
 %% Internal functions
 %% ===================================================================
 
-worker_specs(0, Acc) ->
+
+worker_specs([]) ->
+    worker_specs_single(basho_bench_config:get(concurrent), []);
+worker_specs(Workers) ->
+    WorkerConfs = combine_multi_confs(Workers, basho_bench_config:get(worker_types)),
+    %% Need to make sure worker 1 within a worker type is started first
+    lists:reverse(worker_specs_multi(WorkerConfs, 0, [])).
+
+
+worker_specs_single(0, Acc) ->
     Acc;
-worker_specs(Count, Acc) ->
+worker_specs_single(Count, Acc) ->
     Id = list_to_atom(lists:concat(['basho_bench_worker_', Count])),
-    Spec = {Id, {basho_bench_worker, start_link, [Id, Count]},
-            transient, 5000, worker, [basho_bench_worker]},
-    worker_specs(Count-1, [Spec | Acc]).
+    %% Use "single_worker" atom for original non-worker case
+    Spec = {Id, {basho_bench_worker, start_link, [Id, {single_worker, Count, Count}, []]},
+                 transient, 5000, worker, [basho_bench_worker]},
+    worker_specs_single(Count-1, [Spec | Acc]).
+
+
+worker_specs_multi([], _BaseGlobalId, Acc) ->
+    Acc;
+worker_specs_multi([{WorkerType, Count, Conf} | Rest], BaseGlobalId, Acc0) ->
+    Acc = lists:foldl(
+       fun(I, AccP) ->
+            Id = list_to_atom(lists:concat(['basho_bench_worker_', WorkerType, '_', I])),
+            Spec = {
+                Id,
+                {basho_bench_worker, start_link, [Id, {WorkerType, I, I+BaseGlobalId}, Conf]},
+                transient, 5000, worker, [basho_bench_worker]},
+            [Spec | AccP]
+        end,
+        Acc0, lists:seq(1, Count)),
+    worker_specs_multi(Rest, BaseGlobalId+Count, Acc).
+
+
+combine_multi_confs(Workers, WorkerTypes) ->
+    lists:map(
+        fun({WT, Count}) ->
+            %% Burn in {concurrent, Count} to the WorkerConf
+            %% Keygen(sequential) needs number of workers sharing same keygen
+            Conf0 = proplists:get_value(WT, WorkerTypes, []),
+            Conf = [{concurrent, Count} | proplists:delete(concurrent, Conf0)],
+            {WT, Count, Conf}
+        end, Workers).

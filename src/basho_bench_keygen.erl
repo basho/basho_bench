@@ -102,7 +102,7 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id)
     Ref = make_ref(),
     DisableProgress =
         basho_bench_config:get(disable_sequential_int_progress_report, false),
-    ?DEBUG("ID ~p generating range ~p to ~p\n", [Id, MinValue, MaxValue]),
+    ?DEBUG("ID ~p generating range ~p to ~p for ~p workers sharing keygen\n", [Id, MinValue, MaxValue, Workers]),
     fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
@@ -142,7 +142,7 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
                     Chomped
             end,
     Loop = fun(L, FH) ->
-                   {Line, FH2}  = case file:read_line(FH) of
+                   {Line, FH2} = case file:read_line(FH) of
                                       {ok, LineBin} ->
                                           {Chomp(LineBin), FH};
                                       eof when DoRepeat /= repeat ->
