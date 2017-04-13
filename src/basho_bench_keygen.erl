@@ -180,6 +180,8 @@ new({file_line_bin, Path, DoRepeat}, Id) ->
     end;
 %% Adapt a value generator. The function keygen would work if Id was added as 
 %% the last parameter. But, alas, it is added as the first.
+new({no_op, no_op}, _Id) ->
+    fun() -> ok end;
 new({valgen, ValGen}, Id) ->
     basho_bench_valgen:new(ValGen, Id);
 new(Bin, _Id) when is_binary(Bin) ->

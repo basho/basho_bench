@@ -40,6 +40,7 @@
 -record(state, { id,
                  keygen,
                  valgen,
+                 op_counter,
                  driver,
                  driver_state,
                  api_pass_state,
@@ -257,11 +258,27 @@ worker_idle_loop(State) ->
 
 %% Traditional call to run/4 passing OpTag, keygen, valgen, and driver state
 worker_next_op2(#state{api_pass_state=false}=State, OpTag) ->
-    catch (State#state.driver):run(OpTag, State#state.keygen, State#state.valgen,State#state.driver_state);
+    case catch((State#state.op_counter)()) of
+        {stop, empty_keygen} ->
+            ?INFO("Exhausted op_counter for worker: ~p~n",[State#state.id]),
+            {stop, exhausted_op_counter};
+        _ ->
+            catch (State#state.driver):run(OpTag,
+                                           State#state.keygen,
+                                           State#state.valgen,
+                                           State#state.driver_state)
+    end;
 %% When using api_pass_state, call run/3 passing Optag, driver state and worker state,
 %% then use accessors to get_keygen or get_valgen using State
 worker_next_op2(State, OpTag) ->
-    catch (State#state.driver):run(OpTag, State#state.driver_state, State).
+    case catch((State#state.op_counter)()) of
+        {stop, empty_keygen} ->
+            ?INFO("Exhausted op_counter for worker: ~p~n",[State#state.id]),
+            {stop, exhausted_op_counter};
+        _ -> catch (State#state.driver):run(OpTag,
+                                            State#state.driver_state,
+                                            State)
+    end.
 
 worker_next_op(State) ->
     {Label, OpTag} = element(random:uniform(State#state.ops_len), State#state.ops),
@@ -381,7 +398,9 @@ add_generators(#state{api_pass_state=ApiPassState, id=Id}=State) ->
     % KeyGen needs to know WorkerId within a WorkerType (local concurrent) number of workers sharing a thread
     KeyGen = init_generators(ApiPassState, basho_bench_config:get(key_generator), WorkerId, basho_bench_keygen),
     ValGen = init_generators(ApiPassState, basho_bench_config:get(value_generator), WorkerId, basho_bench_valgen),
-    State#state{keygen=KeyGen, valgen=ValGen}.
+    MaybeOpCnt = basho_bench_config:get(op_counter, {no_op, no_op}),
+    OpCounter = init_generators(ApiPassState, MaybeOpCnt, WorkerId, basho_bench_keygen),
+    State#state{keygen=KeyGen, valgen=ValGen, op_counter=OpCounter}.
 
 %% Not passing state API - expect non-list spec or error during new attempt
 init_generators(false, Config, Id, Module) when is_tuple(Config) ->

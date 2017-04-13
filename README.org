@@ -96,6 +96,21 @@ make results
    other systems or perform custom operations. These are covered more
    in detail in the [[http://docs.basho.com/riak/latest/ops/building/benchmarking/][documentation]].
 
+*** Duration vs Op-Count termination
+   Benchmarks by default are time-duration limited, meaning you specify
+   a number of minutes for the benchmark to run using the `duration`
+   configuration parameter.
+   Additionally you may specify the `op_counter` configuration parameter,
+   which is set up as an iteration-limited Key Generator, such as the
+   `partitioned_sequential_int`. Once this op_counter has been exhausted
+   for a particular worker, that worker will quit, waiting for other workers
+   to complete before shutting down basho_bench.
+
+   Example Configuration:
+   ```
+   {op_counter, {int_to_str, {partitioned_sequential_int, 100}}}.
+   ```
+
 ** Benchmarking with riak-java-client
    The [[https://github.com/basho/riak-java-client][riak-java-client]] can be used to benchmark a Riak cluster. There
    is an example configuration in =examples/riakc_java.config=. You
