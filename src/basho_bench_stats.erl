@@ -363,12 +363,15 @@ get_worker_ops() ->
 
 get_worker_ops([], _WorkerTypes, Acc) ->
      Acc;
-get_worker_ops(Workers, WorkerTypes, Acc) ->
-     [WorkerEntry | RestWorkers] = Workers,
-     {WorkerType, _Count} = WorkerEntry,
-     WorkerConfig = proplists:get_value(WorkerType, WorkerTypes),
-     %% Get either per-worker ops or global ops
-     WorkerOps = proplists:get_value(operations, WorkerConfig),
+get_worker_ops([{_, Count} | RestWorkers], WorkerTypes, Acc) when Count =< 0 ->
+    get_worker_ops(RestWorkers, WorkerTypes, Acc);
+get_worker_ops([{WorkerType, _Count} | RestWorkers], WorkerTypes, Acc) ->
+    WorkerConfig = proplists:get_value(WorkerType, WorkerTypes),
+
+    WorkerOps = case proplists:get_value(operations, WorkerConfig) of
+        undefined -> basho_bench_config:get(operations, []);
+        WO -> WO
+    end,
 
      Ops = lists:map(
         fun({OpTag, _Count2}) -> 
