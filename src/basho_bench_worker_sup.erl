@@ -105,11 +105,15 @@ worker_specs_multi([{WorkerType, Count, Conf} | Rest], BaseGlobalId, Acc0) ->
 
 
 combine_multi_confs(Workers, WorkerTypes) ->
-    lists:map(
-        fun({WT, Count}) ->
-            %% Burn in {concurrent, Count} to the WorkerConf
-            %% Keygen(sequential) needs number of workers sharing same keygen
-            Conf0 = proplists:get_value(WT, WorkerTypes, []),
-            Conf = [{concurrent, Count} | proplists:delete(concurrent, Conf0)],
-            {WT, Count, Conf}
-        end, Workers).
+    lists:foldl(
+        fun
+            ({WT, Count}, Acc) when Count =< 0 ->
+                ?INFO("Skipping worker with zero count: ~p", [WT]),
+                Acc;
+            ({WT, Count}, Acc) ->
+                %% Burn in {concurrent, Count} to the WorkerConf
+                %% Keygen(sequential) needs number of workers sharing same keygen
+                Conf0 = proplists:get_value(WT, WorkerTypes, []),
+                Conf = [{concurrent, Count} | proplists:delete(concurrent, Conf0)],
+                [{WT, Count, Conf} | Acc]
+        end, [], Workers).
