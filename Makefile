@@ -16,7 +16,7 @@ all: deps compile
 .PHONY: deps compile rel lock locked-all locked-deps
 
 rel: deps compile
-	cd rel && .$(REBAR) generate skip_deps=true $(OVERLAY_VARS)
+	cd rel && $(REBAR) generate skip_deps=true $(OVERLAY_VARS)
 
 deps:
 	$(REBAR) get-deps
