@@ -40,6 +40,7 @@ setup_benchmark(Opts) ->
     application:set_env(basho_bench, test_dir, TestDir),
     basho_bench_config:set(test_id, BenchName),
     ConsoleLagerLevel = application:get_env(basho_bench, log_level, debug),
+
     ErrorLog = filename:join([TestDir, "error.log"]),
     ConsoleLog = filename:join([TestDir, "console.log"]),
     CrashLog = filename:join([TestDir, "crash.log"]),
@@ -58,10 +59,6 @@ setup_benchmark(Opts) ->
     application:set_env(lager, crash_log, CrashLog),
     load_apps([lager, basho_bench]),
     lager:start(),
-    %% Log level can be overriden by the config files
-    CustomLagerLevel = basho_bench_config:get(log_level, debug),
-    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
-    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel),
     case basho_bench_config:get(distribute_work, false) of 
         true -> setup_distributed_work();
         false -> ok
@@ -86,7 +83,12 @@ run_benchmark(Configs) ->
     %% Make sure this happens after starting lager or failures wont
     %% show.
     basho_bench_config:load(Configs),
+    ConsoleLog = filename:join([TestDir, "console.log"]),
+    %% Log level can be overriden by the config files
+    CustomLagerLevel = basho_bench_config:get(log_level, debug),
 
+    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
+    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel),
     %% Copy the config into the test dir for posterity
     [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
       || Config <- Configs ],
