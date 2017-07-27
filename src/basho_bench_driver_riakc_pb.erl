@@ -500,7 +500,7 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(pause_minute, _KeyGen, _ValueGen, State) ->
-    timer:sleep(60),
+    timer:sleep(60000),
     {ok, State};
 run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
     [{Index, Query, Options}|_] = SearchQs,
