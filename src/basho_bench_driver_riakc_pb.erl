@@ -48,7 +48,8 @@
                  timeout_listkeys,
                  timeout_mapreduce,
                  twoi_qcount = 0 :: integer(),
-                 twoi_rcount = 0 :: integer()
+                 twoi_rcount = 0 :: integer(),
+                 listkeys_prob :: float()
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -82,6 +83,7 @@
                 {76, "OX"}]).
 -define(DATETIME_FORMAT, "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w").
 -define(DATE_FORMAT, "~b-~2..0b-~2..0b").
+-define(LISTKEYS_PROBABILITY, 0.001).
 
 %% ====================================================================
 %% API
@@ -123,6 +125,7 @@ new(Id) ->
     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort, get_connect_options()) of
         {ok, Pid} ->
+            random:seed(),
             {ok, #state { pid = Pid,
                           bucket = Bucket,
                           r = R,
@@ -137,6 +140,7 @@ new(Id) ->
                           start_time = os:timestamp(),
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
+                          listkeys_prob = ?LISTKEYS_PROBABILITY,
                           timeout_general = get_timeout_general(),
                           timeout_read = get_timeout(pb_timeout_read),
                           timeout_write = get_timeout(pb_timeout_write),
@@ -482,17 +486,29 @@ run(delete, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(listkeys, _KeyGen, _ValueGen, State) ->
-    lager:info("Commencing listkeys request"),
-    case riakc_pb_socket:list_keys(State#state.pid,
-                                    State#state.bucket,
-                                    State#state.timeout_listkeys) of
-        {ok, Keys} ->
-            lager:info("listkeys request returned ~w keys", [length(Keys)]),
+    case random:uniform() > State#state.listkeys_prob of
+        true ->
+            % Skip the listkeys
+            % Note that we cannot use the stats from listkeys, as most of
+            % them are now null operations
             {ok, State};
-        {error, disconnected} ->
-            run(listkeys, _KeyGen, _ValueGen, State);
-        {error, Reason} ->
-            {error, Reason, State}
+        false ->
+            SW = os:timestamp(),
+            lager:info("Commencing listkeys request"),
+            case riakc_pb_socket:list_keys(State#state.pid,
+                                            State#state.bucket,
+                                            State#state.timeout_listkeys) of
+                {ok, Keys} ->
+                    lager:info("listkeys request returned ~w keys" ++
+                                  "in ~w seconds",
+                                [length(Keys),
+                                  timer:now_diff(os:timestamp(), SW)/1000]),
+                    {ok, State};
+                {error, disconnected} ->
+                    run(listkeys, _KeyGen, _ValueGen, State);
+                {error, Reason} ->
+                    {error, Reason, State}
+            end
     end;
 run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
     [{Index, Query, Options}|_] = SearchQs,
