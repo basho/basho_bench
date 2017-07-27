@@ -54,7 +54,7 @@
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
 
 % the bigger the number the less frequent the logs of 2i query results
--define(RANDOMLOG_FREQ, 50000). 
+-define(RANDOMLOG_FREQ, 50000).
 
 -define(ERLANG_MR,
         [{map, {modfun, riak_kv_mapreduce, map_object_value}, none, false},
@@ -64,21 +64,21 @@
          {reduce, {jsfun, <<"Riak.reduceSum">>}, none, true}]).
 
 -define(POSTCODE_AREAS,
-                [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"}, 
-                {6, "BD"}, {7, "BH"}, {8, "BL"}, {9, "BN"}, {10, "BR"}, 
-                {11, "BS"}, {12, "BT"}, {13, "CA"}, {14, "CB"}, {15, "CF"}, 
-                {16, "CH"}, {17, "CM"}, {18, "CO"}, {19, "CR"}, {20, "CT"}, 
-                {21, "CV"}, {22, "CW"}, {23, "DA"}, {24, "DD"}, {25, "DE"}, 
-                {26, "DG"}, {27, "DH"}, {28, "DL"}, {29, "DN"}, {30, "DT"}, 
-                {31, "DU"}, {32, "E"}, {33, "EC"}, {34, "EH"}, {35, "EN"}, 
-                {36, "EX"}, {37, "FK"}, {38, "FY"}, {39, "G"}, {40, "GL"}, 
-                {41, "GU"}, {42, "HA"}, {43, "HD"}, {44, "HG"}, {45, "HP"}, 
-                {46, "HR"}, {47, "HS"}, {48, "HU"}, {49, "HX"}, {50, "IG"}, 
-                {51, "IP"}, {52, "IV"}, {53, "KA"}, {54, "KT"}, {55, "KW"}, 
-                {56, "KY"}, {57, "L"}, {58, "LA"}, {59, "LD"}, {60, "LE"}, 
-                {61, "LL"}, {62, "LS"}, {63, "LU"}, {64, "M"}, {65, "ME"}, 
-                {66, "MK"}, {67, "ML"}, {68, "N"}, {69, "NE"}, {70, "NG"}, 
-                {71, "MM"}, {72, "NP"}, {73, "NR"}, {74, "NW"}, {75, "OL"}, 
+                [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"},
+                {6, "BD"}, {7, "BH"}, {8, "BL"}, {9, "BN"}, {10, "BR"},
+                {11, "BS"}, {12, "BT"}, {13, "CA"}, {14, "CB"}, {15, "CF"},
+                {16, "CH"}, {17, "CM"}, {18, "CO"}, {19, "CR"}, {20, "CT"},
+                {21, "CV"}, {22, "CW"}, {23, "DA"}, {24, "DD"}, {25, "DE"},
+                {26, "DG"}, {27, "DH"}, {28, "DL"}, {29, "DN"}, {30, "DT"},
+                {31, "DU"}, {32, "E"}, {33, "EC"}, {34, "EH"}, {35, "EN"},
+                {36, "EX"}, {37, "FK"}, {38, "FY"}, {39, "G"}, {40, "GL"},
+                {41, "GU"}, {42, "HA"}, {43, "HD"}, {44, "HG"}, {45, "HP"},
+                {46, "HR"}, {47, "HS"}, {48, "HU"}, {49, "HX"}, {50, "IG"},
+                {51, "IP"}, {52, "IV"}, {53, "KA"}, {54, "KT"}, {55, "KW"},
+                {56, "KY"}, {57, "L"}, {58, "LA"}, {59, "LD"}, {60, "LE"},
+                {61, "LL"}, {62, "LS"}, {63, "LU"}, {64, "M"}, {65, "ME"},
+                {66, "MK"}, {67, "ML"}, {68, "N"}, {69, "NE"}, {70, "NG"},
+                {71, "MM"}, {72, "NP"}, {73, "NR"}, {74, "NW"}, {75, "OL"},
                 {76, "OX"}]).
 -define(DATETIME_FORMAT, "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w").
 -define(DATE_FORMAT, "~b-~2..0b-~2..0b").
@@ -377,18 +377,18 @@ run(update_with2i, KeyGen, ValueGen, State) ->
     Pid = State#state.pid,
     Key = KeyGen(),
     Value = ValueGen(),
-    
+
     Robj0 =
-        case riakc_pb_socket:get(Pid, 
-                                  State#state.bucket, 
-                                  Key, 
+        case riakc_pb_socket:get(Pid,
+                                  State#state.bucket,
+                                  Key,
                                   State#state.timeout_read) of
             {ok, Robj} ->
                 Robj;
             {error, notfound} ->
                 riakc_obj:new(State#state.bucket, Key)
         end,
-    
+
     MD0 = riakc_obj:get_update_metadata(Robj0),
     MD1 = riakc_obj:clear_secondary_indexes(MD0),
     MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
@@ -411,10 +411,10 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
     District = Area ++ integer_to_list(random:uniform(26)),
     StartKey = District ++ "|" ++ "a",
     EndKey = District ++ "|" ++ "b",
-    case riakc_pb_socket:get_index_range(Pid, 
-                                          Bucket, 
+    case riakc_pb_socket:get_index_range(Pid,
+                                          Bucket,
                                           <<"postcode_bin">>,
-                                          list_to_binary(StartKey), 
+                                          list_to_binary(StartKey),
                                           list_to_binary(EndKey),
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
@@ -430,11 +430,11 @@ run(query_dob, _KeyGen, _ValueGen, State) ->
     R = random:uniform(2500000000),
     DOB_SK = pick_dateofbirth(R),
     DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 3)),
-    case riakc_pb_socket:get_index_range(Pid, 
-                                          Bucket, 
+    case riakc_pb_socket:get_index_range(Pid,
+                                          Bucket,
                                           <<"dateofbirth_bin">>,
-                                          list_to_binary(DOB_SK), 
-                                          list_to_binary(DOB_EK ++ "~"),
+                                          list_to_binary(DOB_SK),
+                                          list_to_binary(DOB_EK ++ "|"),
                                           [{timeout, State#state.timeout_general},
                                             {return_terms, true}]) of
         {ok, Results} ->
@@ -482,9 +482,12 @@ run(delete, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(listkeys, _KeyGen, _ValueGen, State) ->
-    %% Pass on rw
-    case riakc_pb_socket:list_keys(State#state.pid, State#state.bucket, State#state.timeout_listkeys) of
-        {ok, _Keys} ->
+    lager:info("Commencing listkeys request"),
+    case riakc_pb_socket:list_keys(State#state.pid,
+                                    State#state.bucket,
+                                    State#state.timeout_listkeys) of
+        {ok, Keys} ->
+            lager:info("listkeys request returned ~w keys", [length(Keys)]),
             {ok, State};
         {error, disconnected} ->
             run(listkeys, _KeyGen, _ValueGen, State);
@@ -511,7 +514,7 @@ run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_t
     case timer:now_diff(Now, StartTime) of
         _MicroSec when _MicroSec > (Interval * 1000000) ->
             NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
-        _MicroSec -> 
+        _MicroSec ->
             NewState = State
     end,
 
@@ -721,7 +724,7 @@ generate_binary_indexes() ->
 
 postcode_index() ->
     NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
-    lists:map(fun(_X) -> 
+    lists:map(fun(_X) ->
                     L = length(?POSTCODE_AREAS),
                     {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
                     District = Area ++ integer_to_list(random:uniform(26)),
@@ -748,11 +751,11 @@ lastmodified_index() ->
     F = lists:flatten(io_lib:format(?DATETIME_FORMAT,
                                         [Year, Month, Day, Hr, Min, Sec])),
     [list_to_binary(F)].
-    
+
 
 record_2i_results(Results, State) ->
-    RCount_ThisQuery = 
-        case Results of 
+    RCount_ThisQuery =
+        case Results of
             {index_results_v1, undefined, ResultList, undefined} ->
                 length(ResultList);
             _ ->
