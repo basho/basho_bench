@@ -490,7 +490,7 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
                                     State#state.timeout_listkeys) of
         {ok, Keys} ->
             lager:info("listkeys request returned ~w keys" ++
-                          "in ~w seconds",
+                          " in ~w seconds",
                         [length(Keys),
                           timer:now_diff(os:timestamp(), SW)/1000000]),
             {ok, State};
