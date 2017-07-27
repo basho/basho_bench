@@ -48,7 +48,9 @@
                  timeout_listkeys,
                  timeout_mapreduce,
                  twoi_qcount = 0 :: integer(),
-                 twoi_rcount = 0 :: integer()
+                 twoi_rcount = 0 :: integer(),
+                 nominated_id = false ::boolean()
+                  % ID 1 is nominated to do special work
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -123,7 +125,7 @@ new(Id) ->
     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
     case riakc_pb_socket:start_link(TargetIp, TargetPort, get_connect_options()) of
         {ok, Pid} ->
-            random:seed(),
+            NominatedID = Id == 1,
             {ok, #state { pid = Pid,
                           bucket = Bucket,
                           r = R,
@@ -142,7 +144,8 @@ new(Id) ->
                           timeout_read = get_timeout(pb_timeout_read),
                           timeout_write = get_timeout(pb_timeout_write),
                           timeout_listkeys = get_timeout(pb_timeout_listkeys),
-                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce)
+                          timeout_mapreduce = get_timeout(pb_timeout_mapreduce),
+                          nominated_id = NominatedID
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -483,21 +486,26 @@ run(delete, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(listkeys, _KeyGen, _ValueGen, State) ->
-    SW = os:timestamp(),
-    lager:info("Commencing listkeys request"),
-    case riakc_pb_socket:list_keys(State#state.pid,
-                                    State#state.bucket,
-                                    State#state.timeout_listkeys) of
-        {ok, Keys} ->
-            lager:info("listkeys request returned ~w keys" ++
-                          " in ~w seconds",
-                        [length(Keys),
-                          timer:now_diff(os:timestamp(), SW)/1000000]),
-            {ok, State};
-        {error, disconnected} ->
-            run(listkeys, _KeyGen, _ValueGen, State);
-        {error, Reason} ->
-            {error, Reason, State}
+    case State#state.nominated_id of
+        true ->
+            SW = os:timestamp(),
+            lager:info("Commencing listkeys request"),
+            case riakc_pb_socket:list_keys(State#state.pid,
+                                            State#state.bucket,
+                                            State#state.timeout_listkeys) of
+                {ok, Keys} ->
+                    lager:info("listkeys request returned ~w keys" ++
+                                  " in ~w seconds",
+                                [length(Keys),
+                                  timer:now_diff(os:timestamp(), SW)/1000000]),
+                    {ok, State};
+                {error, disconnected} ->
+                    run(listkeys, _KeyGen, _ValueGen, State);
+                {error, Reason} ->
+                    {error, Reason, State}
+            end;
+        false ->
+              {ok, State}
     end;
 run(pause_minute, _KeyGen, _ValueGen, State) ->
     timer:sleep(60000),
