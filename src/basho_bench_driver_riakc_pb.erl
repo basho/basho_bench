@@ -492,7 +492,7 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
             lager:info("listkeys request returned ~w keys" ++
                           "in ~w seconds",
                         [length(Keys),
-                          timer:now_diff(os:timestamp(), SW)/1000]),
+                          timer:now_diff(os:timestamp(), SW)/1000000]),
             {ok, State};
         {error, disconnected} ->
             run(listkeys, _KeyGen, _ValueGen, State);
