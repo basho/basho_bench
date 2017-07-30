@@ -492,8 +492,14 @@ run(delete, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(listkeys, _KeyGen, _ValueGen, State) ->
-    case {State#state.nominated_id,
-            is_process_alive(State#state.singleton_pid)} of
+    IsAlive =
+        case State#state.singleton_pid of
+            undefined ->
+                false;
+            LastPid ->
+                is_process_alive(LastPid)
+        end,
+    case {State#state.nominated_id, IsAlive} of
         {true, true} ->
             lager:info("Skipping listkeys for overlap"),
             {ok, State};
