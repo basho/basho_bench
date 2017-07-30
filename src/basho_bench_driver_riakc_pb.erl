@@ -504,7 +504,7 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
             lager:info("Skipping listkeys for overlap"),
             {ok, State};
         {true, false} ->
-            {ok, Pid} = spawn(?MODULE, run_listkeys, [State]),
+            Pid = spawn(?MODULE, run_listkeys, [State]),
             {ok, State#state{singleton_pid = Pid}};
         _ ->
             {ok, State}
