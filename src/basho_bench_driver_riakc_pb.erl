@@ -504,10 +504,10 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
             lager:info("Skipping listkeys for overlap"),
             {ok, State};
         {true, false} ->
-            {ok, Pid} = spawn(?MODULE, run_listkeys, State),
+            {ok, Pid} = spawn(?MODULE, run_listkeys, [State]),
             {ok, State#state{singleton_pid = Pid}};
         _ ->
-              {ok, State}
+            {ok, State}
     end;
 run(pause_minute, _KeyGen, _ValueGen, State) ->
     timer:sleep(60000),
