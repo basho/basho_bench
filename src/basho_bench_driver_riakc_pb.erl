@@ -26,6 +26,8 @@
          mapred_valgen/2,
          mapred_ordered_valgen/1]).
 
+-export([run_listkeys/1]).
+
 -include("basho_bench.hrl").
 
 -record(state, { pid,
@@ -49,8 +51,11 @@
                  timeout_mapreduce,
                  twoi_qcount = 0 :: integer(),
                  twoi_rcount = 0 :: integer(),
-                 nominated_id = false ::boolean()
+                 nominated_id = false ::boolean(),
                   % ID 1 is nominated to do special work
+                 singleton_targets :: list(),
+                  % List of targets to be used for singleton async pid
+                 singleton_pid :: pid() | undefined
                }).
 
 -define(TIMEOUT_GENERAL, 62*1000).              % Riak PB default + 2 sec
@@ -145,7 +150,8 @@ new(Id) ->
                           timeout_write = get_timeout(pb_timeout_write),
                           timeout_listkeys = get_timeout(pb_timeout_listkeys),
                           timeout_mapreduce = get_timeout(pb_timeout_mapreduce),
-                          nominated_id = NominatedID
+                          nominated_id = NominatedID,
+                          singleton_targets = Targets
                         }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p:~p: ~p\n",
@@ -486,25 +492,15 @@ run(delete, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 run(listkeys, _KeyGen, _ValueGen, State) ->
-    case State#state.nominated_id of
-        true ->
-            SW = os:timestamp(),
-            lager:info("Commencing listkeys request"),
-            case riakc_pb_socket:list_keys(State#state.pid,
-                                            State#state.bucket,
-                                            State#state.timeout_listkeys) of
-                {ok, Keys} ->
-                    lager:info("listkeys request returned ~w keys" ++
-                                  " in ~w seconds",
-                                [length(Keys),
-                                  timer:now_diff(os:timestamp(), SW)/1000000]),
-                    {ok, State};
-                {error, disconnected} ->
-                    run(listkeys, _KeyGen, _ValueGen, State);
-                {error, Reason} ->
-                    {error, Reason, State}
-            end;
-        false ->
+    case {State#state.nominated_id,
+            is_process_alive(State#state.singleton_pid)} of
+        {true, true} ->
+            lager:info("Skipping listkeys for overlap"),
+            {ok, State};
+        {true, false} ->
+            {ok, Pid} = spawn(?MODULE, run_listkeys, State),
+            {ok, State#state{singleton_pid = Pid}};
+        _ ->
               {ok, State}
     end;
 run(pause_minute, _KeyGen, _ValueGen, State) ->
@@ -790,3 +786,29 @@ record_2i_results(Results, State) ->
         false ->
             {ok, State#state{twoi_qcount = QCount, twoi_rcount = RCount}}
     end.
+
+run_listkeys(State) ->
+  SW = os:timestamp(),
+  lager:info("Commencing listkeys request"),
+
+  Targets = State#state.singleton_targets,
+  {TargetIp, TargetPort} = lists:nth(random:uniform(length(Targets)+1),
+                                      Targets),
+  ?INFO("Using target ~p:~p for new singleton asyncworker\n",
+          [TargetIp, TargetPort]),
+  {ok, Pid} = riakc_pb_socket:start_link(TargetIp,
+                                          TargetPort,
+                                          get_connect_options()),
+  case riakc_pb_socket:list_keys(Pid,
+                                  State#state.bucket,
+                                  State#state.timeout_listkeys) of
+      {ok, Keys} ->
+          lager:info("listkeys request returned ~w keys" ++
+                        " in ~w seconds",
+                      [length(Keys),
+                        timer:now_diff(os:timestamp(), SW)/1000000]),
+          ok;
+      {error, Reason} ->
+          lager:info("listkeys failed due to reason ~w", [Reason]),
+          ok
+  end.
