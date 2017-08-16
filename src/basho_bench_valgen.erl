@@ -64,12 +64,20 @@ new({uniform_int, MaxVal}, _Id)
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
     fun() -> random:uniform(MinVal, MaxVal) end;
-new({semi_compressible, MinSize, Mean}, Id)
+new({semi_compressible, MinSize, Mean, XLMult, XLProb}, Id)
     when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
     Source = init_altsource(Id),
     fun() ->
+        R = random:uniform(),
+        {ModMin, ModMean} = 
+            case R < XLProb of
+                true ->
+                    {XLMult * MinSize, XLMult * Mean};
+                false ->
+                    {MinSize, Mean}
+            end,
         data_block(Source,
-                    MinSize + trunc(basho_bench_stats:exponential(1 / Mean)))
+                    ModMin + trunc(basho_bench_stats:exponential(1 / ModMean)))
     end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
