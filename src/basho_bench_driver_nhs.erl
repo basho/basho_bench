@@ -136,11 +136,11 @@ run(update_with2i, KeyGen, ValueGen, State) ->
             {ok, Robj} ->
                 Robj;
             {error, notfound} ->
-                riak_object:new(Bucket, Key)
+                riakc_obj:new(Bucket, to_binary(Key))
         end,
     
     MD0 = riakc_obj:get_update_metadata(Robj0),
-    MD1 = riakc_obj:clear_scondary_indexes(MD0),
+    MD1 = riakc_obj:clear_secondary_indexes(MD0),
     MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
@@ -160,7 +160,7 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     Key = generate_uniquekey(),
     Value = non_compressible_value(6000),
     
-    Robj0 = riak_object:new(Bucket, Key),
+    Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
     MD1 = riakc_obj:get_update_metadata(Robj0),
     MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
     Robj1 = riakc_obj:update_value(Robj0, Value),
@@ -176,12 +176,12 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
 
 %% Query results via the HTTP interface.
 run(postcodequery_http, _KeyGen, _ValueGen, State) ->
-    Host = State#state.http_host,
+    Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
     
     L = length(?POSTCODE_AREAS),
-    Area = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
+    {_, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
     District = Area ++ integer_to_list(random:uniform(26)),
     StartKey = District ++ "|" ++ "a",
     EndKey = District ++ "|" ++ "b",
@@ -191,7 +191,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            io:format("PostC query results of length ~w~n", length(Results)),
+            %% io:format("PostC query results of length ~w~n", [length(Results)]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
@@ -201,7 +201,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
 
 %% Query results via the HTTP interface.
 run(dobquery_http, _KeyGen, _ValueGen, State) ->
-    Host = State#state.http_host,
+    Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
     
@@ -216,7 +216,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            io:format("DoB query results of length ~w~n", length(Results)),
+            %% io:format("DoB query results of length ~w~n", [length(Results)]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
@@ -271,7 +271,7 @@ postcode_index() ->
     NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
     lists:map(fun(_X) -> 
                     L = length(?POSTCODE_AREAS),
-                    Area = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
+                    {_, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
                     District = Area ++ integer_to_list(random:uniform(26)),
                     F = District ++ "|" ++ NotVeryNameLikeThing,
                     list_to_binary(F) end,
