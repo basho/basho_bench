@@ -192,7 +192,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     {_, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
     District = Area ++ integer_to_list(random:uniform(26)),
     StartKey = District ++ "|" ++ "a",
-    EndKey = District ++ "|" ++ "p",
+    EndKey = District ++ "|" ++ "h",
     URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s", 
                     [Host, Port, Bucket, StartKey, EndKey]),
 
