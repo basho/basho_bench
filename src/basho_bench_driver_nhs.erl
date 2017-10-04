@@ -33,7 +33,11 @@
           recordBucket,
           documentBucket,
           pb_timeout,
-          http_timeout
+          http_timeout,
+          postcodeq_count = 0 :: integer(),
+          postcodeq_sum = 0 :: integer(),
+          dobq_count = 0 :: integer(),
+          dobq_sum = 0 :: integer()
          }).
 
 -define(POSTCODE_AREAS,
@@ -191,8 +195,20 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            io:format("PostC query results of length ~w~n", [length(Results)]),
-            {ok, State};
+            {C0, S0} = 
+                case State#state.postcodeq_count div 1000 of 
+                    0 ->
+                        Avg = 
+                            State#state.postcodeq_sum 
+                                div State#state.postcodeq_count,
+                        lager:info("Average postcode query result size of ~w",
+                                    [Avg]),
+                        {1, length(Results)};
+                    _ ->
+                        {State#state.postcodeq_count + 1, 
+                            State#state.postcodeq_sum + length(Results)}
+                end,
+            {ok, State#state{postcodeq_count = C0, postcodeq_sum = S0}};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
                         [?MODULE, ?LINE, Reason]),
@@ -216,8 +232,19 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            io:format("DoB query results of length ~w~n", [length(Results)]),
-            {ok, State};
+            {C0, S0} = 
+                case State#state.dobq_count div 1000 of 
+                    0 ->
+                        Avg = 
+                            State#state.dobq_sum div State#state.dobq_count,
+                        lager:info("Average dob query result size of ~w",
+                                    [Avg]),
+                        {1, length(Results)};
+                    _ ->
+                        {State#state.dobq_count + 1, 
+                            State#state.dobq_sum + length(Results)}
+                end,
+            {ok, State#state{dobq_count = C0, dobq_sum = S0}};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
                         [?MODULE, ?LINE, Reason]),
@@ -298,8 +325,8 @@ generate_uniquekey() ->
         {Hr, Min, Sec}} = calendar:now_to_datetime(os:timestamp()),
     F = lists:flatten(io_lib:format(?DATETIME_FORMAT,
                                         [Year, Month, Day, Hr, Min, Sec])),
-    F ++ [base64:encode_to_string(crypto:rand_bytes(4))],
-    list_to_binary(F).
+    F0 = F ++ [base64:encode_to_string(crypto:rand_bytes(4))],
+    list_to_binary(F0).
 
 non_compressible_value(Size) ->
     crypto:rand_bytes(Size).
