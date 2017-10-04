@@ -37,8 +37,11 @@
           postcodeq_count = 0 :: integer(),
           postcodeq_sum = 0 :: integer(),
           dobq_count = 0 :: integer(),
-          dobq_sum = 0 :: integer()
+          dobq_sum = 0 :: integer(),
+          query_logfreq :: integer()
          }).
+
+-define(QUERYLOG_FREQ, 1000).
 
 -define(POSTCODE_AREAS,
                 [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"}, 
@@ -58,7 +61,7 @@
                 {71, "MM"}, {72, "NP"}, {73, "NR"}, {74, "NW"}, {75, "OL"}, 
                 {76, "OX"}]).
 -define(DATETIME_FORMAT, "~4..0w-~2..0w-~2..0wT~2..0w:~2..0w:~2..0w").
--define(DATE_FORMAT, "~b-~2..0b-~2..0b").
+-define(DATE_FORMAT, "~b~2..0b~2..0b").
 
 %% ====================================================================
 %% API
@@ -108,7 +111,8 @@ new(Id) ->
                recordBucket = <<"domainRecord">>,
                documentBucket = <<"domainDocument">>,
                pb_timeout = PBTimeout,
-               http_timeout = HTTPTimeout}};
+               http_timeout = HTTPTimeout,
+               query_logfreq = random:uniform(?QUERYLOG_FREQ)}};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [PBTargetIp, PBTargetPort, Reason2])
@@ -188,27 +192,26 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     {_, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
     District = Area ++ integer_to_list(random:uniform(26)),
     StartKey = District ++ "|" ++ "a",
-    EndKey = District ++ "|" ++ "b",
+    EndKey = District ++ "|" ++ "p",
     URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s", 
                     [Host, Port, Bucket, StartKey, EndKey]),
 
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            {C0, S0} = 
-                case State#state.postcodeq_count div 1000 of 
-                    1 ->
-                        Avg = 
-                            State#state.postcodeq_sum 
-                                div State#state.postcodeq_count,
-                        lager:info("Average postcode query result size of ~w",
+            C0 = State#state.postcodeq_count,
+            S0 = State#state.postcodeq_sum,
+            {C1, S1} = 
+                case {C0, C0 rem State#state.query_logfreq} of 
+                    {C0, 0} when C0 > 0 ->
+                        Avg = float_to_list(S0 / C0, [{decimals, 3}]),
+                        lager:info("Average postcode query result size of ~s",
                                     [Avg]),
                         {1, length(Results)};
                     _ ->
-                        {State#state.postcodeq_count + 1, 
-                            State#state.postcodeq_sum + length(Results)}
+                        {C0 + 1, S0 + length(Results)}
                 end,
-            {ok, State#state{postcodeq_count = C0, postcodeq_sum = S0}};
+            {ok, State#state{postcodeq_count = C1, postcodeq_sum = S1}};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
                         [?MODULE, ?LINE, Reason]),
@@ -225,26 +228,28 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     DoBStart = integer_to_list(RandYear) ++ "0101",
     DoBEnd = integer_to_list(RandYear) ++ "0110",
     
-    URLSrc = "http://~s:~p/buckets/~s/index/postcode_bin/~s/~s?term_regex=~s",
+    URLSrc = 
+        "http://~s:~p/buckets/~s/index/dateofbirth_bin/~s/~s?term_regex=~s",
+    RE= "[0-9]{8}.[a-d]",
     URL = io_lib:format(URLSrc, 
-                        [Host, Port, Bucket, DoBStart, DoBEnd, "[0-9]{8}\|a"]),
+                        [Host, Port, Bucket, DoBStart, DoBEnd, RE]),
 
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            {C0, S0} = 
-                case State#state.dobq_count div 1000 of 
-                    1 ->
-                        Avg = 
-                            State#state.dobq_sum div State#state.dobq_count,
-                        lager:info("Average dob query result size of ~w",
+            C0 = State#state.dobq_count,
+            S0 = State#state.dobq_sum,
+            {C1, S1} = 
+                case {C0, C0 rem State#state.query_logfreq} of 
+                    {C0, 0} when C0 > 0 ->
+                        Avg = float_to_list(S0 / C0, [{decimals, 3}]),
+                        lager:info("Average dob query result size of ~s",
                                     [Avg]),
                         {1, length(Results)};
                     _ ->
-                        {State#state.dobq_count + 1, 
-                            State#state.dobq_sum + length(Results)}
+                        {C0 + 1, S0 + length(Results)}
                 end,
-            {ok, State#state{dobq_count = C0, dobq_sum = S0}};
+            {ok, State#state{dobq_count = C1, dobq_sum = S1}};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
                         [?MODULE, ?LINE, Reason]),
@@ -308,8 +313,7 @@ dateofbirth_index() ->
     Delta = random:uniform(2500000000),
     {{Y, M, D},
         _} = calendar:gregorian_seconds_to_datetime(Delta + 61000000000),
-    F = lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])) ++ "|" ++
-            base64:encode_to_string(crypto:rand_bytes(4)),
+    F = lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])) ++ "|" ++ base64:encode_to_string(crypto:rand_bytes(4)),
     [list_to_binary(F)].
 
 lastmodified_index() ->
