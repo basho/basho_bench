@@ -191,7 +191,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            %% io:format("PostC query results of length ~w~n", [length(Results)]),
+            io:format("PostC query results of length ~w~n", [length(Results)]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
@@ -216,7 +216,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     case json_get(URL, State) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
-            %% io:format("DoB query results of length ~w~n", [length(Results)]),
+            io:format("DoB query results of length ~w~n", [length(Results)]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
