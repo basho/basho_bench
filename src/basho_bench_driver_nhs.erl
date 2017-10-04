@@ -197,7 +197,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
             Results = proplists:get_value(<<"keys">>, Proplist),
             {C0, S0} = 
                 case State#state.postcodeq_count div 1000 of 
-                    0 ->
+                    1 ->
                         Avg = 
                             State#state.postcodeq_sum 
                                 div State#state.postcodeq_count,
@@ -234,7 +234,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
             Results = proplists:get_value(<<"keys">>, Proplist),
             {C0, S0} = 
                 case State#state.dobq_count div 1000 of 
-                    0 ->
+                    1 ->
                         Avg = 
                             State#state.dobq_sum div State#state.dobq_count,
                         lager:info("Average dob query result size of ~w",
