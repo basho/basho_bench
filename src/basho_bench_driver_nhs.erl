@@ -32,6 +32,8 @@
                 pb_pid,
                 http_host,
                 http_port,
+                fold_host,
+                fold_port,
                 recordBucket,
                 documentBucket,
                 pb_timeout,
@@ -96,6 +98,9 @@ new(Id) ->
     {HTTPTargetIp,
         HTTPTargetPort} = lists:nth((Id rem length(HTTPTargets) + 1),
                                     HTTPTargets),
+    {FoldTargetIp,
+        FoldTargetPort} = lists:nth((Id rem length(HTTPTargets) + 2),
+                                    HTTPTargets),
     ?INFO("Using http target ~p:~p for worker ~p\n", [HTTPTargetIp,
                                                         HTTPTargetPort,
                                                         Id]),
@@ -116,6 +121,8 @@ new(Id) ->
                pb_pid = Pid,
                http_host = HTTPTargetIp,
                http_port = HTTPTargetPort,
+               fold_host = FoldTargetIp, % issues when long-lived fold
+               fold_port = FoldTargetport, % uses same connection as 2i query
                recordBucket = <<"domainRecord">>,
                documentBucket = <<"domainDocument">>,
                pb_timeout = PBTimeout,
@@ -331,8 +338,8 @@ run_aaequery(State) ->
     SW = os:timestamp(),
     lager:info("Commencing aaequery request"),
 
-    Host = inet_parse:ntoa(State#state.http_host),
-    Port = State#state.http_port,
+    Host = inet_parse:ntoa(State#state.fold_host),
+    Port = State#state.fold_port,
     Bucket = State#state.recordBucket,
 
     KeyStart = "0", 
