@@ -24,21 +24,26 @@
 -export([new/1,
          run/4]).
 
+-export([run_aaequery/1]).
+
 -include("basho_bench.hrl").
 
 -record(state, {
-          pb_pid,
-          http_host,
-          http_port,
-          recordBucket,
-          documentBucket,
-          pb_timeout,
-          http_timeout,
-          postcodeq_count = 0 :: integer(),
-          postcodeq_sum = 0 :: integer(),
-          dobq_count = 0 :: integer(),
-          dobq_sum = 0 :: integer(),
-          query_logfreq :: integer()
+                pb_pid,
+                http_host,
+                http_port,
+                recordBucket,
+                documentBucket,
+                pb_timeout,
+                http_timeout,
+                postcodeq_count = 0 :: integer(),
+                postcodeq_sum = 0 :: integer(),
+                dobq_count = 0 :: integer(),
+                dobq_sum = 0 :: integer(),
+                query_logfreq :: integer(),
+                nominated_id :: boolean(),
+                % ID 1 is nominated to do special work
+                singleton_pid :: pid() | undefined
          }).
 
 -define(QUERYLOG_FREQ, 1000).
@@ -104,6 +109,7 @@ new(Id) ->
     
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
+            NominatedID = Id == 1,
             {ok, #state {
                pb_pid = Pid,
                http_host = HTTPTargetIp,
@@ -112,7 +118,8 @@ new(Id) ->
                documentBucket = <<"domainDocument">>,
                pb_timeout = PBTimeout,
                http_timeout = HTTPTimeout,
-               query_logfreq = random:uniform(?QUERYLOG_FREQ)}};
+               query_logfreq = random:uniform(?QUERYLOG_FREQ),
+               nominated_id = NominatedID}};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [PBTargetIp, PBTargetPort, Reason2])
@@ -230,7 +237,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     
     URLSrc = 
         "http://~s:~p/buckets/~s/index/dateofbirth_bin/~s/~s?term_regex=~s",
-    RE= "[0-9]{8}.[a-d]",
+    RE= "[0-9]{8}...[a-d]",
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket, DoBStart, DoBEnd, RE]),
 
@@ -254,6 +261,25 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
                         [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
+    end;
+
+run(aae_query, _KeyGen, _ValueGen, State) ->
+    IsAlive =
+        case State#state.singleton_pid of
+            undefined ->
+                false;
+            LastPid ->
+                is_process_alive(LastPid)
+        end,
+    case {State#state.nominated_id, IsAlive} of
+        {true, true} ->
+            lager:info("Skipping listkeys for overlap"),
+            {ok, State};
+        {true, false} ->
+            Pid = spawn(?MODULE, run_aaequery, [State]),
+            {ok, State#state{singleton_pid = Pid}};
+        _ ->
+            {ok, State}
     end;
 
 run(Other, _, _, _) ->
@@ -289,6 +315,43 @@ ensure_module(Module) ->
         _ ->
             ok
     end.
+
+
+%% ====================================================================
+%% Spawned Runners
+%% ====================================================================
+
+
+run_aaequery(State) ->
+    SW = os:timestamp(),
+    lager:info("Commencing aaequery request"),
+
+    Host = inet_parse:ntoa(State#state.http_host),
+    Port = State#state.http_port,
+    Bucket = State#state.recordBucket,
+
+    KeyStart = "0", 
+    KeyEnd = "z",
+
+    MapFoldMod = "riak_kv_tictac_folder",
+
+    URLSrc = 
+        "http://~s:~p/buckets/~s/index/$key/~s/~s?mapfold=true&mapfoldmod=~s",
+    URL = io_lib:format(URLSrc, 
+                        [Host, Port, Bucket, KeyStart, KeyEnd, MapFoldMod]),
+    
+    case json_get(URL, State) of
+        {ok, {struct, _AAETree}} ->
+            lager:info("AAE query returned in ~w seconds",
+                      [timer:now_diff(os:timestamp(), SW)/1000000]),
+
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n",
+                        [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end.
+
 
 %% ====================================================================
 %% Index seeds
