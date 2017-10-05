@@ -32,8 +32,6 @@
                 pb_pid,
                 http_host,
                 http_port,
-                fold_host,
-                fold_port,
                 recordBucket,
                 documentBucket,
                 pb_timeout,
@@ -95,10 +93,9 @@ new(Id) ->
 
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
-    [{FoldTargetIp, FoldTargetPort}|OtherHTTPTargets] = HTTPTargets,
     {HTTPTargetIp,
-        HTTPTargetPort} = lists:nth((Id rem length(OtherHTTPTargets) + 1),
-                                        OtherHTTPTargets),
+        HTTPTargetPort} = lists:nth((Id rem length(HTTPTargets) + 1),
+                                        HTTPTargets),
     ?INFO("Using http target ~p:~p for worker ~p\n", [HTTPTargetIp,
                                                         HTTPTargetPort,
                                                         Id]),
@@ -119,8 +116,6 @@ new(Id) ->
                pb_pid = Pid,
                http_host = HTTPTargetIp,
                http_port = HTTPTargetPort,
-               fold_host = FoldTargetIp, % issues when long-lived fold
-               fold_port = FoldTargetPort, % uses same connection as 2i query
                recordBucket = <<"domainRecord">>,
                documentBucket = <<"domainDocument">>,
                pb_timeout = PBTimeout,
@@ -299,8 +294,19 @@ run(Other, _, _, _) ->
 
 
 
-json_get(Url, Timeout) when is_integer(Timeout) ->
-    Response = ibrowse:send_req(lists:flatten(Url), [], get, [], [], Timeout),
+json_get(Url, Timeout) ->
+    json_get(Url, Timeout, true).
+
+json_get(Url, Timeout, UsePool) ->
+    Target = lists:flatten(Url),
+    Response = 
+        case UsePool of 
+            true ->
+                ibrowse:send_req(Target, [], get, [], [], Timeout);
+            false ->
+                {ok, C} = ibrowse:spawn_worker_process(Target),
+                ibrowse:send_req(C, Target, [], get, [], [], Timeout)
+        end,
     case Response of
         {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
@@ -336,8 +342,8 @@ run_aaequery(State) ->
     SW = os:timestamp(),
     lager:info("Commencing aaequery request"),
 
-    Host = inet_parse:ntoa(State#state.fold_host),
-    Port = State#state.fold_port,
+    Host = inet_parse:ntoa(State#state.http_host),
+    Port = State#state.http_port,
     Bucket = State#state.recordBucket,
 
     KeyStart = "0", 
@@ -350,7 +356,7 @@ run_aaequery(State) ->
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket, KeyStart, KeyEnd, MapFoldMod]),
     
-    case json_get(URL, State#state.fold_timeout) of
+    case json_get(URL, State#state.fold_timeout, false) of
         {ok, {struct, _AAETree}} ->
             lager:info("AAE query returned in ~w seconds",
                       [timer:now_diff(os:timestamp(), SW)/1000000]),
