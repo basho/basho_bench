@@ -36,6 +36,7 @@
                 documentBucket,
                 pb_timeout,
                 http_timeout,
+                fold_timeout,
                 postcodeq_count = 0 :: integer(),
                 postcodeq_sum = 0 :: integer(),
                 dobq_count = 0 :: integer(),
@@ -88,6 +89,7 @@ new(Id) ->
 
     PBTimeout = basho_bench_config:get(pb_timeout_general, 30*1000),
     HTTPTimeout = basho_bench_config:get(http_timeout_general, 30*1000),
+    FoldTimeout = basho_bench_config:get(fold_timeout_general, 60*60*1000),
 
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
@@ -118,6 +120,7 @@ new(Id) ->
                documentBucket = <<"domainDocument">>,
                pb_timeout = PBTimeout,
                http_timeout = HTTPTimeout,
+               fold_timeout = FoldTimeout,
                query_logfreq = random:uniform(?QUERYLOG_FREQ),
                nominated_id = NominatedID}};
         {error, Reason2} ->
@@ -203,7 +206,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s", 
                     [Host, Port, Bucket, StartKey, EndKey]),
 
-    case json_get(URL, State) of
+    case json_get(URL, State#state.http_timeout) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
             C0 = State#state.postcodeq_count,
@@ -241,7 +244,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket, DoBStart, DoBEnd, RE]),
 
-    case json_get(URL, State) of
+    case json_get(URL, State#state.http_timeout) of
         {ok, {struct, Proplist}} ->
             Results = proplists:get_value(<<"keys">>, Proplist),
             C0 = State#state.dobq_count,
@@ -289,15 +292,17 @@ run(Other, _, _, _) ->
 %% Internal functions
 %% ====================================================================
 
-json_get(Url, State) ->
-    Response = ibrowse:send_req(lists:flatten(Url), [], get,
-                                [], [], State#state.pb_timeout),
+
+
+json_get(Url, Timeout) when is_integer(Timeout) ->
+    Response = ibrowse:send_req(lists:flatten(Url), [], get, [], [], Timeout),
     case Response of
         {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
         Other ->
             {error, Other}
     end.
+
 
 to_binary(B) when is_binary(B) ->
     B;
@@ -340,7 +345,7 @@ run_aaequery(State) ->
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket, KeyStart, KeyEnd, MapFoldMod]),
     
-    case json_get(URL, State) of
+    case json_get(URL, State#state.fold_timeout) of
         {ok, {struct, _AAETree}} ->
             lager:info("AAE query returned in ~w seconds",
                       [timer:now_diff(os:timestamp(), SW)/1000000]),
