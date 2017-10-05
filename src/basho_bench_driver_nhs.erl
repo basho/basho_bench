@@ -122,7 +122,7 @@ new(Id) ->
                http_host = HTTPTargetIp,
                http_port = HTTPTargetPort,
                fold_host = FoldTargetIp, % issues when long-lived fold
-               fold_port = FoldTargetport, % uses same connection as 2i query
+               fold_port = FoldTargetPort, % uses same connection as 2i query
                recordBucket = <<"domainRecord">>,
                documentBucket = <<"domainDocument">>,
                pb_timeout = PBTimeout,
