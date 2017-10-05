@@ -95,12 +95,10 @@ new(Id) ->
 
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
+    [{FoldTargetIp, FoldTargetPort}|OtherHTTPTargets] = HTTPTargets,
     {HTTPTargetIp,
-        HTTPTargetPort} = lists:nth((Id rem length(HTTPTargets) + 1),
-                                    HTTPTargets),
-    {FoldTargetIp,
-        FoldTargetPort} = lists:nth((Id rem length(HTTPTargets) + 2),
-                                    HTTPTargets),
+        HTTPTargetPort} = lists:nth((Id rem length(OtherHTTPTargets) + 1),
+                                        OtherHTTPTargets),
     ?INFO("Using http target ~p:~p for worker ~p\n", [HTTPTargetIp,
                                                         HTTPTargetPort,
                                                         Id]),
