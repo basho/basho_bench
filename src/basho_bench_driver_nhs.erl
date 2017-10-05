@@ -305,7 +305,7 @@ json_get(Url, Timeout, UsePool) ->
                 ibrowse:send_req(Target, [], get, [], [], Timeout);
             false ->
                 {ok, C} = ibrowse:spawn_worker_process(Target),
-                ibrowse:send_req(C, Target, [], get, [], [], Timeout)
+                ibrowse:send_req_direct(C, Target, [], get, [], [], Timeout)
         end,
     case Response of
         {ok, "200", _, Body} ->
