@@ -24,7 +24,8 @@
 -export([new/1,
          run/4]).
 
--export([run_aaequery/1]).
+-export([run_aaequery/1,
+            run_listkeys/1]).
 
 -include("basho_bench.hrl").
 
@@ -276,10 +277,29 @@ run(aae_query, _KeyGen, _ValueGen, State) ->
         end,
     case {State#state.nominated_id, IsAlive} of
         {true, true} ->
-            lager:info("Skipping listkeys for overlap"),
+            lager:info("Skipping aae query for overlap"),
             {ok, State};
         {true, false} ->
             Pid = spawn(?MODULE, run_aaequery, [State]),
+            {ok, State#state{singleton_pid = Pid}};
+        _ ->
+            {ok, State}
+    end;
+
+run(list_keys, _KeyGen, _ValueGen, State) ->
+    IsAlive =
+        case State#state.singleton_pid of
+            undefined ->
+                false;
+            LastPid ->
+                is_process_alive(LastPid)
+        end,
+    case {State#state.nominated_id, IsAlive} of
+        {true, true} ->
+            lager:info("Skipping listkeys for overlap"),
+            {ok, State};
+        {true, false} ->
+            Pid = spawn(?MODULE, run_listkeys, [State]),
             {ok, State#state{singleton_pid = Pid}};
         _ ->
             {ok, State}
@@ -368,6 +388,31 @@ run_aaequery(State) ->
             {error, Reason, State}
     end.
 
+run_listkeys(State) ->
+    SW = os:timestamp(),
+    lager:info("Commencing list keys request"),
+
+    Host = inet_parse:ntoa(State#state.http_host),
+    Port = State#state.http_port,
+    Bucket = State#state.recordBucket,
+
+    URLSrc = 
+        "http://~s:~p/buckets/~s/keys?keys=true",
+    URL = io_lib:format(URLSrc, 
+                        [Host, Port, Bucket]),
+    
+    case json_get(URL, State#state.fold_timeout, false) of
+        {ok, {struct, KeyList}} ->
+            lager:info("List keys returned ~w keys in ~w seconds",
+                      [length(KeyList), 
+                        timer:now_diff(os:timestamp(), SW)/1000000]),
+
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n",
+                        [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end.
 
 %% ====================================================================
 %% Index seeds
