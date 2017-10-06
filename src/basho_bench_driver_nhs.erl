@@ -377,9 +377,10 @@ run_aaequery(State) ->
                         [Host, Port, Bucket, KeyStart, KeyEnd, MapFoldMod]),
     
     case json_get(URL, State#state.fold_timeout, false) of
-        {ok, {struct, _AAETree}} ->
-            lager:info("AAE query returned in ~w seconds",
-                      [timer:now_diff(os:timestamp(), SW)/1000000]),
+        {ok, {struct, TreeL}} ->
+            {<<"count">>, Count} = lists:keyfind(<<"count">>, 1, TreeL),
+            lager:info("AAE query returned in ~w secondscovering ~s keys",
+                      [timer:now_diff(os:timestamp(), SW)/1000000, Count]),
 
             {ok, State};
         {error, Reason} ->
@@ -402,7 +403,7 @@ run_listkeys(State) ->
                         [Host, Port, Bucket]),
     
     case json_get(URL, State#state.fold_timeout, false) of
-        {ok, {struct, KeyList}} ->
+        {ok, {struct, [{<<"keys">>, KeyList}]}} ->
             lager:info("List keys returned ~w keys in ~w seconds",
                       [length(KeyList), 
                         timer:now_diff(os:timestamp(), SW)/1000000]),
