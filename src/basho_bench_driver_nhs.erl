@@ -379,7 +379,7 @@ run_aaequery(State) ->
     case json_get(URL, State#state.fold_timeout, false) of
         {ok, {struct, TreeL}} ->
             {<<"count">>, Count} = lists:keyfind(<<"count">>, 1, TreeL),
-            lager:info("AAE query returned in ~w secondscovering ~s keys",
+            lager:info("AAE query returned in ~w seconds covering ~s keys",
                       [timer:now_diff(os:timestamp(), SW)/1000000, Count]),
 
             {ok, State};
