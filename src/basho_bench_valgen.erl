@@ -133,7 +133,10 @@ init_altsource(1, undefined) ->
     ComboBlockFun =
         fun(_X, Acc) ->
             Bin1 = crypto:rand_bytes(4096),
-            Bin2 = create_random_textblock(16, RandomStrs),
+            Bin2 = create_random_textblock(32, RandomStrs),
+            % Both the compressible and uncompressible parts will be 
+            % 4096 bytes in size.  zlib will compress the compressible
+            % part down 3:1
             <<Acc/binary, Bin1/binary, Bin2/binary>>
         end,
     Bytes = lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 8192)),
