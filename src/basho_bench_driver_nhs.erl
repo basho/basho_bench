@@ -305,6 +305,25 @@ run(list_keys, _KeyGen, _ValueGen, State) ->
             {ok, State}
     end;
 
+run(segment_fold, _KeyGen, _ValueGen, State) ->
+    IsAlive = 
+        case State#state.singleton_pid of
+            undefined ->
+                false;
+            LastPid ->
+                is_process_alive(LastPid)
+        end,
+    case {State#state.nominated_id, IsAlive} of
+        {true, true} ->
+            lager:info("Skipping segment fold for overlap"),
+            {ok, State};
+        {true, false} ->
+            Pid = spawn(?MODULE, run_segmentfold, [State]),
+            {ok, State#state{singleton_pid = Pid}};
+        _ ->
+            {ok, State}
+    end;
+
 run(Other, _, _, _) ->
     throw({unknown_operation, Other}).
 
@@ -408,6 +427,44 @@ run_listkeys(State) ->
                       [length(KeyList), 
                         timer:now_diff(os:timestamp(), SW)/1000000]),
 
+            {ok, State};
+        {error, Reason} ->
+            io:format("[~s:~p] ERROR - Reason: ~p~n",
+                        [?MODULE, ?LINE, Reason]),
+            {error, Reason, State}
+    end.
+
+run_segmentfold(State) ->
+    SW = os:timestamp(),
+    lager:info("Commencing segment fold request"),
+
+    Host = inet_parse:ntoa(State#state.http_host),
+    Port = State#state.http_port,
+    Bucket = State#state.recordBucket,
+
+    KeyStart = "0", 
+    KeyEnd = "z",
+
+    MapFoldMod = "riak_kv_segment_folder",
+
+    % '{"check_presence": "false", 
+    %       "tree_size": "small", 
+    %       "segment_list": [1, 10001]}'
+    MapFoldOpts = 
+        "eyJjaGVja19wcmVzZW5jZSI6ICJmYWxzZSIsICJ0cmVlX3NpemUiOiAic21hbGwiLCA"
+            ++ "ic2VnbWVudF9saXN0IjogWzEsIDEwMDAxXX0=",
+
+    URLSrc = 
+        "http://~s:~p/buckets/~s/index/$key/~s/~s?mapfold=true&mapfoldmod=~s"
+            ++ "&mapfoldoptions=~s",
+    URL = io_lib:format(URLSrc, 
+                        [Host, Port, Bucket, KeyStart, KeyEnd, 
+                            MapFoldMod, MapFoldOpts]),
+    
+    case json_get(URL, State#state.fold_timeout, false) of
+        {ok, {struct, [{<<"deltas">>, SegL}]}} ->
+            lager:info("Segment fold returned in ~w seconds finding ~w keys",
+                      [timer:now_diff(os:timestamp(), SW)/1000000, length(SegL)]),
             {ok, State};
         {error, Reason} ->
             io:format("[~s:~p] ERROR - Reason: ~p~n",
