@@ -25,7 +25,8 @@
          run/4]).
 
 -export([run_aaequery/1,
-            run_listkeys/1]).
+            run_listkeys/1,
+            run_segmentfold/1]).
 
 -include("basho_bench.hrl").
 
@@ -45,7 +46,8 @@
                 query_logfreq :: integer(),
                 nominated_id :: boolean(),
                 % ID 1 is nominated to do special work
-                singleton_pid :: pid() | undefined
+                singleton_pid :: pid() | undefined,
+                unique_key_count :: non_neg_integer()
          }).
 
 -define(QUERYLOG_FREQ, 1000).
@@ -109,7 +111,7 @@ new(Id) ->
     ?INFO("Using pb target ~p:~p for worker ~p\n", [PBTargetIp,
                                                     PBTargetPort,
                                                     Id]),
-    
+
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
             NominatedID = Id == 1,
@@ -123,7 +125,8 @@ new(Id) ->
                http_timeout = HTTPTimeout,
                fold_timeout = FoldTimeout,
                query_logfreq = random:uniform(?QUERYLOG_FREQ),
-               nominated_id = NominatedID}};
+               nominated_id = NominatedID,
+               unique_key_count = 1}};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [PBTargetIp, PBTargetPort, Reason2])
@@ -174,10 +177,11 @@ run(update_with2i, KeyGen, ValueGen, State) ->
 %% Put an object with a unique key and a non-compressable value
 run(put_unique, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
-    Bucket = State#state.recordBucket,
+    Bucket = State#state.documentBucket,
     
-    Key = generate_uniquekey(),
-    Value = non_compressible_value(6000),
+    UKC = State#state.unique_key_count,
+    Key = generate_uniquekey(UKC),
+    Value = non_compressible_value(8000),
     
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
     MD1 = riakc_obj:get_update_metadata(Robj0),
@@ -188,6 +192,20 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     %% Write the object...
     case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
         ok ->
+            {ok, State#state{unique_key_count = UKC + 1}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(get_unique, _KeyGen, _ValueGen, State) ->    
+    % Get one of the objects with unique keys
+    Pid = State#state.pb_pid,
+    Bucket = State#state.documentBucket,
+    UKC = State#state.unique_key_count,
+    Key = generate_uniquekey(random:uniform(UKC)),
+    case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
+        {ok, _Obj} ->
+            {ok, State};
+        {error, notfound} ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
@@ -506,12 +524,14 @@ lastmodified_index() ->
     [list_to_binary(F)].
     
 
-generate_uniquekey() ->
+generate_uniquekey(Count) ->
     {{Year, Month, Day},
         {Hr, Min, Sec}} = calendar:now_to_datetime(os:timestamp()),
     F = lists:flatten(io_lib:format(?DATETIME_FORMAT,
                                         [Year, Month, Day, Hr, Min, Sec])),
-    F0 = F ++ [base64:encode_to_string(crypto:rand_bytes(4))],
+    F0 = lists:sublist(F, 10) 
+            ++ [base64:encode_to_string(crypto:rand_bytes(4))]
+            ++ integer_to_list(Count),
     list_to_binary(F0).
 
 non_compressible_value(Size) ->
