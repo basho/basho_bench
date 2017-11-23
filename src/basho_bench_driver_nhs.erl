@@ -47,7 +47,8 @@
                 nominated_id :: boolean(),
                 % ID 1 is nominated to do special work
                 singleton_pid :: pid() | undefined,
-                unique_key_count :: non_neg_integer()
+                unique_key_count :: non_neg_integer(),
+                rand_keyid = crypto:rand_bytes(4) :: binary()
          }).
 
 -define(QUERYLOG_FREQ, 1000).
@@ -180,7 +181,7 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     
     UKC = State#state.unique_key_count,
-    Key = generate_uniquekey(UKC),
+    Key = generate_uniquekey(UKC, State#state.rand_keyid),
     Value = non_compressible_value(8000),
     
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
@@ -201,7 +202,7 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
-    Key = generate_uniquekey(random:uniform(UKC)),
+    Key = generate_uniquekey(random:uniform(UKC), State#state.rand_keyid),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
             {ok, State};
@@ -524,15 +525,10 @@ lastmodified_index() ->
     [list_to_binary(F)].
     
 
-generate_uniquekey(Count) ->
-    {{Year, Month, Day},
-        {Hr, Min, Sec}} = calendar:now_to_datetime(os:timestamp()),
-    F = lists:flatten(io_lib:format(?DATETIME_FORMAT,
-                                        [Year, Month, Day, Hr, Min, Sec])),
-    F0 = lists:sublist(F, 10) 
-            ++ [base64:encode_to_string(crypto:rand_bytes(4))]
-            ++ integer_to_list(Count),
-    list_to_binary(F0).
+generate_uniquekey(Count, RandBytes) ->
+    C0 = [integer_to_list(Count)],
+    B0 = list_to_binary(lists:flatten(io_lib:format("~9..0B", C0))),
+    <<B0/binary, RandBytes/binary>>.
 
 non_compressible_value(Size) ->
     crypto:rand_bytes(Size).
