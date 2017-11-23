@@ -525,9 +525,8 @@ lastmodified_index() ->
     [list_to_binary(F)].
     
 
-generate_uniquekey(Count, RandBytes) ->
-    C0 = [integer_to_list(Count)],
-    B0 = list_to_binary(lists:flatten(io_lib:format("~9..0B", C0))),
+generate_uniquekey(C, RandBytes) ->
+    B0 = list_to_binary(lists:flatten(io_lib:format("~9..0B", [C]))),
     <<B0/binary, RandBytes/binary>>.
 
 non_compressible_value(Size) ->
