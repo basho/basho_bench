@@ -352,11 +352,11 @@ run(force_aae, KeyGen, ValueGen, State) ->
         {true, true} ->
             Host = inet_parse:ntoa(State#state.http_host),
             Port = State#state.http_port,
-            Bucket = State#state.recordBucket,
-            Key = to_binary(KeyGen()),
+            Bucket = binary_to_list(State#state.recordBucket),
+            Key = KeyGen(),
             Timeout = State#state.http_timeout,
 
-            URLSrc = "http://~s:~p/buckets/~s/keys/~s?force_aae=true",
+            URLSrc = "http://~s:~p/buckets/~s/keys/~p?force_aae=true",
             URL = io_lib:format(URLSrc, [Host, Port, Bucket, Key]),
             Target = lists:flatten(URL),
 
