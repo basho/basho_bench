@@ -48,10 +48,12 @@
                 % ID 1 is nominated to do special work
                 singleton_pid :: pid() | undefined,
                 unique_key_count :: non_neg_integer(),
-                rand_keyid = crypto:rand_bytes(4) :: binary()
+                rand_keyid = crypto:rand_bytes(4) :: binary(),
+                last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
 
 -define(QUERYLOG_FREQ, 1000).
+-define(FORCEAAE_FREQ, 10). % Every 10 seconds
 
 -define(POSTCODE_AREAS,
                 [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"}, 
@@ -343,6 +345,31 @@ run(segment_fold, _KeyGen, _ValueGen, State) ->
             {ok, State}
     end;
 
+run(force_aae, KeyGen, ValueGen, State) ->
+    SinceLastForceSec = 
+        timer:now_diff(os:timestamp(), State#state.last_forceaae)/1000000,
+    case {State#state.nominated_id, SinceLastForceSec > ?FORCEAAE_FREQ} of
+        {true, true} ->
+            Host = inet_parse:ntoa(State#state.http_host),
+            Port = State#state.http_port,
+            Bucket = State#state.recordBucket,
+            Key = to_binary(KeyGen()),
+            Timeout = State#state.http_timeout,
+
+            URLSrc = "http://~s:~p/buckets/~s/keys/~s?force_aae=true",
+            URL = io_lib:format(URLSrc, [Host, Port, Bucket, Key]),
+            Target = lists:flatten(URL),
+
+            case ibrowse:send_req(Target, [], get, [], [], Timeout) of
+                {ok, "200", _, _Body} ->
+                    {ok, State#state{last_forceaae = os:timestamp()}};
+                Other ->
+                    {error, Other, State}
+            end;
+        _ ->
+            run(get_pb, KeyGen, ValueGen, State)
+    end;
+
 run(Other, _, _, _) ->
     throw({unknown_operation, Other}).
 
@@ -452,6 +479,7 @@ run_listkeys(State) ->
                         [?MODULE, ?LINE, Reason]),
             {error, Reason, State}
     end.
+
 
 run_segmentfold(State) ->
     SW = os:timestamp(),
