@@ -122,7 +122,7 @@ new({function, Module, Function, Args}, Id)
   when is_atom(Module), is_atom(Function), is_list(Args) ->
     case code:ensure_loaded(Module) of
         {module, Module} ->
-            erlang:apply(Module, Function, [Id] ++ Args);
+            fun() -> erlang:apply(Module, Function, [Id] ++ Args) end;
         _Error ->
             ?FAIL_MSG("Could not find keygen function: ~p:~p\n", [Module, Function])
     end;
