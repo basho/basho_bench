@@ -117,7 +117,7 @@ new(Id) ->
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
-            NominatedID = Id == 1,
+            NominatedID = Id == 7,
             {ok, #state {
                pb_pid = Pid,
                http_host = HTTPTargetIp,
@@ -362,6 +362,8 @@ run(force_aae, KeyGen, ValueGen, State) ->
 
             case ibrowse:send_req(Target, [], get, [], [], Timeout) of
                 {ok, "200", _, _Body} ->
+                    {ok, State#state{last_forceaae = os:timestamp()}};
+                {ok, "404", _, _NotFound} ->
                     {ok, State#state{last_forceaae = os:timestamp()}};
                 Other ->
                     {error, Other, State}
