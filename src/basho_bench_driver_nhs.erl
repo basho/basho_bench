@@ -39,6 +39,9 @@
                 pb_timeout,
                 http_timeout,
                 fold_timeout,
+                alwaysget_perworker_maxkeycount = 1 :: integer(),
+                alwaysget_perworker_minkeycount = 1 :: integer(),
+                alwaysget_keyorder = key_order :: key_order|skew_order,
                 postcodeq_count = 0 :: integer(),
                 postcodeq_sum = 0 :: integer(),
                 dobq_count = 0 :: integer(),
@@ -47,7 +50,8 @@
                 nominated_id :: boolean(),
                 % ID 1 is nominated to do special work
                 singleton_pid :: pid() | undefined,
-                unique_key_count :: non_neg_integer(),
+                unique_key_count = 1 :: non_neg_integer(),
+                alwaysget_key_count = 1 :: non_neg_integer(),
                 rand_keyid = crypto:rand_bytes(4) :: binary(),
                 last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
@@ -115,6 +119,8 @@ new(Id) ->
                                                     PBTargetPort,
                                                     Id]),
 
+    {AGMaxKC, AGMinKC, AGKeyOrder} = bash_bench_config:get(alwaysget, {1, 1, key_order}),
+
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
             NominatedID = Id == 7,
@@ -129,7 +135,12 @@ new(Id) ->
                fold_timeout = FoldTimeout,
                query_logfreq = random:uniform(?QUERYLOG_FREQ),
                nominated_id = NominatedID,
-               unique_key_count = 1}};
+               unique_key_count = 1,
+               alwaysget_key_count = 1,
+               alwaysget_perworker_maxkeycount = AGMaxKC,
+               alwaysget_perworker_minkeycount = AGMinKC,
+               alwaysget_keyorder = AGKeyOrder
+            }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
                       [PBTargetIp, PBTargetPort, Reason2])
@@ -148,6 +159,67 @@ run(get_pb, KeyGen, _ValueGen, State) ->
         {error, Reason} ->
             {error, Reason, State}
     end;
+
+run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
+    % Get one of the objects with unique keys
+    Pid = State#state.pb_pid,
+    Bucket = State#state.documentBucket,
+    AGKC = State#state.alwaysget_key_count,
+    KeyInt = eightytwenty_keycount(AGKC),    
+    Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
+                                State#state.alwaysget_keyorder),
+
+    case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
+        {ok, _Obj} ->
+            {ok, State};
+        {error, Reason} ->
+            % not_found is not OK
+            {error, Reason, State}
+    end;
+
+run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.documentBucket,
+    AGKC = State#state.alwaysget_key_count,
+    Value = ValueGen(),
+    KeyInt = eightytwenty_keycount(AGKC),
+    AboveMin = KeyInt < State#state.alwaysget_perworker_minkeycount,
+    BelowMax = KeyInt < State#state.alwaysget_perworker_maxkeycount,
+    {Robj0, NewAGKC} = 
+        case AboveMin and BelowMax of 
+            true ->
+                % Expand the key count
+                ExpansionKey = 
+                    generate_uniquekey(AGKC + 1, State#state.rand_keyid,
+                                        State#state.alwaysget_keyorder),
+                {riakc_obj:new(Bucket, ExpansionKey),
+                    AGKC + 1};
+            false ->
+                % update an existing key
+                ExistingKey = 
+                    generate_uniquekey(KeyInt, State#state.rand_keyid,
+                                        State#state.alwaysget_keyorder),
+                {ok, Robj} =
+                    riakc_pb_socket:get(Pid, 
+                                        Bucket, ExistingKey, 
+                                        State#state.pb_timeout),
+                {Robj, AGKC}
+        end,
+    
+    MD0 = riakc_obj:get_update_metadata(Robj0),
+    MD1 = riakc_obj:clear_secondary_indexes(MD0),
+    MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
+    Robj1 = riakc_obj:update_value(Robj0, Value),
+    Robj2 = riakc_obj:update_metadata(Robj1, MD2),
+
+    %% Write the object...
+    case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
+        ok ->
+            {ok, State#state{alwaysget_key_count = NewAGKC}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
 
 %% Update an object with secondary indexes.
 run(update_with2i, KeyGen, ValueGen, State) ->
@@ -183,7 +255,7 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     
     UKC = State#state.unique_key_count,
-    Key = generate_uniquekey(UKC, State#state.rand_keyid),
+    Key = generate_uniquekey(UKC, State#state.rand_keyid, key_order),
     Value = non_compressible_value(8000),
     
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
@@ -204,7 +276,9 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
-    Key = generate_uniquekey(random:uniform(UKC), State#state.rand_keyid),
+    Key = generate_uniquekey(random:uniform(UKC),
+                                State#state.rand_keyid,
+                                key_order),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
             {ok, State};
@@ -555,11 +629,26 @@ lastmodified_index() ->
     [list_to_binary(F)].
     
 
-generate_uniquekey(C, RandBytes) ->
+generate_uniquekey(C, RandBytes, skew_order) ->
+    H0 = erlang:phash2(C),
+    <<H0:32/integer, RandBytes/binary>>;
+generate_uniquekey(C, RandBytes, key_order) ->
     B0 = list_to_binary(lists:flatten(io_lib:format("~9..0B", [C]))),
     <<B0/binary, RandBytes/binary>>.
+
 
 non_compressible_value(Size) ->
     crypto:rand_bytes(Size).
 
 
+eightytwenty_keycount(UKC) ->
+    % 80% of the time choose a key in the bottom 20% of the 
+    % result range, and 20% of the time in the upper 80% of the range
+    TwentyPoint = random:uniform(UKC div 5),
+    case random:uniform(UKC) < TwentyPoint of
+        true ->
+            random:uniform(UKC - TwentyPoint) + TwentyPoint;
+        false ->
+            random:uniform(TwentyPoint)
+    end.
+        
