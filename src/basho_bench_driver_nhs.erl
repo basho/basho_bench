@@ -633,11 +633,13 @@ lastmodified_index() ->
     
 
 generate_uniquekey(C, RandBytes, skew_order) ->
-    H0 = erlang:phash2(C),
-    <<H0:32/integer, RandBytes/binary>>;
+    H0 = convert_tolist(erlang:phash2(C)),
+    RB = convert_tolist(RandBytes),
+    <<H0/binary, RB/binary>>;
 generate_uniquekey(C, RandBytes, key_order) ->
-    B0 = list_to_binary(lists:flatten(io_lib:format("~9..0B", [C]))),
-    <<B0/binary, RandBytes/binary>>.
+    B0 = convert_tolist(C),
+    RB = convert_tolist(RandBytes),
+    <<B0/binary, RB/binary>>.
 
 
 non_compressible_value(Size) ->
@@ -654,4 +656,10 @@ eightytwenty_keycount(UKC) ->
         false ->
             random:uniform(max(1, TwentyPoint))
     end.
-        
+
+
+convert_tolist(I) when is_integer(I) ->
+    list_to_binary(lists:flatten(io_lib:format("~9..0B", [I])));
+convert_tolist(Bin) ->
+    <<I:26/integer, _Tail:6/bitstring>> = Bin,
+    convert_tolist(I).
