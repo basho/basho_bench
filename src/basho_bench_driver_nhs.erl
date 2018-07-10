@@ -163,7 +163,7 @@ run(get_pb, KeyGen, _ValueGen, State) ->
 run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     % Get one of the objects with unique keys
     Pid = State#state.pb_pid,
-    Bucket = State#state.documentBucket,
+    Bucket = State#state.recordBucket,
     AGKC = State#state.alwaysget_key_count,
     KeyInt = eightytwenty_keycount(AGKC),    
     Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
