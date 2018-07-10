@@ -119,7 +119,7 @@ new(Id) ->
                                                     PBTargetPort,
                                                     Id]),
 
-    {AGMaxKC, AGMinKC, AGKeyOrder} = bash_bench_config:get(alwaysget, {1, 1, key_order}),
+    {AGMaxKC, AGMinKC, AGKeyOrder} = basho_bench_config:get(alwaysget, {1, 1, key_order}),
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
@@ -136,7 +136,7 @@ new(Id) ->
                query_logfreq = random:uniform(?QUERYLOG_FREQ),
                nominated_id = NominatedID,
                unique_key_count = 1,
-               alwaysget_key_count = 1,
+               alwaysget_key_count = 0,
                alwaysget_perworker_maxkeycount = AGMaxKC,
                alwaysget_perworker_minkeycount = AGMinKC,
                alwaysget_keyorder = AGKeyOrder
@@ -169,17 +169,20 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
                                 State#state.alwaysget_keyorder),
 
-    case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
-        {ok, _Obj} ->
+    case {riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout), KeyInt} of
+        {{ok, _Obj}, _} ->
             {ok, State};
-        {error, Reason} ->
+        {{error, notfound}, 1} ->
+            lager:info("Not Found with KeyInt of ~w AGKC ~w", [KeyInt, AGKC]),
+            {ok, State};
+        {{error, Reason}, _KeyInt} ->
             % not_found is not OK
             {error, Reason, State}
     end;
 
 run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
     Pid = State#state.pb_pid,
-    Bucket = State#state.documentBucket,
+    Bucket = State#state.recordBucket,
     AGKC = State#state.alwaysget_key_count,
     Value = ValueGen(),
     KeyInt = eightytwenty_keycount(AGKC),
@@ -644,11 +647,11 @@ non_compressible_value(Size) ->
 eightytwenty_keycount(UKC) ->
     % 80% of the time choose a key in the bottom 20% of the 
     % result range, and 20% of the time in the upper 80% of the range
-    TwentyPoint = random:uniform(UKC div 5),
-    case random:uniform(UKC) < TwentyPoint of
+    TwentyPoint = random:uniform(max(1, UKC div 5)),
+    case random:uniform(max(1, UKC)) < TwentyPoint of
         true ->
-            random:uniform(UKC - TwentyPoint) + TwentyPoint;
+            random:uniform(UKC - TwentyPoint) + max(1, TwentyPoint);
         false ->
-            random:uniform(TwentyPoint)
+            random:uniform(max(1, TwentyPoint))
     end.
         
