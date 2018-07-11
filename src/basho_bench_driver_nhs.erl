@@ -194,7 +194,7 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
                 ExpansionKey = 
                     generate_uniquekey(AGKC + 1, State#state.rand_keyid,
                                         State#state.alwaysget_keyorder),
-                case {AGKC div 1000, State#state.nominated_id} of
+                case {AGKC rem 1000, State#state.nominated_id} of
                     {0, true} ->
                         lager:info("Always grow key count passing ~w "
                                     ++ "for nominated worker", 
