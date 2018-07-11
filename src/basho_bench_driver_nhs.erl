@@ -40,7 +40,6 @@
                 http_timeout,
                 fold_timeout,
                 alwaysget_perworker_maxkeycount = 1 :: integer(),
-                alwaysget_perworker_minkeycount = 1 :: integer(),
                 alwaysget_keyorder = key_order :: key_order|skew_order,
                 postcodeq_count = 0 :: integer(),
                 postcodeq_sum = 0 :: integer(),
@@ -119,7 +118,7 @@ new(Id) ->
                                                     PBTargetPort,
                                                     Id]),
 
-    {AGMaxKC, AGMinKC, AGKeyOrder} = basho_bench_config:get(alwaysget, {1, 1, key_order}),
+    {AGMaxKC, AGKeyOrder} = basho_bench_config:get(alwaysget, {1, key_order}),
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
@@ -138,7 +137,6 @@ new(Id) ->
                unique_key_count = 1,
                alwaysget_key_count = 0,
                alwaysget_perworker_maxkeycount = AGMaxKC,
-               alwaysget_perworker_minkeycount = AGMinKC,
                alwaysget_keyorder = AGKeyOrder
             }};
         {error, Reason2} ->
@@ -186,15 +184,24 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
     AGKC = State#state.alwaysget_key_count,
     Value = ValueGen(),
     KeyInt = eightytwenty_keycount(AGKC),
-    AboveMin = KeyInt < State#state.alwaysget_perworker_minkeycount,
-    BelowMax = KeyInt < State#state.alwaysget_perworker_maxkeycount,
+    ToExtend = 
+        random:uniform(State#state.alwaysget_perworker_maxkeycount) > AGKC,
+
     {Robj0, NewAGKC} = 
-        case AboveMin and BelowMax of 
+        case ToExtend of 
             true ->
                 % Expand the key count
                 ExpansionKey = 
                     generate_uniquekey(AGKC + 1, State#state.rand_keyid,
                                         State#state.alwaysget_keyorder),
+                case {AGKC div 1000, State#state.nominated_id} of
+                    {0, true} ->
+                        lager:info("Always grow key count passing ~w "
+                                    ++ "for nominated worker", 
+                                [AGKC]);
+                    _ ->
+                        ok
+                end,
                 {riakc_obj:new(Bucket, ExpansionKey),
                     AGKC + 1};
             false ->
