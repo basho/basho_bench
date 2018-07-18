@@ -40,6 +40,7 @@
                 http_timeout,
                 fold_timeout,
                 alwaysget_perworker_maxkeycount = 1 :: integer(),
+                alwayshet_perworker_minkeycount = 1 :: integer(),
                 alwaysget_keyorder = key_order :: key_order|skew_order,
                 postcodeq_count = 0 :: integer(),
                 postcodeq_sum = 0 :: integer(),
@@ -118,7 +119,8 @@ new(Id) ->
                                                     PBTargetPort,
                                                     Id]),
 
-    {AGMaxKC, AGKeyOrder} = basho_bench_config:get(alwaysget, {1, key_order}),
+    {AGMaxKC, AGMinKC, AGKeyOrder} = 
+        basho_bench_config:get(alwaysget, {1, 1, key_order}),
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
@@ -137,6 +139,7 @@ new(Id) ->
                unique_key_count = 1,
                alwaysget_key_count = 0,
                alwaysget_perworker_maxkeycount = AGMaxKC,
+               alwayshet_perworker_minkeycount = AGMinKC,
                alwaysget_keyorder = AGKeyOrder
             }};
         {error, Reason2} ->
@@ -163,19 +166,26 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.recordBucket,
     AGKC = State#state.alwaysget_key_count,
-    KeyInt = eightytwenty_keycount(AGKC),    
-    Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
-                                State#state.alwaysget_keyorder),
+    case AGKC > State#state.alwayshet_perworker_minkeycount of 
+        true ->
 
-    case {riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout), KeyInt} of
-        {{ok, _Obj}, _} ->
-            {ok, State};
-        {{error, notfound}, 1} ->
-            lager:info("Not Found with KeyInt of ~w AGKC ~w", [KeyInt, AGKC]),
-            {ok, State};
-        {{error, Reason}, _KeyInt} ->
-            % not_found is not OK
-            {error, Reason, State}
+            KeyInt = eightytwenty_keycount(AGKC),    
+            Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
+                                        State#state.alwaysget_keyorder),
+
+            case riakc_pb_socket:get(Pid, 
+                                        Bucket, Key, 
+                                        State#state.pb_timeout) of
+                {ok, _Obj} ->
+                    {ok, State};
+                {error, Reason} ->
+                    % not_found is not OK
+                    {error, Reason, State}
+            end;
+
+        false ->
+            {silent, State}
+        
     end;
 
 run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
