@@ -40,8 +40,10 @@
                 http_timeout,
                 fold_timeout,
                 alwaysget_perworker_maxkeycount = 1 :: integer(),
-                alwayshet_perworker_minkeycount = 1 :: integer(),
-                alwaysget_keyorder = key_order :: key_order|skew_order,
+                alwaysget_perworker_minkeycount = 1 :: integer(),
+                alwaysget_keyorder :: key_order|skew_order,
+                unique_size :: integer(),
+                unique_keyorder :: key_order|skew_order,
                 postcodeq_count = 0 :: integer(),
                 postcodeq_sum = 0 :: integer(),
                 dobq_count = 0 :: integer(),
@@ -121,6 +123,8 @@ new(Id) ->
 
     {AGMaxKC, AGMinKC, AGKeyOrder} = 
         basho_bench_config:get(alwaysget, {1, 1, key_order}),
+    {DocSize, DocKeyOrder} =
+        basho_bench_config:get(unique, {8000, key_order}),
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
@@ -139,8 +143,10 @@ new(Id) ->
                unique_key_count = 1,
                alwaysget_key_count = 0,
                alwaysget_perworker_maxkeycount = AGMaxKC,
-               alwayshet_perworker_minkeycount = AGMinKC,
-               alwaysget_keyorder = AGKeyOrder
+               alwaysget_perworker_minkeycount = AGMinKC,
+               alwaysget_keyorder = AGKeyOrder,
+               unique_size = DocSize,
+               unique_keyorder = DocKeyOrder
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
@@ -166,7 +172,7 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.recordBucket,
     AGKC = State#state.alwaysget_key_count,
-    case AGKC > State#state.alwayshet_perworker_minkeycount of 
+    case AGKC > State#state.alwaysget_perworker_minkeycount of 
         true ->
 
             KeyInt = eightytwenty_keycount(AGKC),    
@@ -275,8 +281,12 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     
     UKC = State#state.unique_key_count,
-    Key = generate_uniquekey(UKC, State#state.rand_keyid, key_order),
-    Value = non_compressible_value(8000),
+    Key = 
+        generate_uniquekey(UKC, 
+                            State#state.rand_keyid, 
+                            State#state.unique_keyorder),
+    
+    Value = non_compressible_value(State#state.unique_size),
     
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
     MD1 = riakc_obj:get_update_metadata(Robj0),
@@ -298,7 +308,7 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     UKC = State#state.unique_key_count,
     Key = generate_uniquekey(random:uniform(UKC),
                                 State#state.rand_keyid,
-                                key_order),
+                                State#state.unique_keyorder),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
             {ok, State};
