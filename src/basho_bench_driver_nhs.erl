@@ -167,6 +167,31 @@ run(get_pb, KeyGen, _ValueGen, State) ->
             {error, Reason, State}
     end;
 
+run(alwaysget_http, _KeyGen, _ValueGen, State) ->
+    Host = inet_parse:ntoa(State#state.http_host),
+    Port = State#state.http_port,
+    Bucket = State#state.recordBucket,
+    AGKC = State#state.alwaysget_key_count,
+    case AGKC > State#state.alwaysget_perworker_minkeycount of 
+        true ->
+            KeyInt = eightytwenty_keycount(AGKC),    
+            Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
+                                        State#state.alwaysget_keyorder),
+            URL = 
+                io_lib:format("http://~s:~p/buckets/~s/keys/~s", 
+                                [Host, Port, Bucket, Key]),
+
+            case get_existing(URL, State#state.http_timeout) of
+                ok ->
+                    {ok, State};
+                {error, Reason} ->
+                    % not_found is not OK
+                    {error, Reason, State}
+            end;
+        false ->
+            {silent, State}
+    end;
+
 run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     % Get one of the objects with unique keys
     Pid = State#state.pb_pid,
@@ -174,7 +199,6 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     AGKC = State#state.alwaysget_key_count,
     case AGKC > State#state.alwaysget_perworker_minkeycount of 
         true ->
-
             KeyInt = eightytwenty_keycount(AGKC),    
             Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
                                         State#state.alwaysget_keyorder),
@@ -501,6 +525,14 @@ json_get(Url, Timeout, UsePool) ->
     case Response of
         {ok, "200", _, Body} ->
             {ok, mochijson2:decode(Body)};
+        Other ->
+            {error, Other}
+    end.
+
+get_existing(Url, Timeout) ->
+    case ibrowse:send_req(lists:flatten(Url), [], get, [], [], Timeout) of
+        {ok, "200", _, _Body} ->
+            ok;
         Other ->
             {error, Other}
     end.
