@@ -54,7 +54,7 @@
                 singleton_pid :: pid() | undefined,
                 unique_key_count = 1 :: non_neg_integer(),
                 alwaysget_key_count = 1 :: non_neg_integer(),
-                rand_keyid = crypto:rand_bytes(4) :: binary(),
+                keyid :: binary(),
                 last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
 
@@ -125,6 +125,9 @@ new(Id) ->
         basho_bench_config:get(alwaysget, {1, 1, key_order}),
     {DocSize, DocKeyOrder} =
         basho_bench_config:get(unique, {8000, key_order}),
+    
+    KeyIDint = erlang:phash2(Id) bxor erlang:phash2(node()),
+    ?INFO("Using Node ID ~w to generate ID ~w\n", [node(), KeyIDint]), 
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
         {ok, Pid} ->
@@ -146,7 +149,8 @@ new(Id) ->
                alwaysget_perworker_minkeycount = AGMinKC,
                alwaysget_keyorder = AGKeyOrder,
                unique_size = DocSize,
-               unique_keyorder = DocKeyOrder
+               unique_keyorder = DocKeyOrder,
+               keyid = <<KeyIDint:32/integer>>
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
@@ -175,7 +179,7 @@ run(alwaysget_http, _KeyGen, _ValueGen, State) ->
     case AGKC > State#state.alwaysget_perworker_minkeycount of 
         true ->
             KeyInt = eightytwenty_keycount(AGKC),    
-            Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
+            Key = generate_uniquekey(KeyInt, State#state.keyid, 
                                         State#state.alwaysget_keyorder),
             URL = 
                 io_lib:format("http://~s:~p/buckets/~s/keys/~s", 
@@ -200,7 +204,7 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     case AGKC > State#state.alwaysget_perworker_minkeycount of 
         true ->
             KeyInt = eightytwenty_keycount(AGKC),    
-            Key = generate_uniquekey(KeyInt, State#state.rand_keyid, 
+            Key = generate_uniquekey(KeyInt, State#state.keyid, 
                                         State#state.alwaysget_keyorder),
 
             case riakc_pb_socket:get(Pid, 
@@ -232,7 +236,7 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
             true ->
                 % Expand the key count
                 ExpansionKey = 
-                    generate_uniquekey(AGKC + 1, State#state.rand_keyid,
+                    generate_uniquekey(AGKC + 1, State#state.keyid,
                                         State#state.alwaysget_keyorder),
                 case {AGKC rem 1000, State#state.nominated_id} of
                     {0, true} ->
@@ -247,7 +251,7 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
             false ->
                 % update an existing key
                 ExistingKey = 
-                    generate_uniquekey(KeyInt, State#state.rand_keyid,
+                    generate_uniquekey(KeyInt, State#state.keyid,
                                         State#state.alwaysget_keyorder),
                 {ok, Robj} =
                     riakc_pb_socket:get(Pid, 
@@ -307,7 +311,7 @@ run(put_unique, _KeyGen, _ValueGen, State) ->
     UKC = State#state.unique_key_count,
     Key = 
         generate_uniquekey(UKC, 
-                            State#state.rand_keyid, 
+                            State#state.keyid, 
                             State#state.unique_keyorder),
     
     Value = non_compressible_value(State#state.unique_size),
@@ -331,7 +335,7 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
     Key = generate_uniquekey(random:uniform(UKC),
-                                State#state.rand_keyid,
+                                State#state.keyid,
                                 State#state.unique_keyorder),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
