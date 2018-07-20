@@ -126,7 +126,9 @@ new(Id) ->
     {DocSize, DocKeyOrder} =
         basho_bench_config:get(unique, {8000, key_order}),
     
-    KeyIDint = erlang:phash2(Id) bxor erlang:phash2(node()),
+    NodeID = basho_bench_config:get(node_name, node()), 
+
+    KeyIDint = erlang:phash2(Id) bxor erlang:phash2(NodeID),
     ?INFO("Using Node ID ~w to generate ID ~w\n", [node(), KeyIDint]), 
 
     case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
