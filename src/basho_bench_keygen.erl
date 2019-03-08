@@ -110,6 +110,16 @@ new({uniform_int, MaxKey}, _Id)
 new({uniform_int, StartKey, NumKeys}, _Id)
   when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
     fun() -> random:uniform(NumKeys) + StartKey - 1 end;
+new({eightytwenty_int, MaxKey}, _Id) when is_integer(MaxKey), MaxKey > 0 ->
+    fun() ->
+        Step = MaxKey div 5,
+        case random:uniform() < 0.8 of
+            true ->
+                random:uniform(Step);
+            false ->
+                Step + random:uniform(Step * 4)
+        end
+    end;
 new({pareto_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE);
