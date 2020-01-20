@@ -293,6 +293,58 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
             {error, Reason, State}
     end;
 
+run(alwaysget_updatewithout2i, _KeyGen, ValueGen, State) ->
+    Pid = State#state.pb_pid,
+    Bucket = State#state.recordBucket,
+    AGKC = State#state.alwaysget_key_count,
+    Value = ValueGen(),
+    KeyInt = eightytwenty_keycount(AGKC),
+    ToExtend = 
+        random:uniform(State#state.alwaysget_perworker_maxkeycount) > AGKC,
+
+    {Robj0, NewAGKC} = 
+        case ToExtend of 
+            true ->
+                % Expand the key count
+                ExpansionKey = 
+                    generate_uniquekey(AGKC + 1, State#state.keyid,
+                                        State#state.alwaysget_keyorder),
+                case {AGKC rem 1000, State#state.nominated_id} of
+                    {0, true} ->
+                        lager:info("Always grow key count passing ~w "
+                                    ++ "for nominated worker", 
+                                [AGKC]);
+                    _ ->
+                        ok
+                end,
+                {riakc_obj:new(Bucket, ExpansionKey),
+                    AGKC + 1};
+            false ->
+                % update an existing key
+                ExistingKey = 
+                    generate_uniquekey(KeyInt, State#state.keyid,
+                                        State#state.alwaysget_keyorder),
+                {ok, Robj} =
+                    riakc_pb_socket:get(Pid, 
+                                        Bucket, ExistingKey, 
+                                        State#state.pb_timeout),
+                {Robj, AGKC}
+        end,
+    
+    % MD0 = riakc_obj:get_update_metadata(Robj0),
+    % MD1 = riakc_obj:clear_secondary_indexes(MD0),
+    % MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
+    Robj2 = riakc_obj:update_value(Robj0, Value),
+    % Robj2 = riakc_obj:update_metadata(Robj1, MD2),
+
+    %% Write the object...
+    case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
+        ok ->
+            {ok, State#state{alwaysget_key_count = NewAGKC}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+
 
 %% Update an object with secondary indexes.
 run(update_with2i, KeyGen, ValueGen, State) ->
