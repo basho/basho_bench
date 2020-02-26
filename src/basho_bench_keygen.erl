@@ -106,10 +106,10 @@ new({partitioned_sequential_int, StartKey, NumKeys}, Id)
     fun() -> sequential_int_generator(Ref, MaxValue - MinValue, Id, DisableProgress) + MinValue end;
 new({uniform_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
-    fun() -> random:uniform(MaxKey) end;
+    fun() -> rand:uniform(MaxKey) end;
 new({uniform_int, StartKey, NumKeys}, _Id)
   when is_integer(StartKey), is_integer(NumKeys), NumKeys > 0 ->
-    fun() -> random:uniform(NumKeys) + StartKey - 1 end;
+    fun() -> rand:uniform(NumKeys) + StartKey - 1 end;
 new({pareto_int, MaxKey}, _Id)
   when is_integer(MaxKey), MaxKey > 0 ->
     pareto(trunc(MaxKey * 0.2), ?PARETO_SHAPE);
@@ -224,7 +224,7 @@ pareto(Mean, Shape) ->
     S1 = (-1 / Shape),
     S2 = Mean * (Shape - 1),
     fun() ->
-            U = 1 - random:uniform(),
+            U = 1 - rand:uniform(),
             trunc((math:pow(U, S1) - 1) * S2)
     end.
 

@@ -109,7 +109,7 @@ new(Id) ->
                           content_type = CT,
                           search_queries = SearchQs,
                           query_step_interval = SearchQStepIval,
-                          start_time = erlang:now(),
+                          start_time = os:timestamp(),
                           keylist_length = KeylistLength,
                           preloaded_keys = PreloadedKeys,
                           timeout_general = get_timeout_general(),
@@ -409,7 +409,7 @@ run(search, _KeyGen, _ValueGen, #state{search_queries=SearchQs}=State) ->
 run(search_interval, _KeyGen, _ValueGen, #state{search_queries=SearchQs, start_time=StartTime, query_step_interval=Interval}=State) ->
     [{Index, Query, Options}|_] = SearchQs,
 
-    Now = erlang:now(),
+    Now = os:timestamp(),
     case timer:now_diff(Now, StartTime) of
         _MicroSec when _MicroSec > (Interval * 1000000) ->
             NewState = State#state{search_queries=roll_list(SearchQs),start_time=Now};
@@ -582,7 +582,7 @@ roll_list(List) ->
 
 mapred_valgen(_Id, MaxRand) ->
     fun() ->
-            list_to_binary(integer_to_list(random:uniform(MaxRand)))
+            list_to_binary(integer_to_list(rand:uniform(MaxRand)))
     end.
 
 %% to be used along with sequential_int keygen to populate known

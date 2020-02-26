@@ -52,7 +52,7 @@ start_link() ->
     gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
 exponential(Lambda) ->
-    -math:log(random:uniform()) / Lambda.
+    -math:log(rand:uniform()) / Lambda.
 
 run() ->
     gen_server:call({global, ?MODULE}, run).
