@@ -54,6 +54,7 @@
                 % ID 1 is nominated to do special work
                 singleton_pid :: pid() | undefined,
                 unique_key_count = 1 :: non_neg_integer(),
+                unique_key_lowcount = 1 :: non_neg_integer(),
                 alwaysget_key_count = 1 :: non_neg_integer(),
                 keyid :: binary(),
                 last_forceaae = os:timestamp() :: erlang:timestamp()
@@ -432,7 +433,8 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
-    Key = generate_uniquekey(random:uniform(UKC),
+    LKC = State#state.unique_key_lowcount,
+    Key = generate_uniquekey(LKC + random:uniform(UKC - LKC),
                                 State#state.keyid,
                                 State#state.unique_keyorder),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
@@ -442,6 +444,28 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
             {ok, State};
         {error, Reason} ->
             {error, Reason, State}
+    end;
+run(delete_unique, _KeyGen, _ValueGen, State) ->
+    %% Delete one of the unique keys, assuming that the deletions have not
+    %% caught up with the PUTs
+    Pid = State#state.pb_pid,
+    B = State#state.documentBucket,
+    UKC = State#state.unique_key_count,
+    LKC = State#state.unique_key_lowcount,
+    case LKC < UKC of
+        true ->
+            Key = generate_uniquekey(LKC,
+                                        State#state.keyid,
+                                        State#state.unique_keyorder),
+            R = riakc_pb_socket:delete(Pid, B, Key, State#state.pb_timeout),
+            case R of
+                ok ->
+                    {ok, State#state{unique_key_lowcount = LKC + 1}};
+                {error, Reason} ->
+                    {error, Reason, State#state{unique_key_lowcount = LKC + 1}}
+            end;
+        false ->
+            {ok, State}
     end;
 
 %% Query results via the HTTP interface.
