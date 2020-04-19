@@ -63,7 +63,22 @@ new({uniform_int, MaxVal}, _Id)
     fun() -> rand:uniform(MaxVal) end;
 new({uniform_int, MinVal, MaxVal}, _Id)
   when is_integer(MinVal), is_integer(MaxVal), MaxVal > MinVal ->
-    fun() -> rand:uniform(MinVal, MaxVal) end;
+    fun() -> rand:uniform(MaxVal - MinVal) + MinVal end;
+new({semi_compressible, MinSize, Mean, XLMult, XLProb}, Id)
+    when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
+    Source = init_altsource(Id),
+    fun() ->
+        R = rand:uniform(),
+        {ModMin, ModMean} = 
+            case R < XLProb of
+                true ->
+                    {XLMult * MinSize, XLMult * Mean};
+                false ->
+                    {MinSize, Mean}
+            end,
+        data_block(Source,
+                    ModMin + trunc(basho_bench_stats:exponential(1 / ModMean)))
+    end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
 
@@ -104,6 +119,54 @@ init_source(Id, Path) ->
     end,
     {?VAL_GEN_BLOB_CFG, size(Bin), Bin}.
 
+init_altsource(Id) ->
+    init_altsource(Id, basho_bench_config:get(?VAL_GEN_BLOB_CFG, undefined)).
+
+init_altsource(1, undefined) ->
+    GenRandStrFun = fun(_X) -> random:uniform(95) + 31 end,
+    RandomStrs =
+        lists:map(fun(X) ->
+                        SL = lists:map(GenRandStrFun, lists:seq(1, 128)),
+                        {X, list_to_binary(SL)}
+                    end,
+                    lists:seq(1, 16)),
+    ComboBlockFun =
+        fun(_X, Acc) ->
+            Bin1 = crypto:rand_bytes(4096),
+            Bin2 = create_random_textblock(32, RandomStrs),
+            % Both the compressible and uncompressible parts will be 
+            % 4096 bytes in size.  zlib will compress the compressible
+            % part down 3:1
+            <<Acc/binary, Bin1/binary, Bin2/binary>>
+        end,
+    Bytes = lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 8192)),
+    SourceSz = byte_size(Bytes),
+    try
+        ?TAB = ets:new(?TAB, [public, named_table]),
+        true = ets:insert(?TAB, {x, Bytes})
+    catch _:_ -> rerunning_id_1_init_source_table_already_exists
+    end,
+    ?INFO("Finished generating random source size (~w)\n", [SourceSz]),
+    {?VAL_GEN_SRC_SIZE, SourceSz, Bytes};
+init_altsource(_Id, undefined) ->
+    [{_, Bytes}] = ets:lookup(?TAB, x),
+    {?VAL_GEN_SRC_SIZE, size(Bytes), Bytes};
+init_altsource(Id, Path) ->
+    {Path, {ok, Bin}} = {Path, file:read_file(Path)},
+    if Id == 1 -> ?DEBUG("path source ~p ~p\n", [size(Bin), Path]);
+       true    -> ok
+    end,
+    {?VAL_GEN_BLOB_CFG, size(Bin), Bin}.
+
+create_random_textblock(BlockLength, RandomStrs) ->
+    GetRandomBlockFun =
+        fun(X, Acc) ->
+            Rand = random:uniform(min(X, 16)),
+            {Rand, Block} = lists:keyfind(Rand, 1, RandomStrs),
+            <<Acc/binary, Block/binary>>
+        end,
+    lists:foldl(GetRandomBlockFun, <<>>, lists:seq(1, BlockLength)).
+
 data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
     case SourceSz - BlockSize > 0 of
         true ->
@@ -115,3 +178,5 @@ data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
                   [SourceCfg, SourceSz, BlockSize]),
             Source
     end.
+    
+
