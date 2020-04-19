@@ -417,8 +417,8 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Bucket = State#state.bucket,
     L = length(?POSTCODE_AREAS),
-    {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
-    District = Area ++ integer_to_list(random:uniform(26)),
+    {_R, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
+    District = Area ++ integer_to_list(rand:uniform(26)),
     StartKey = District ++ "|" ++ "a",
     EndKey = District ++ "|" ++ "b",
     case riakc_pb_socket:get_index_range(Pid,
@@ -437,9 +437,9 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
 run(query_dob, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Bucket = State#state.bucket,
-    R = random:uniform(2500000000),
+    R = rand:uniform(2500000000),
     DOB_SK = pick_dateofbirth(R),
-    DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 3)),
+    DOB_EK = pick_dateofbirth(R + rand:uniform(86400 * 3)),
     case riakc_pb_socket:get_index_range(Pid,
                                           Bucket,
                                           <<"dateofbirth_bin">>,
@@ -741,22 +741,22 @@ generate_binary_indexes() ->
         {{binary_index, "lastmodified"}, lastmodified_index()}].
 
 postcode_index() ->
-    NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
+    NotVeryNameLikeThing = base64:encode_to_string(crypto:strong_rand_bytes(4)),
     lists:map(fun(_X) ->
                     L = length(?POSTCODE_AREAS),
-                    {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
-                    District = Area ++ integer_to_list(random:uniform(26)),
+                    {_R, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
+                    District = Area ++ integer_to_list(rand:uniform(26)),
                     F = District ++ "|" ++ NotVeryNameLikeThing,
                     list_to_binary(F) end,
-                lists:seq(1, random:uniform(3))).
+                lists:seq(1, rand:uniform(3))).
 
 dateofbirth_index() ->
     F = pick_dateofbirth() ++ "|" ++
-            base64:encode_to_string(crypto:rand_bytes(4)),
+            base64:encode_to_string(crypto:strong_rand_bytes(4)),
     [list_to_binary(F)].
 
 pick_dateofbirth() ->
-    pick_dateofbirth(random:uniform(2500000000)).
+    pick_dateofbirth(rand:uniform(2500000000)).
 
 pick_dateofbirth(Delta) ->
     {{Y, M, D},
@@ -781,7 +781,7 @@ record_2i_results(Results, State) ->
         end,
     QCount = State#state.twoi_qcount + 1,
     RCount = State#state.twoi_rcount + RCount_ThisQuery,
-    case random:uniform(?RANDOMLOG_FREQ) < QCount of
+    case rand:uniform(?RANDOMLOG_FREQ) < QCount of
         true ->
             AvgRSize = RCount / QCount,
             TS = timer:now_diff(os:timestamp(),
@@ -798,7 +798,7 @@ run_listkeys(State) ->
   lager:info("Commencing listkeys request"),
 
   Targets = State#state.singleton_targets,
-  {TargetIp, TargetPort} = lists:nth(random:uniform(length(Targets)+1),
+  {TargetIp, TargetPort} = lists:nth(rand:uniform(length(Targets)+1),
                                       Targets),
   ?INFO("Using target ~p:~p for new singleton asyncworker\n",
           [TargetIp, TargetPort]),

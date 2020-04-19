@@ -123,7 +123,7 @@ init_altsource(Id) ->
     init_altsource(Id, basho_bench_config:get(?VAL_GEN_BLOB_CFG, undefined)).
 
 init_altsource(1, undefined) ->
-    GenRandStrFun = fun(_X) -> random:uniform(95) + 31 end,
+    GenRandStrFun = fun(_X) -> rand:uniform(95) + 31 end,
     RandomStrs =
         lists:map(fun(X) ->
                         SL = lists:map(GenRandStrFun, lists:seq(1, 128)),
@@ -132,7 +132,7 @@ init_altsource(1, undefined) ->
                     lists:seq(1, 16)),
     ComboBlockFun =
         fun(_X, Acc) ->
-            Bin1 = crypto:rand_bytes(4096),
+            Bin1 = crypto:strong_rand_bytes(4096),
             Bin2 = create_random_textblock(32, RandomStrs),
             % Both the compressible and uncompressible parts will be 
             % 4096 bytes in size.  zlib will compress the compressible
@@ -161,7 +161,7 @@ init_altsource(Id, Path) ->
 create_random_textblock(BlockLength, RandomStrs) ->
     GetRandomBlockFun =
         fun(X, Acc) ->
-            Rand = random:uniform(min(X, 16)),
+            Rand = rand:uniform(min(X, 16)),
             {Rand, Block} = lists:keyfind(Rand, 1, RandomStrs),
             <<Acc/binary, Block/binary>>
         end,
