@@ -434,7 +434,7 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
     LKC = State#state.unique_key_lowcount,
-    Key = generate_uniquekey(LKC + random:uniform(UKC - LKC),
+    Key = generate_uniquekey(LKC + random:uniform(max(1, UKC - LKC))),
                                 State#state.keyid,
                                 State#state.unique_keyorder),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
