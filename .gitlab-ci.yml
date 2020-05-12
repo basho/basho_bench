@@ -1,0 +1,38 @@
+image: docker:stable
+
+services:
+  - docker:dind
+
+variables:
+  CONTAINER_IMAGE: registry.gitlab.com/$CI_PROJECT_PATH
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: tcp://localhost:2375
+  DOCKER_DRIVER: overlay2
+
+before_script:
+  - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN registry.gitlab.com
+  - apk add --update curl && rm -rf /var/cache/apk/*
+
+stages:
+  - build
+  - benchmark
+
+build:
+  stage: build
+  script:
+    - docker pull $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest || true
+    - docker build
+        --cache-from $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest
+        --tag $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHA
+        --tag $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest
+        --build-arg deployment=$CI_COMMIT_REF_NAME
+        -f Dockerfile.base .
+    - docker push $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHA
+    - docker push $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest
+
+benchmark:
+  stage: riak
+  script:
+    - set -x
+    - docker pull $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest || true
+    - docker run -it $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest 
