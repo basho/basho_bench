@@ -26,7 +26,7 @@ build:
         --tag $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHA
         --tag $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest
         --build-arg deployment=$CI_COMMIT_REF_NAME
-        -f Dockerfile.base .
+        .
     - docker push $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:$CI_COMMIT_SHA
     - docker push $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest
 
