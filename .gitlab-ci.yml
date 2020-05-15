@@ -31,7 +31,7 @@ build:
     - docker push $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest
 
 benchmark:
-  stage: riak
+  stage: benchmark
   script:
     - set -x
     - docker pull $CONTAINER_IMAGE/$CI_COMMIT_REF_NAME:latest || true
