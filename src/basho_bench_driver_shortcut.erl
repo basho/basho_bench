@@ -128,9 +128,9 @@ stop_idx(#state{backend = Backend, handle = Handle} = S) ->
     try
         stop_backend(Backend, Handle)
     catch
-        X:Y ->
+        X:Y:Z ->
             ?ERROR("Stopping Id ~p's handle ~p -> ~p ~p: ~p\n",
-                   [S#state.id, Handle, X, Y, erlang:get_stacktrace()])
+                   [S#state.id, Handle, X, Y, Z])
     end,
     S#state{handle = undefined}.
 
