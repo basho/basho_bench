@@ -26,6 +26,7 @@
 -export([count_eleveldb_keys/1, calc_bkey_to_prefidxes/4]).
 
 -include("basho_bench.hrl").
+-include("stacktrace.hrl").
 
 -record(state, { id :: integer(),
                  backend :: 'bitcask' | 'eleveldb' | 'hanoidb',
@@ -128,9 +129,9 @@ stop_idx(#state{backend = Backend, handle = Handle} = S) ->
     try
         stop_backend(Backend, Handle)
     catch
-        X:Y:Z ->
+        ?_exception_(X, Y, StackToken) ->
             ?ERROR("Stopping Id ~p's handle ~p -> ~p ~p: ~p\n",
-                   [S#state.id, Handle, X, Y, Z])
+                   [S#state.id, Handle, X, Y, ?_get_stacktrace_(StackToken)])
     end,
     S#state{handle = undefined}.
 
