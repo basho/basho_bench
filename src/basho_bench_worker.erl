@@ -213,7 +213,7 @@ worker_init(State) ->
     %% Trap exits from linked parent process; use this to ensure the driver
     %% gets a chance to cleanup
     process_flag(trap_exit, true),
-    rand:seed(State#state.rng_seed),
+    rand:seed(exsp, State#state.rng_seed),
     worker_idle_loop(State).
 
 worker_idle_loop(State) ->

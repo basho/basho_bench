@@ -161,7 +161,7 @@ new(Id) ->
                pb_timeout = PBTimeout,
                http_timeout = HTTPTimeout,
                fold_timeout = FoldTimeout,
-               query_logfreq = random:uniform(?QUERYLOG_FREQ),
+               query_logfreq = rand:uniform(?QUERYLOG_FREQ),
                nominated_id = NominatedID,
                unique_key_count = 1,
                alwaysget_key_count = 0,
@@ -249,7 +249,7 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
     Value = ValueGen(),
     KeyInt = eightytwenty_keycount(AGKC),
     ToExtend = 
-        random:uniform(State#state.alwaysget_perworker_maxkeycount) > AGKC,
+        rand:uniform(State#state.alwaysget_perworker_maxkeycount) > AGKC,
 
     {Robj0, NewAGKC} = 
         case ToExtend of 
@@ -301,7 +301,7 @@ run(alwaysget_updatewithout2i, _KeyGen, ValueGen, State) ->
     Value = ValueGen(),
     KeyInt = eightytwenty_keycount(AGKC),
     ToExtend = 
-        random:uniform(State#state.alwaysget_perworker_maxkeycount) > AGKC,
+        rand:uniform(State#state.alwaysget_perworker_maxkeycount) > AGKC,
 
     {Robj0, NewAGKC} = 
         case ToExtend of 
@@ -434,7 +434,7 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
     LKC = State#state.unique_key_lowcount,
-    Key = generate_uniquekey(LKC + random:uniform(max(1, UKC - LKC)),
+    Key = generate_uniquekey(LKC + rand:uniform(max(1, UKC - LKC)),
                                 State#state.keyid,
                                 State#state.unique_keyorder),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
@@ -475,8 +475,8 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.recordBucket,
     
     L = length(?POSTCODE_AREAS),
-    {_, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
-    District = Area ++ integer_to_list(random:uniform(26)),
+    {_, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
+    District = Area ++ integer_to_list(rand:uniform(26)),
     StartKey = District ++ "|" ++ "a",
     EndKey = District ++ "|" ++ "h",
     URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s", 
@@ -510,7 +510,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
     
-    RandYear = random:uniform(70) + 1950,
+    RandYear = rand:uniform(70) + 1950,
     DoBStart = integer_to_list(RandYear) ++ "0101",
     DoBEnd = integer_to_list(RandYear) ++ "0110",
     
@@ -820,21 +820,25 @@ generate_binary_indexes() ->
         {{binary_index, "lastmodified"}, lastmodified_index()}].
 
 postcode_index() ->
-    NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
+    NotVeryNameLikeThing = base64:encode_to_string(crypto:strong_rand_bytes(4)),
     lists:map(fun(_X) -> 
                     L = length(?POSTCODE_AREAS),
-                    {_, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
-                    District = Area ++ integer_to_list(random:uniform(26)),
+                    {_, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
+                    District = Area ++ integer_to_list(rand:uniform(26)),
                     F = District ++ "|" ++ NotVeryNameLikeThing,
                     list_to_binary(F) end,
-                lists:seq(1, random:uniform(3))).
+                lists:seq(1, rand:uniform(3))).
 
 dateofbirth_index() ->
-    Delta = random:uniform(2500000000),
+    Delta = rand:uniform(2500000000),
     {{Y, M, D},
         _} = calendar:gregorian_seconds_to_datetime(Delta + 61000000000),
-    F = lists:flatten(io_lib:format(?DATE_FORMAT, [Y, M, D])) ++ "|" ++ base64:encode_to_string(crypto:rand_bytes(4)),
-    [list_to_binary(F)].
+    F = 
+        lists:flatten(
+            io_lib:format(?DATE_FORMAT, 
+                [Y, M, D])) ++ "|" ++ 
+                base64:encode_to_string(crypto:strong_rand_bytes(4)),
+            [list_to_binary(F)].
 
 lastmodified_index() ->
     {{Year, Month, Day},
@@ -855,18 +859,18 @@ generate_uniquekey(C, RandBytes, key_order) ->
 
 
 non_compressible_value(Size) ->
-    crypto:rand_bytes(Size).
+    crypto:strong_rand_bytes(Size).
 
 
 eightytwenty_keycount(UKC) ->
     % 80% of the time choose a key in the bottom 20% of the 
     % result range, and 20% of the time in the upper 80% of the range
-    TwentyPoint = random:uniform(max(1, UKC div 5)),
-    case random:uniform(max(1, UKC)) < TwentyPoint of
+    TwentyPoint = rand:uniform(max(1, UKC div 5)),
+    case rand:uniform(max(1, UKC)) < TwentyPoint of
         true ->
-            random:uniform(UKC - TwentyPoint) + max(1, TwentyPoint);
+            rand:uniform(UKC - TwentyPoint) + max(1, TwentyPoint);
         false ->
-            random:uniform(max(1, TwentyPoint))
+            rand:uniform(max(1, TwentyPoint))
     end.
 
 

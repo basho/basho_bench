@@ -100,7 +100,7 @@ new(ID) ->
          length(OpsList) > 1 of
         true ->
             lager:log(
-              warn, self(),
+              warning, self(),
               "Mixing delete and non-delete operations together with "
               "~p measurements unit can yield nonsense results!\n\n",
               [RF_name]);

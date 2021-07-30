@@ -192,7 +192,7 @@ run({team, write}, KeyGen, _ValueGen, State) ->
                        list_to_binary("Team " ++ Key), R)
                end, Map0),
     Result = riakc_pb_socket:update_type(State#state.pid,
-             State#state.bucket, Key, riakc_map:to_op(Map)),
+             State#state.bucket, list_to_binary(Key), riakc_map:to_op(Map)),
     case Result of
         ok ->
             {ok, State};
@@ -209,7 +209,7 @@ run({team, read}, KeyGen, ValueGen, State) ->
     Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket,
-                                        Key,
+                                        list_to_binary(Key),
                                         Options),
     case Result of
         {ok, _} ->
@@ -228,7 +228,7 @@ run({team, player, removal}, KeyGen, ValueGen, State) ->
     Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket,
-                                        Key,
+                                        list_to_binary(Key),
                                         Options),
     case Result of
         {ok, M0} ->
@@ -243,8 +243,11 @@ run({team, player, removal}, KeyGen, ValueGen, State) ->
                                    riakc_set:del_element(
                                      Value, R)
                                end, M0),
-                    Result2 = riakc_pb_socket:update_type(State#state.pid,
-                                     State#state.bucket, Key, riakc_map:to_op(M1)),
+                    Result2 = 
+                        riakc_pb_socket:update_type(State#state.pid,
+                                State#state.bucket, 
+                                list_to_binary(Key),
+                                riakc_map:to_op(M1)),
                     case Result2 of
                         ok ->
                             {ok, State};
@@ -277,7 +280,7 @@ run({team, player, addition}, KeyGen, ValueGen, State) ->
                                         riakc_set:add_element(list_to_binary(Value), S)
                                     end, M)
                      end,
-                     State#state.bucket, Key, [create]),
+                     State#state.bucket, list_to_binary(Key), [create]),
     case Result of
         ok ->
             {ok, State};
@@ -300,7 +303,8 @@ run({game, completed}, KeyGen, ValueGen, State) ->
                                         riakc_counter:increment(Value, C)
                                     end, M)
                      end,
-                     State#state.bucket, Key, [create]),
+                     State#state.bucket, 
+                    list_to_binary(Key), [create]),
     case Result of
         ok ->
             {ok, State};
@@ -417,8 +421,8 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Bucket = State#state.bucket,
     L = length(?POSTCODE_AREAS),
-    {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
-    District = Area ++ integer_to_list(random:uniform(26)),
+    {_R, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
+    District = Area ++ integer_to_list(rand:uniform(26)),
     StartKey = District ++ "|" ++ "a",
     EndKey = District ++ "|" ++ "b",
     case riakc_pb_socket:get_index_range(Pid,
@@ -437,9 +441,9 @@ run(query_postcode, _KeyGen, _ValueGen, State) ->
 run(query_dob, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pid,
     Bucket = State#state.bucket,
-    R = random:uniform(2500000000),
+    R = rand:uniform(2500000000),
     DOB_SK = pick_dateofbirth(R),
-    DOB_EK = pick_dateofbirth(R + random:uniform(86400 * 3)),
+    DOB_EK = pick_dateofbirth(R + rand:uniform(86400 * 3)),
     case riakc_pb_socket:get_index_range(Pid,
                                           Bucket,
                                           <<"dateofbirth_bin">>,
@@ -741,22 +745,22 @@ generate_binary_indexes() ->
         {{binary_index, "lastmodified"}, lastmodified_index()}].
 
 postcode_index() ->
-    NotVeryNameLikeThing = base64:encode_to_string(crypto:rand_bytes(4)),
+    NotVeryNameLikeThing = base64:encode_to_string(crypto:strong_rand_bytes(4)),
     lists:map(fun(_X) ->
                     L = length(?POSTCODE_AREAS),
-                    {_R, Area} = lists:keyfind(random:uniform(L), 1, ?POSTCODE_AREAS),
-                    District = Area ++ integer_to_list(random:uniform(26)),
+                    {_R, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
+                    District = Area ++ integer_to_list(rand:uniform(26)),
                     F = District ++ "|" ++ NotVeryNameLikeThing,
                     list_to_binary(F) end,
-                lists:seq(1, random:uniform(3))).
+                lists:seq(1, rand:uniform(3))).
 
 dateofbirth_index() ->
     F = pick_dateofbirth() ++ "|" ++
-            base64:encode_to_string(crypto:rand_bytes(4)),
+            base64:encode_to_string(crypto:strong_rand_bytes(4)),
     [list_to_binary(F)].
 
 pick_dateofbirth() ->
-    pick_dateofbirth(random:uniform(2500000000)).
+    pick_dateofbirth(rand:uniform(2500000000)).
 
 pick_dateofbirth(Delta) ->
     {{Y, M, D},
@@ -781,7 +785,7 @@ record_2i_results(Results, State) ->
         end,
     QCount = State#state.twoi_qcount + 1,
     RCount = State#state.twoi_rcount + RCount_ThisQuery,
-    case random:uniform(?RANDOMLOG_FREQ) < QCount of
+    case rand:uniform(?RANDOMLOG_FREQ) < QCount of
         true ->
             AvgRSize = RCount / QCount,
             TS = timer:now_diff(os:timestamp(),
@@ -798,7 +802,7 @@ run_listkeys(State) ->
   lager:info("Commencing listkeys request"),
 
   Targets = State#state.singleton_targets,
-  {TargetIp, TargetPort} = lists:nth(random:uniform(length(Targets)+1),
+  {TargetIp, TargetPort} = lists:nth(rand:uniform(length(Targets)+1),
                                       Targets),
   ?INFO("Using target ~p:~p for new singleton asyncworker\n",
           [TargetIp, TargetPort]),
