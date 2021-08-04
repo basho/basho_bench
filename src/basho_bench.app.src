@@ -6,14 +6,7 @@
   {applications, [kernel,
                   stdlib,
                   sasl,
-                  getopt,
-                  ibrowse,
-                  lager,
-                  mochiweb,
-                  riakc,
-                  folsom,
-                  bitcask,
-                  eleveldb]},
+                  lager]},
   {mod, {basho_bench_app, []}},
   {env, [
 	 %% Run mode: How should basho_bench started as a separate node, or part of an 

@@ -82,8 +82,9 @@ init([]) ->
     process_flag(trap_exit, true),
     process_flag(priority, high),
 
-    %% Spin up folsom
-    folsom:start(),
+    %% Spin up folsom, but check bear is started
+    {ok, _} = application:ensure_all_started(bear),
+    ok = folsom:start(),
 
     %% Initialize an ETS table to track error and crash counters during
     %% reporting interval
