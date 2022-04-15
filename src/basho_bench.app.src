@@ -5,14 +5,13 @@
   {registered, [ basho_bench_sup ]},
   {applications, [kernel,
                   stdlib,
-                  sasl,
-                  lager]},
+                  sasl]},
   {mod, {basho_bench_app, []}},
   {env, [
-	 %% Run mode: How should basho_bench started as a separate node, or part of an 
-	 %% other node. The default is standalone, other option is included.
-	 {app_run_mode, standalone},
-	 
+         %% Run mode: How should basho_bench started as a separate node, or part of an
+         %% other node. The default is standalone, other option is included.
+         {app_run_mode, standalone},
+
          %%
          %% Mode of load generation:
          %% max - Generate as many requests as possible per worker

@@ -23,6 +23,7 @@
 
 -export([main/1, md5/1]).
 -include("basho_bench.hrl").
+-include_lib("kernel/include/logger.hrl").
 
 %% ====================================================================
 %% API
@@ -56,28 +57,9 @@ main(Args) ->
     {ok, _Pid} = basho_bench_config:start_link(),
     basho_bench_config:set(test_id, BenchName),
 
-    application:load(lager),
-    ConsoleLagerLevel = basho_bench_config:get(log_level, debug),
-    ErrorLog = filename:join([TestDir, "error.log"]),
-    ConsoleLog = filename:join([TestDir, "console.log"]),
-    CrashLog = filename:join([TestDir, "crash.log"]),
-    application:set_env(lager,
-                        handlers,
-                        [{lager_console_backend, ConsoleLagerLevel},
-                         {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
-                         {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
-                        ]),
-    application:set_env(lager, crash_log, CrashLog),
-    lager:start(),
-
     %% Make sure this happens after starting lager or failures wont
     %% show.
     basho_bench_config:load(Configs),
-
-    %% Log level can be overriden by the config files
-    CustomLagerLevel = basho_bench_config:get(log_level),
-    lager:set_loglevel(lager_console_backend, CustomLagerLevel),
-    lager:set_loglevel(lager_file_backend, ConsoleLog, CustomLagerLevel),
 
     %% Init code path
     add_code_paths(basho_bench_config:get(code_paths, [])),
@@ -94,7 +76,7 @@ main(Args) ->
     %% Copy the config into the test dir for posterity
     [ begin {ok, _} = file:copy(Config, filename:join(TestDir, filename:basename(Config))) end
       || Config <- Configs ],
-    case basho_bench_config:get(distribute_work, false) of 
+    case basho_bench_config:get(distribute_work, false) of
         true -> setup_distributed_work();
         false -> ok
     end,
@@ -288,8 +270,8 @@ get_addr_args() ->
     StrAddrs = [inet:ntoa(Addr) || Addr <- Addrs],
     string:join(StrAddrs, " ").
 setup_distributed_work() ->
-    case node() of 
-        'nonode@nohost' -> 
+    case node() of
+        'nonode@nohost' ->
             ?STD_ERR("Basho bench not started in distributed mode, and distribute_work = true~n", []),
             halt(1);
         _ -> ok
@@ -307,13 +289,13 @@ setup_distributed_work() ->
     [pool:attach(SlaveName) || SlaveName <- SlaveNames],
     CodePaths = code:get_path(),
     rpc:multicall(SlaveNames, code, set_path, [CodePaths]),
-    Apps = [lager, basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, goldrush],
+    Apps = [basho_bench, getopt, bear, folsom, ibrowse, riakc, riak_pb, mochiweb, protobuffs, goldrush],
     [distribute_app(App) || App <- Apps].
 
 
 deploy_module(Module) ->
-    case basho_bench_config:get(distribute_work, false) of 
-        true -> 
+    case basho_bench_config:get(distribute_work, false) of
+        true ->
             Nodes = nodes(),
             {Module, Binary, Filename} = code:get_object_code(Module),
             rpc:multicall(Nodes, code, load_binary, [Module, Filename, Binary]);
@@ -330,19 +312,19 @@ distribute_app(App) ->
     EbinsDir = lists:filter(fun(CodePathDir) -> string:substr(CodePathDir, 1, LibDirLen) ==  LibDir end, code:get_path()),
     StripEndFun = fun(Path) ->
         PathLen = string:len(Path),
-        case string:substr(Path, PathLen - string:len(CodeExtension) + 1, string:len(Path)) of 
+        case string:substr(Path, PathLen - string:len(CodeExtension) + 1, string:len(Path)) of
             CodeExtension ->
                 {true, string:substr(Path, 1, PathLen - string:len(CodeExtension))};
             _ -> false
         end
-    end, 
+    end,
     EbinDirDistributeFun = fun(EbinDir) ->
         {ok, Beams} = erl_prim_loader:list_dir(EbinDir),
         Modules = lists:filtermap(StripEndFun, Beams),
         ModulesLoaded = [code:load_abs(filename:join(EbinDir, ModFileName)) || ModFileName <- Modules],
         lists:foreach(fun({module, Module}) -> deploy_module(Module) end, ModulesLoaded)
     end,
-    lists:foreach(EbinDirDistributeFun, EbinsDir),    
+    lists:foreach(EbinDirDistributeFun, EbinsDir),
     ok.
 %% just a utility, should be in basho_bench_utils.erl
 %% but 's' is for multiple utilities, and so far this

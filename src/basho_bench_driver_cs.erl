@@ -26,6 +26,8 @@
 
 -module(basho_bench_driver_cs).
 
+-include_lib("kernel/include/logger.hrl").
+
 -define(BLOCK, (1024*1024)).
 -define(VERYLONG_TIMEOUT, (300*1000)).
 -define(REPORTFUN_APPKEY, report_fun).
@@ -76,7 +78,7 @@ new(ID) ->
             N = mb_sec   -> {N, fun(X) -> X / (1000 * 1000) end};
             N = mib_sec  -> {N, fun(X) -> X / (1024 * 1024) end};
             _ ->
-                lager:log(
+                logger:log(
                   error, self(),
                   "Unrecognized value for cs_measurement_units.\n", []),
                 exit(unrecognized_value)
@@ -84,7 +86,7 @@ new(ID) ->
     if ID == 1 ->
             application:start(ibrowse),
             application:start(crypto),
-            lager:log(info, self(), "Reporting factor = ~p\n", [RF_name]);
+            logger:log(info, self(), "Reporting factor = ~p\n", [RF_name]);
        true ->
             ok
     end,
@@ -99,7 +101,7 @@ new(ID) ->
          lists:keymember(delete, 1, OpsList) andalso
          length(OpsList) > 1 of
         true ->
-            lager:log(
+            logger:log(
               warning, self(),
               "Mixing delete and non-delete operations together with "
               "~p measurements unit can yield nonsense results!\n\n",
@@ -123,9 +125,9 @@ new(ID) ->
     {ProxyH, ProxyP} = lists:nth((ID rem length(ProxyTargets)+1), ProxyTargets),
     ID_max = 30,
     if ID == ID_max ->
-            lager:log(info, self(), "Suppressing additional proxy info", []);
+            logger:log(info, self(), "Suppressing additional proxy info", []);
        ID < ID_max ->
-            lager:log(info, self(), "ID ~p Proxy host ~p TCP port ~p\n",
+            logger:log(info, self(), "ID ~p Proxy host ~p TCP port ~p\n",
                       [ID, ProxyH, ProxyP]);
        true ->
             ok
@@ -253,7 +255,7 @@ perhaps_sleep() ->
 
 bigfile_valgen(Id, Props) ->
     if Id == 1 ->
-            lager:log(info, self(), "~p value gen props: ~p\n", [?MODULE, Props]);
+            logger:log(info, self(), "~p value gen props: ~p\n", [?MODULE, Props]);
        true ->
             ok
     end,
@@ -312,7 +314,7 @@ insert(KeyGen, ValueGen, {Host, Port}, Bucket, State) ->
                 %% tell us its content length.
                 {ValueGen, ValFunc(get_content_length)};
             _ ->
-                lager:log(
+                logger:log(
                   error, self(),
                   "This driver cannot use the standard basho_bench "
                   "generator functions, please see refer to "
@@ -615,7 +617,7 @@ setup_user_and_bucket(State) ->
             DisplayName = basho_bench_config:get(cs_display_name, "test-user"),
             ok = maybe_create_user(DisplayName, State),
             {ok, {_DisplayName, KeyId, KeySecret}} = fetch_user_info(DisplayName, State),
-            lager:info("Target User: ~p", [{DisplayName, KeyId, KeySecret}]),
+            logger:info("Target User: ~p", [{DisplayName, KeyId, KeySecret}]),
             ok = basho_bench_config:set(cs_access_key, KeyId),
             ok = basho_bench_config:set(cs_secret_key, KeySecret);
         _ ->
@@ -631,10 +633,10 @@ maybe_create_user(DisplayName, #state{hosts=Hosts} = State) ->
     Headers = [{'Content-Type', 'application/json'}],
     case send_request({Host, Port}, Url, Headers, post, Json, proxy_opts(State)) of
         {ok, "201", _Header, Body} ->
-            lager:debug("User created: ~p~n", [Body]),
+            logger:debug("User created: ~p~n", [Body]),
             ok;
         {ok, "409", _Header, Body} ->
-            lager:debug("User already exists: ~p~n", [Body]),
+            logger:debug("User already exists: ~p~n", [Body]),
             ok;
         {ok, Code, Header, Body} ->
             {error, {user_creation, Code, Header, Body}};
@@ -688,12 +690,12 @@ maybe_create_bucket(Bucket, #state{hosts=Hosts} = State) ->
     Url = url(Host, Port, Bucket, undefined),
     case send_request({Host, Port}, Url, [], put, [], proxy_opts(State)) of
         {ok, "200", _Headers, _Body} ->
-            lager:debug("Bucket created (maybe): ~p~n", [Bucket]),
+            logger:debug("Bucket created (maybe): ~p~n", [Bucket]),
             ok;
         {ok, Code, Header, Body} ->
-            lager:error("Create bucket: ~p~n", [{Code, Header, Body}]),
+            logger:error("Create bucket: ~p~n", [{Code, Header, Body}]),
             {error, {bucket_creation, Code, Header, Body}};
         {error, Reason} ->
-            lager:error("Create bucket: ~p~n", [Reason]),
+            logger:error("Create bucket: ~p~n", [Reason]),
             {error, {bucket_creation, Reason}}
     end.

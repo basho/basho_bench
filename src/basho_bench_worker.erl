@@ -53,10 +53,10 @@
 %% ====================================================================
 
 start_link(SupChild, Id) ->
-    case basho_bench_config:get(distribute_work, false) of 
-        true -> 
+    case basho_bench_config:get(distribute_work, false) of
+        true ->
             start_link_distributed(SupChild, Id);
-        false -> 
+        false ->
             start_link_local(SupChild, Id)
     end.
 
