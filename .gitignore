@@ -1,11 +1,10 @@
 _build/
+rebar.lock
 ebin/
-deps/
 tests/
 /basho_bench
 /rel/basho_bench
 package
-.rebar
 *~
 #*#
 .DS_Store

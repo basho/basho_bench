@@ -1,6 +1,6 @@
 %% -------------------------------------------------------------------
 %%
-%% basho_bench: benchmark service on any within Erlang cluster 
+%% basho_bench: benchmark service on any within Erlang cluster
 %%              using distribution protocol
 %%
 %% Copyright (c) 2015 Dmitry Kolesnikov
@@ -27,6 +27,8 @@
    run/4
 ]).
 
+-include_lib("kernel/include/logger.hrl").
+
 -record(state, {actor}).
 
 %% ====================================================================
@@ -39,11 +41,11 @@ new(Id) ->
     {Name, Node} = Actor = lists:nth(Nth, Actors),
     case net_adm:ping(Node) of
         pang ->
-            lager:error("~s is not available", [Node]),
+            logger:error("~s is not available", [Node]),
             {ok, #state{actor = undefined}};
 
         pong ->
-            lager:info("worker ~b is bound to ~s on ~s", [Id, Name, Node]),
+            logger:info("worker ~b is bound to ~s on ~s", [Id, Name, Node]),
             {ok, #state{actor = Actor}}
     end.
 
