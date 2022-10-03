@@ -106,6 +106,13 @@ new(Id) ->
     HTTPTimeout = basho_bench_config:get(http_timeout_general, 30*1000),
     FoldTimeout = basho_bench_config:get(fold_timeout_general, 60*60*1000),
 
+    RecordBucket = 
+        list_to_binary(
+            basho_bench_config:get(record_bucket, "domainRecord")),
+    DocumentBucket =
+        list_to_binary(
+            basho_bench_config:get(document_bucket, "domainDocument")),
+
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
     {HTTPTargetIp,
@@ -156,8 +163,8 @@ new(Id) ->
                repl_pid = ReplPid,
                http_host = HTTPTargetIp,
                http_port = HTTPTargetPort,
-               recordBucket = <<"domainRecord">>,
-               documentBucket = <<"domainDocument">>,
+               recordBucket = RecordBucket,
+               documentBucket = DocumentBucket,
                pb_timeout = PBTimeout,
                http_timeout = HTTPTimeout,
                fold_timeout = FoldTimeout,
@@ -473,13 +480,13 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
-    
+
     L = length(?POSTCODE_AREAS),
     {_, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
     District = Area ++ integer_to_list(rand:uniform(26)),
-    StartKey = District ++ "|" ++ "a",
-    EndKey = District ++ "|" ++ "h",
-    URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s", 
+    StartKey = District ++ "|" ++ "ga",
+    EndKey = District ++ "|" ++ "gd",
+    URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s",
                     [Host, Port, Bucket, StartKey, EndKey]),
 
     case json_get(URL, State#state.http_timeout) of
@@ -510,9 +517,10 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
     
-    RandYear = rand:uniform(70) + 1950,
-    DoBStart = integer_to_list(RandYear) ++ "0101",
-    DoBEnd = integer_to_list(RandYear) ++ "0110",
+    RandYear = integer_to_list(rand:uniform(70) + 1950),
+    RandMonth = integer_to_list(rand:uniform(9)),
+    DoBStart = RandYear ++ "0" ++ RandMonth ++ "04",
+    DoBEnd = RandYear ++ "0" ++ RandMonth ++ "05",
     
     URLSrc = 
         "http://~s:~p/buckets/~s/index/dateofbirth_bin/~s/~s?term_regex=~s",
