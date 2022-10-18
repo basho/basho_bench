@@ -60,7 +60,7 @@
                 last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
 
--define(QUERYLOG_FREQ, 1000).
+-define(QUERYLOG_FREQ, 10000).
 -define(FORCEAAE_FREQ, 10). % Every 10 seconds
 
 -define(POSTCODE_AREAS,
@@ -484,7 +484,9 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     L = length(?POSTCODE_AREAS),
     {_, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
     District = Area ++ integer_to_list(rand:uniform(26)),
-    StartKey = District ++ "|" ++ "ga",
+    StartPoints = ["ba", "ca", "da", "ea", "fa", "ga", "gb", "gc"],
+    StartPoint = lists:nth(rand:uniform(length(StartPoints)), StartPoints),
+    StartKey = District ++ "|" ++ StartPoint,
     EndKey = District ++ "|" ++ "gd",
     URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s",
                     [Host, Port, Bucket, StartKey, EndKey]),
