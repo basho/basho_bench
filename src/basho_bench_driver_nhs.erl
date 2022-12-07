@@ -116,9 +116,11 @@ new(Id) ->
     PostCodeIndexCount =
             basho_bench_config:get(postcode_indexcount, 3),
     RecordSyncOnWrite =
-        basho_bench_config:get(record_sync, "one"),
+        list_to_binary(
+            basho_bench_config:get(record_sync, "one")),
     DocumentSyncOnWrite =
-        basho_bench_config:get(document_sync, "backend"),
+        list_to_binary(
+            basho_bench_config:get(document_sync, "backend")),
     
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
@@ -145,45 +147,60 @@ new(Id) ->
     {DocSize, DocKeyOrder} =
         basho_bench_config:get(unique, {8000, key_order}),
     
-    NodeID = basho_bench_config:get(node_name, node()), 
+    NodeID = basho_bench_config:get(node_name, node()),
+    Host = inet_parse:ntoa(HTTPTargetIp),
     URLFun =
         fun(Bucket) ->
-            io_lib:format("http://~s:~p/buckets/~s/props",
-                [HTTPTargetIp, HTTPTargetPort, Bucket])
+            lists:flatten(
+                io_lib:format("http://~s:~p/buckets/~s/props",
+                    [Host, HTTPTargetPort, Bucket]))
         end,
 
     case Id of
         1 ->
             ?INFO("Node ID 1 to set bucket properties", []),
-            ?INFO("Setting bucket properties for Record Bucket", []),
-            NodeConfirms = "{'props':{'node_confirms':2}}",
+            ?INFO(
+                "Setting bucket properties for Record using ~s", 
+                [URLFun(RecordBucket)]),
+            NodeConfirms =
+                mochijson2:encode(
+                    {struct,
+                        [{<<"props">>,
+                            {struct,
+                                lists:flatten(
+                                    [{<<"node_confirms">>, 2}])
+                                }}]}),
             SyncOnWriteFun =
                 fun(SyncSetting) ->
-                    lists:flatten(
-                        io_lib:format(
-                            "{'props':{'sync_on_write':~s}}",
-                            [SyncSetting]))
+                    mochijson2:encode(
+                        {struct,
+                            [{<<"props">>,
+                                {struct,
+                                    lists:flatten(
+                                        [{<<"sync_on_write">>, SyncSetting}])
+                                    }}]})
                 end,
+            ?INFO("Setting node_confirms using ~p", [NodeConfirms]),
             ibrowse:send_req(
                 URLFun(RecordBucket),
-                ["Content-Type", "application/json"],
-                post,
+                [{"Content-Type", "application/json"}],
+                put,
                 NodeConfirms),
             ibrowse:send_req(
                 URLFun(RecordBucket),
-                ["Content-Type", "application/json"],
-                post,
+                [{"Content-Type", "application/json"}],
+                put,
                 SyncOnWriteFun(RecordSyncOnWrite)),
             ?INFO("Setting bucket properties for Document Bucket", []),
             ibrowse:send_req(
                 URLFun(DocumentBucket),
-                ["Content-Type", "application/json"],
-                post,
+                [{"Content-Type", "application/json"}],
+                put,
                 NodeConfirms),
             ibrowse:send_req(
                 URLFun(DocumentBucket),
-                ["Content-Type", "application/json"],
-                post,
+                [{"Content-Type", "application/json"}],
+                put,
                 SyncOnWriteFun(DocumentSyncOnWrite));
         _ ->
             ok
