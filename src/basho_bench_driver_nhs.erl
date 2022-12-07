@@ -121,6 +121,7 @@ new(Id) ->
     DocumentSyncOnWrite =
         list_to_binary(
             basho_bench_config:get(document_sync, "backend")),
+    NodeConfirms = basho_bench_config:get(node_confirms, 2),
     
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
@@ -162,13 +163,13 @@ new(Id) ->
             ?INFO(
                 "Setting bucket properties for Record using ~s", 
                 [URLFun(RecordBucket)]),
-            NodeConfirms =
+            NodeConfirmsJ =
                 mochijson2:encode(
                     {struct,
                         [{<<"props">>,
                             {struct,
                                 lists:flatten(
-                                    [{<<"node_confirms">>, 2}])
+                                    [{<<"node_confirms">>, NodeConfirms}])
                                 }}]}),
             SyncOnWriteFun =
                 fun(SyncSetting) ->
@@ -185,7 +186,7 @@ new(Id) ->
                 URLFun(RecordBucket),
                 [{"Content-Type", "application/json"}],
                 put,
-                NodeConfirms),
+                NodeConfirmsJ),
             ibrowse:send_req(
                 URLFun(RecordBucket),
                 [{"Content-Type", "application/json"}],
@@ -196,7 +197,7 @@ new(Id) ->
                 URLFun(DocumentBucket),
                 [{"Content-Type", "application/json"}],
                 put,
-                NodeConfirms),
+                NodeConfirmsJ),
             ibrowse:send_req(
                 URLFun(DocumentBucket),
                 [{"Content-Type", "application/json"}],
