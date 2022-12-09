@@ -45,6 +45,7 @@
                 alwaysget_keyorder :: key_order|skew_order,
                 unique_size :: integer(),
                 unique_keyorder :: key_order|skew_order,
+                postcode_indexcount = 3 :: pos_integer(),
                 postcodeq_count = 0 :: integer(),
                 postcodeq_sum = 0 :: integer(),
                 dobq_count = 0 :: integer(),
@@ -60,7 +61,7 @@
                 last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
 
--define(QUERYLOG_FREQ, 1000).
+-define(QUERYLOG_FREQ, 10000).
 -define(FORCEAAE_FREQ, 10). % Every 10 seconds
 
 -define(POSTCODE_AREAS,
@@ -106,27 +107,39 @@ new(Id) ->
     HTTPTimeout = basho_bench_config:get(http_timeout_general, 30*1000),
     FoldTimeout = basho_bench_config:get(fold_timeout_general, 60*60*1000),
 
+    RecordBucket = 
+        list_to_binary(
+            basho_bench_config:get(record_bucket, "domainRecord")),
+    DocumentBucket =
+        list_to_binary(
+            basho_bench_config:get(document_bucket, "domainDocument")),
+    PostCodeIndexCount =
+            basho_bench_config:get(postcode_indexcount, 3),
+    RecordSyncOnWrite =
+        list_to_binary(
+            basho_bench_config:get(record_sync, "one")),
+    DocumentSyncOnWrite =
+        list_to_binary(
+            basho_bench_config:get(document_sync, "backend")),
+    NodeConfirms = basho_bench_config:get(node_confirms, 2),
+    
     %% Choose the target node using our ID as a modulus
     HTTPTargets = basho_bench_config:normalize_ips(HTTPIPs, HTTPPort),
-    {HTTPTargetIp,
-        HTTPTargetPort} = lists:nth((Id rem length(HTTPTargets) + 1),
-                                        HTTPTargets),
-    ?INFO("Using http target ~p:~p for worker ~p\n", [HTTPTargetIp,
-                                                        HTTPTargetPort,
-                                                        Id]),
+    {HTTPTargetIp, HTTPTargetPort} =
+        lists:nth((Id rem length(HTTPTargets) + 1), HTTPTargets),
+    ?INFO("Using http target ~p:~p for worker ~p\n",
+            [HTTPTargetIp, HTTPTargetPort, Id]),
 
     %% Choose the target node using our ID as a modulus
     PBTargets = basho_bench_config:normalize_ips(PBIPs, PBPort),
-    {PBTargetIp,
-        PBTargetPort} = lists:nth((Id rem length(PBTargets) + 1),
-                                    PBTargets),
-    ?INFO("Using pb target ~p:~p for worker ~p\n", [PBTargetIp,
-                                                    PBTargetPort,
-                                                    Id]),
+    {PBTargetIp, PBTargetPort} =
+        lists:nth((Id rem length(PBTargets) + 1), PBTargets),
+    ?INFO("Using pb target ~p:~p for worker ~p\n",
+            [PBTargetIp, PBTargetPort, Id]),
+    
     ReplTargets = basho_bench_config:normalize_ips(ReplPBIPs, PBPort),
-    {ReplTargetIp,
-        ReplTargetPort} = lists:nth((Id rem length(ReplTargets) + 1),
-                                    ReplTargets),
+    {ReplTargetIp, ReplTargetPort} =
+        lists:nth((Id rem length(ReplTargets) + 1), ReplTargets),
     ?INFO("Using repl target ~p:~p for worker ~p\n", 
             [ReplTargetIp, ReplTargetPort, Id]),
 
@@ -135,7 +148,64 @@ new(Id) ->
     {DocSize, DocKeyOrder} =
         basho_bench_config:get(unique, {8000, key_order}),
     
-    NodeID = basho_bench_config:get(node_name, node()), 
+    NodeID = basho_bench_config:get(node_name, node()),
+    Host = inet_parse:ntoa(HTTPTargetIp),
+    URLFun =
+        fun(Bucket) ->
+            lists:flatten(
+                io_lib:format("http://~s:~p/buckets/~s/props",
+                    [Host, HTTPTargetPort, Bucket]))
+        end,
+
+    case Id of
+        1 ->
+            ?INFO("Node ID 1 to set bucket properties", []),
+            ?INFO(
+                "Setting bucket properties for Record using ~s", 
+                [URLFun(RecordBucket)]),
+            NodeConfirmsJ =
+                mochijson2:encode(
+                    {struct,
+                        [{<<"props">>,
+                            {struct,
+                                lists:flatten(
+                                    [{<<"node_confirms">>, NodeConfirms}])
+                                }}]}),
+            SyncOnWriteFun =
+                fun(SyncSetting) ->
+                    mochijson2:encode(
+                        {struct,
+                            [{<<"props">>,
+                                {struct,
+                                    lists:flatten(
+                                        [{<<"sync_on_write">>, SyncSetting}])
+                                    }}]})
+                end,
+            ?INFO("Setting node_confirms using ~p", [NodeConfirms]),
+            ibrowse:send_req(
+                URLFun(RecordBucket),
+                [{"Content-Type", "application/json"}],
+                put,
+                NodeConfirmsJ),
+            ibrowse:send_req(
+                URLFun(RecordBucket),
+                [{"Content-Type", "application/json"}],
+                put,
+                SyncOnWriteFun(RecordSyncOnWrite)),
+            ?INFO("Setting bucket properties for Document Bucket", []),
+            ibrowse:send_req(
+                URLFun(DocumentBucket),
+                [{"Content-Type", "application/json"}],
+                put,
+                NodeConfirmsJ),
+            ibrowse:send_req(
+                URLFun(DocumentBucket),
+                [{"Content-Type", "application/json"}],
+                put,
+                SyncOnWriteFun(DocumentSyncOnWrite));
+        _ ->
+            ok
+    end,
 
     KeyIDint = erlang:phash2(Id) bxor erlang:phash2(NodeID),
     ?INFO("Using Node ID ~w to generate ID ~w\n", [node(), KeyIDint]), 
@@ -156,8 +226,8 @@ new(Id) ->
                repl_pid = ReplPid,
                http_host = HTTPTargetIp,
                http_port = HTTPTargetPort,
-               recordBucket = <<"domainRecord">>,
-               documentBucket = <<"domainDocument">>,
+               recordBucket = RecordBucket,
+               documentBucket = DocumentBucket,
                pb_timeout = PBTimeout,
                http_timeout = HTTPTimeout,
                fold_timeout = FoldTimeout,
@@ -170,7 +240,8 @@ new(Id) ->
                alwaysget_keyorder = AGKeyOrder,
                unique_size = DocSize,
                unique_keyorder = DocKeyOrder,
-               keyid = <<KeyIDint:32/integer>>
+               keyid = <<KeyIDint:32/integer>>,
+               postcode_indexcount = PostCodeIndexCount
             }};
         {error, Reason2} ->
             ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
@@ -282,7 +353,10 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
     
     MD0 = riakc_obj:get_update_metadata(Robj0),
     MD1 = riakc_obj:clear_secondary_indexes(MD0),
-    MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
+    MD2 =
+        riakc_obj:set_secondary_index(
+            MD1,
+            generate_binary_indexes(State#state.postcode_indexcount)),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
 
@@ -332,11 +406,7 @@ run(alwaysget_updatewithout2i, _KeyGen, ValueGen, State) ->
                 {Robj, AGKC}
         end,
     
-    % MD0 = riakc_obj:get_update_metadata(Robj0),
-    % MD1 = riakc_obj:clear_secondary_indexes(MD0),
-    % MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
     Robj2 = riakc_obj:update_value(Robj0, Value),
-    % Robj2 = riakc_obj:update_metadata(Robj1, MD2),
 
     %% Write the object...
     case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
@@ -364,7 +434,10 @@ run(update_with2i, KeyGen, ValueGen, State) ->
     
     MD0 = riakc_obj:get_update_metadata(Robj0),
     MD1 = riakc_obj:clear_secondary_indexes(MD0),
-    MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
+    MD2 =
+        riakc_obj:set_secondary_index(
+            MD1,
+            generate_binary_indexes(State#state.postcode_indexcount)),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
 
@@ -397,7 +470,6 @@ run(put_unique_bet365, _KeyGen, _ValueGen, State) ->
     
     Robj0 = riakc_obj:new(Bucket, to_binary(Key)),
     MD2 = riakc_obj:get_update_metadata(Robj0),
-    % MD2 = riakc_obj:set_secondary_index(MD1, generate_binary_indexes()),
     Robj1 = riakc_obj:update_value(Robj0, Value),
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
 
@@ -473,13 +545,15 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
-    
+
     L = length(?POSTCODE_AREAS),
     {_, Area} = lists:keyfind(rand:uniform(L), 1, ?POSTCODE_AREAS),
     District = Area ++ integer_to_list(rand:uniform(26)),
-    StartKey = District ++ "|" ++ "a",
-    EndKey = District ++ "|" ++ "h",
-    URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s", 
+    StartPoints = ["ba", "ca", "da", "ea", "fa", "ga", "gb", "gc"],
+    StartPoint = lists:nth(rand:uniform(length(StartPoints)), StartPoints),
+    StartKey = District ++ "|" ++ StartPoint,
+    EndKey = District ++ "|" ++ "gd",
+    URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s",
                     [Host, Port, Bucket, StartKey, EndKey]),
 
     case json_get(URL, State#state.http_timeout) of
@@ -510,9 +584,10 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     Port = State#state.http_port,
     Bucket = State#state.recordBucket,
     
-    RandYear = rand:uniform(70) + 1950,
-    DoBStart = integer_to_list(RandYear) ++ "0101",
-    DoBEnd = integer_to_list(RandYear) ++ "0110",
+    RandYear = integer_to_list(rand:uniform(70) + 1950),
+    RandMonth = integer_to_list(rand:uniform(9)),
+    DoBStart = RandYear ++ "0" ++ RandMonth ++ "04",
+    DoBEnd = RandYear ++ "0" ++ RandMonth ++ "05",
     
     URLSrc = 
         "http://~s:~p/buckets/~s/index/dateofbirth_bin/~s/~s?term_regex=~s",
@@ -815,11 +890,14 @@ run_segmentfold(State) ->
 %% ====================================================================
 
 generate_binary_indexes() ->
-    [{{binary_index, "postcode"}, postcode_index()},
+    [{{binary_index, "lastmodified"}, lastmodified_index()}].
+
+generate_binary_indexes(PCIdxCount) ->
+    [{{binary_index, "postcode"}, postcode_index(PCIdxCount)},
         {{binary_index, "dateofbirth"}, dateofbirth_index()},
         {{binary_index, "lastmodified"}, lastmodified_index()}].
 
-postcode_index() ->
+postcode_index(PCIdxCount) ->
     NotVeryNameLikeThing = base64:encode_to_string(crypto:strong_rand_bytes(4)),
     lists:map(fun(_X) -> 
                     L = length(?POSTCODE_AREAS),
@@ -827,7 +905,7 @@ postcode_index() ->
                     District = Area ++ integer_to_list(rand:uniform(26)),
                     F = District ++ "|" ++ NotVeryNameLikeThing,
                     list_to_binary(F) end,
-                lists:seq(1, rand:uniform(3))).
+                lists:seq(1, rand:uniform(PCIdxCount))).
 
 dateofbirth_index() ->
     Delta = rand:uniform(2500000000),
