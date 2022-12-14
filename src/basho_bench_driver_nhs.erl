@@ -30,6 +30,9 @@
 
 -include("basho_bench.hrl").
 
+-define(QUERYLOG_FREQ, 2000).
+-define(FORCEAAE_FREQ, 10). % Every 10 seconds
+
 -record(state, {
                 pb_pid,
                 repl_pid,
@@ -46,8 +49,10 @@
                 unique_size :: pos_integer(),
                 unique_keyorder :: key_order|skew_order,
                 postcode_indexcount = 3 :: pos_integer(),
-                postcodeq_count = 0 :: non_neg_integer(),
-                dobq_count = 0 :: non_neg_integer(),
+                postcodeq_count = rand:uniform(?QUERYLOG_FREQ)
+                    :: non_neg_integer(),
+                dobq_count = rand:uniform(?QUERYLOG_FREQ)
+                    :: non_neg_integer(),
                 query_logfreq :: pos_integer(),
                 nominated_id :: boolean(),
                 % ID 1 is nominated to do special work
@@ -59,8 +64,6 @@
                 last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
 
--define(QUERYLOG_FREQ, 10000).
--define(FORCEAAE_FREQ, 10). % Every 10 seconds
 
 -define(POSTCODE_AREAS,
                 [{1, "AB"}, {2, "AL"}, {3, "B"}, {4, "BA"}, {5, "BB"}, 
@@ -229,7 +232,7 @@ new(Id) ->
                pb_timeout = PBTimeout,
                http_timeout = HTTPTimeout,
                fold_timeout = FoldTimeout,
-               query_logfreq = rand:uniform(?QUERYLOG_FREQ),
+               query_logfreq = ?QUERYLOG_FREQ,
                nominated_id = NominatedID,
                unique_key_count = 1,
                alwaysget_key_count = 0,
