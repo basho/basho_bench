@@ -199,7 +199,7 @@ run({team, write}, KeyGen, _ValueGen, State) ->
         {ok, _} ->
             {ok, State};
         {error, Reason} ->
-            lager:info("Team write failed, error: ~p", [Reason]),
+            _ = lager:info("Team write failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
@@ -215,10 +215,10 @@ run({team, read}, KeyGen, ValueGen, State) ->
         {ok, _} ->
             {ok, State};
         {error, {notfound, _}} ->
-            lager:info("Team does not exist yet."),
+            _ = lager:info("Team does not exist yet."),
             run({team, write}, KeyGen, ValueGen, State);
         {error, Reason} ->
-            lager:info("Team read failed, error: ~p", [Reason]),
+            _ = lager:info("Team read failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
@@ -254,17 +254,17 @@ run({team, player, removal}, KeyGen, ValueGen, State) ->
                         {ok, _} ->
                             {ok, State};
                         {error, Reason} ->
-                            lager:info("Team player removal failed, error: ~p", [Reason]),
+                            _ = lager:info("Team player removal failed, error: ~p", [Reason]),
                             {error, Reason, State}
                     end;
             false ->
                 {ok, State}
             end;
         {error, {notfound, _}} ->
-            lager:info("Team does not exist yet."),
+            _ = lager:info("Team does not exist yet."),
             run({team, write}, KeyGen, ValueGen, State);
         {error, Reason} ->
-            lager:info("Team read failed, error: ~p", [Reason]),
+            _ = lager:info("Team read failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
@@ -287,7 +287,7 @@ run({team, player, addition}, KeyGen, ValueGen, State) ->
         {ok, _} ->
             {ok, State};
         {error, Reason} ->
-            lager:info("Team player addition failed, error: ~p", [Reason]),
+            _ = lager:info("Team player addition failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
@@ -311,7 +311,7 @@ run({game, completed}, KeyGen, ValueGen, State) ->
         {ok, _} ->
             {ok, State};
         {error, Reason} ->
-            lager:info("Score change failed, error: ~p", [Reason]),
+            _ = lager:info("Score change failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
@@ -505,7 +505,7 @@ run(listkeys, _KeyGen, _ValueGen, State) ->
         end,
     case {State#state.nominated_id, IsAlive} of
         {true, true} ->
-            lager:info("Skipping listkeys for overlap"),
+            _ = lager:info("Skipping listkeys for overlap"),
             {ok, State};
         {true, false} ->
             Pid = spawn(?MODULE, run_listkeys, [State]),
@@ -563,7 +563,7 @@ run(mr_keylist_js, KeyGen, _ValueGen, State) ->
 
 run({counter, value}, KeyGen, _ValueGen, State) ->
     Key = KeyGen(),
-    lager:info("Counter value called for key: ~p", [Key]),
+    _ = lager:info("Counter value called for key: ~p", [Key]),
     Options = [{r,2}, {notfound_ok, true}, {timeout, 5000}],
     Result = riakc_pb_socket:fetch_type(State#state.pid,
                                         State#state.bucket,
@@ -572,19 +572,19 @@ run({counter, value}, KeyGen, _ValueGen, State) ->
     case Result of
         {ok, C0} ->
             C = riakc_counter:value(C0),
-            lager:info("Counter value is: ~p", [C]),
+            _ = lager:info("Counter value is: ~p", [C]),
             {ok, State};
         {error, {notfound, _}} ->
             {ok, State};
         {error, Reason} ->
-            lager:info("Team read failed, error: ~p", [Reason]),
+            _ = lager:info("Team read failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
 run({counter, increment}, KeyGen, ValueGen, State) ->
     Amt = ValueGen(),
     Key = KeyGen(),
-    lager:info("Counter value called for key: ~p", [Key]),
+    _ = lager:info("Counter value called for key: ~p", [Key]),
     Result = riakc_pb_socket:modify_type(State#state.pid,
                                          fun(C) ->
                                                  riakc_counter:increment(Amt, C)
@@ -596,7 +596,7 @@ run({counter, increment}, KeyGen, ValueGen, State) ->
         {ok, _} ->
             {ok, State};
         {error, Reason} ->
-            lager:info("Counter increment failed, error: ~p", [Reason]),
+            _ = lager:info("Counter increment failed, error: ~p", [Reason]),
             {error, Reason, State}
     end;
 
@@ -799,7 +799,7 @@ record_2i_results(Results, State) ->
 
 run_listkeys(State) ->
   SW = os:timestamp(),
-  lager:info("Commencing listkeys request"),
+  _ = lager:info("Commencing listkeys request"),
 
   Targets = State#state.singleton_targets,
   {TargetIp, TargetPort} = lists:nth(rand:uniform(length(Targets)+1),
@@ -813,12 +813,12 @@ run_listkeys(State) ->
                                   State#state.bucket,
                                   State#state.timeout_listkeys) of
       {ok, Keys} ->
-          lager:info("listkeys request returned ~w keys" ++
+          _ = lager:info("listkeys request returned ~w keys" ++
                         " in ~w seconds",
                       [length(Keys),
                         timer:now_diff(os:timestamp(), SW)/1000000]),
           ok;
       {error, Reason} ->
-          lager:info("listkeys failed due to reason ~w", [Reason]),
+          _ = lager:info("listkeys failed due to reason ~w", [Reason]),
           ok
   end.

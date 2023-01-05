@@ -39,11 +39,11 @@ new(Id) ->
     {Name, Node} = Actor = lists:nth(Nth, Actors),
     case net_adm:ping(Node) of
         pang ->
-            lager:error("~s is not available", [Node]),
+            _ = lager:error("~s is not available", [Node]),
             {ok, #state{actor = undefined}};
 
         pong ->
-            lager:info("worker ~b is bound to ~s on ~s", [Id, Name, Node]),
+            _ = lager:info("worker ~b is bound to ~s on ~s", [Id, Name, Node]),
             {ok, #state{actor = Actor}}
     end.
 

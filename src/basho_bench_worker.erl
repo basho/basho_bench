@@ -53,16 +53,8 @@
 %% ====================================================================
 
 start_link(SupChild, Id) ->
-    case basho_bench_config:get(distribute_work, false) of 
-        true -> 
-            start_link_distributed(SupChild, Id);
-        false -> 
-            start_link_local(SupChild, Id)
-    end.
+    start_link_local(SupChild, Id).
 
-start_link_distributed(SupChild, Id) ->
-    Node = pool:get_node(),
-    rpc:block_call(Node, ?MODULE, start_link_local, [SupChild, Id]).
 
 start_link_local(SupChild, Id) ->
     gen_server:start_link(?MODULE, [SupChild, Id], []).

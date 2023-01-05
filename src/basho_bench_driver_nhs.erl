@@ -219,7 +219,7 @@ new(Id) ->
                     {ok, RP} ->
                         RP;
                     _ ->
-                        lager:info("Starting with no repl check"),
+                        _ = lager:info("Starting with no repl check"),
                         no_repl_check
                 end,
             {ok, #state {
@@ -332,7 +332,7 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
                                         State#state.alwaysget_keyorder),
                 case {AGKC rem 1000, State#state.nominated_id} of
                     {0, true} ->
-                        lager:info("Always grow key count passing ~w "
+                        _ = lager:info("Always grow key count passing ~w "
                                     ++ "for nominated worker", 
                                 [AGKC]);
                     _ ->
@@ -387,7 +387,7 @@ run(alwaysget_updatewithout2i, _KeyGen, ValueGen, State) ->
                                         State#state.alwaysget_keyorder),
                 case {AGKC rem 1000, State#state.nominated_id} of
                     {0, true} ->
-                        lager:info("Always grow key count passing ~w "
+                        _ = lager:info("Always grow key count passing ~w "
                                     ++ "for nominated worker", 
                                 [AGKC]);
                     _ ->
@@ -564,7 +564,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
                 0 ->
                     {struct, Proplist} = mochijson2:decode(JsonB),
                     Results = proplists:get_value(<<"keys">>, Proplist),
-                    lager:info(
+                    _ = lager:info(
                         "postcode query result size of ~w",
                         [length(Results)]);
                 _ ->
@@ -601,7 +601,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
                 0 ->
                     {struct, Proplist} = mochijson2:decode(JsonB),
                     Results = proplists:get_value(<<"keys">>, Proplist),
-                    lager:info(
+                    _ = lager:info(
                         "dob query result size of ~w",
                         [length(Results)]);
                 _ ->
@@ -624,7 +624,7 @@ run(aae_query, _KeyGen, _ValueGen, State) ->
         end,
     case {State#state.nominated_id, IsAlive} of
         {true, true} ->
-            lager:info("Skipping aae query for overlap"),
+            _ = lager:info("Skipping aae query for overlap"),
             {ok, State};
         {true, false} ->
             Pid = spawn(?MODULE, run_aaequery, [State]),
@@ -643,7 +643,7 @@ run(list_keys, _KeyGen, _ValueGen, State) ->
         end,
     case {State#state.nominated_id, IsAlive} of
         {true, true} ->
-            lager:info("Skipping listkeys for overlap"),
+            _ = lager:info("Skipping listkeys for overlap"),
             {ok, State};
         {true, false} ->
             Pid = spawn(?MODULE, run_listkeys, [State]),
@@ -662,7 +662,7 @@ run(segment_fold, _KeyGen, _ValueGen, State) ->
         end,
     case {State#state.nominated_id, IsAlive} of
         {true, true} ->
-            lager:info("Skipping segment fold for overlap"),
+            _ = lager:info("Skipping segment fold for overlap"),
             {ok, State};
         {true, false} ->
             Pid = spawn(?MODULE, run_segmentfold, [State]),
@@ -789,7 +789,7 @@ check_repl(ReplPid, Bucket, Key, Timeout) ->
 
 run_aaequery(State) ->
     SW = os:timestamp(),
-    lager:info("Commencing aaequery request"),
+    _ = lager:info("Commencing aaequery request"),
 
     Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
@@ -808,7 +808,7 @@ run_aaequery(State) ->
     case json_direct_get(URL, State#state.fold_timeout) of
         {ok, {struct, TreeL}} ->
             {<<"count">>, Count} = lists:keyfind(<<"count">>, 1, TreeL),
-            lager:info("AAE query returned in ~w seconds covering ~s keys",
+            _ = lager:info("AAE query returned in ~w seconds covering ~s keys",
                       [timer:now_diff(os:timestamp(), SW)/1000000, Count]),
 
             {ok, State};
@@ -820,7 +820,7 @@ run_aaequery(State) ->
 
 run_listkeys(State) ->
     SW = os:timestamp(),
-    lager:info("Commencing list keys request"),
+    _ = lager:info("Commencing list keys request"),
 
     Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
@@ -833,7 +833,7 @@ run_listkeys(State) ->
     
     case json_direct_get(URL, State#state.fold_timeout) of
         {ok, {struct, [{<<"keys">>, KeyList}]}} ->
-            lager:info("List keys returned ~w keys in ~w seconds",
+            _ = lager:info("List keys returned ~w keys in ~w seconds",
                       [length(KeyList), 
                         timer:now_diff(os:timestamp(), SW)/1000000]),
 
@@ -847,7 +847,7 @@ run_listkeys(State) ->
 
 run_segmentfold(State) ->
     SW = os:timestamp(),
-    lager:info("Commencing segment fold request"),
+    _ = lager:info("Commencing segment fold request"),
 
     Host = inet_parse:ntoa(State#state.http_host),
     Port = State#state.http_port,
@@ -874,7 +874,7 @@ run_segmentfold(State) ->
     
     case json_direct_get(URL, State#state.fold_timeout) of
         {ok, {struct, [{<<"deltas">>, SegL}]}} ->
-            lager:info("Segment fold returned in ~w seconds finding ~w keys",
+            _ = lager:info("Segment fold returned in ~w seconds finding ~w keys",
                       [timer:now_diff(os:timestamp(), SW)/1000000, length(SegL)]),
             {ok, State};
         {error, Reason} ->
