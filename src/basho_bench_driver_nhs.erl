@@ -35,6 +35,7 @@
 
 -record(state, {
                 pb_pid,
+                http_client,
                 repl_pid,
                 http_host,
                 http_port,
@@ -209,45 +210,43 @@ new(Id) ->
     end,
 
     KeyIDint = erlang:phash2(Id) bxor erlang:phash2(NodeID),
-    ?INFO("Using Node ID ~w to generate ID ~w\n", [node(), KeyIDint]), 
+    ?INFO("Using Node ID ~w to generate ID ~w\n", [node(), KeyIDint]),
+    NominatedID = Id == 7,
 
-    case riakc_pb_socket:start_link(PBTargetIp, PBTargetPort) of
-        {ok, Pid} ->
-            NominatedID = Id == 7,
-            ReplPid = 
-                case riakc_pb_socket:start_link(ReplTargetIp, ReplTargetPort) of
-                    {ok, RP} ->
-                        RP;
-                    _ ->
-                        lager:info("Starting with no repl check"),
-                        no_repl_check
-                end,
-            {ok, #state {
-               pb_pid = Pid,
-               repl_pid = ReplPid,
-               http_host = HTTPTargetIp,
-               http_port = HTTPTargetPort,
-               recordBucket = RecordBucket,
-               documentBucket = DocumentBucket,
-               pb_timeout = PBTimeout,
-               http_timeout = HTTPTimeout,
-               fold_timeout = FoldTimeout,
-               query_logfreq = ?QUERYLOG_FREQ,
-               nominated_id = NominatedID,
-               unique_key_count = 1,
-               alwaysget_key_count = 0,
-               alwaysget_perworker_maxkeycount = AGMaxKC,
-               alwaysget_perworker_minkeycount = AGMinKC,
-               alwaysget_keyorder = AGKeyOrder,
-               unique_size = DocSize,
-               unique_keyorder = DocKeyOrder,
-               keyid = <<KeyIDint:32/integer>>,
-               postcode_indexcount = PostCodeIndexCount
-            }};
-        {error, Reason2} ->
-            ?FAIL_MSG("Failed to connect riakc_pb_socket to ~p port ~p: ~p\n",
-                      [PBTargetIp, PBTargetPort, Reason2])
-    end.
+    {ok, PBCPid} = riakc_pb_socket:start_link(PBTargetIp, PBTargetPort),
+    ReplPid = 
+        case riakc_pb_socket:start_link(ReplTargetIp, ReplTargetPort) of
+            {ok, RP} ->
+                RP;
+            _ ->
+                lager:info("Starting with no repl check"),
+                no_repl_check
+        end,
+    HTTPClient = rhc:create(Host, HTTPTargetPort, "riak", []),
+
+    {ok, #state {
+        pb_pid = PBCPid,
+        http_client = HTTPClient,
+        repl_pid = ReplPid,
+        http_host = HTTPTargetIp,
+        http_port = HTTPTargetPort,
+        recordBucket = RecordBucket,
+        documentBucket = DocumentBucket,
+        pb_timeout = PBTimeout,
+        http_timeout = HTTPTimeout,
+        fold_timeout = FoldTimeout,
+        query_logfreq = ?QUERYLOG_FREQ,
+        nominated_id = NominatedID,
+        unique_key_count = 1,
+        alwaysget_key_count = 0,
+        alwaysget_perworker_maxkeycount = AGMaxKC,
+        alwaysget_perworker_minkeycount = AGMinKC,
+        alwaysget_keyorder = AGKeyOrder,
+        unique_size = DocSize,
+        unique_keyorder = DocKeyOrder,
+        keyid = <<KeyIDint:32/integer>>,
+        postcode_indexcount = PostCodeIndexCount
+    }}.
 
 %% Get a single object.
 run(get_pb, KeyGen, _ValueGen, State) ->
@@ -271,8 +270,9 @@ run(alwaysget_http, _KeyGen, _ValueGen, State) ->
     case AGKC > State#state.alwaysget_perworker_minkeycount of 
         true ->
             KeyInt = eightytwenty_keycount(AGKC),    
-            Key = generate_uniquekey(KeyInt, State#state.keyid, 
-                                        State#state.alwaysget_keyorder),
+            Key =
+                generate_uniquekey(
+                    KeyInt, State#state.keyid, State#state.alwaysget_keyorder),
             URL = 
                 io_lib:format("http://~s:~p/buckets/~s/keys/~s", 
                                 [Host, Port, Bucket, Key]),
@@ -296,12 +296,12 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
     case AGKC > State#state.alwaysget_perworker_minkeycount of 
         true ->
             KeyInt = eightytwenty_keycount(AGKC),    
-            Key = generate_uniquekey(KeyInt, State#state.keyid, 
-                                        State#state.alwaysget_keyorder),
+            Key =
+                generate_uniquekey(
+                    KeyInt, State#state.keyid, State#state.alwaysget_keyorder),
 
-            case riakc_pb_socket:get(Pid, 
-                                        Bucket, Key, 
-                                        State#state.pb_timeout) of
+            case riakc_pb_socket:get(
+                    Pid, Bucket, Key, State#state.pb_timeout) of
                 {ok, _Obj} ->
                     {ok, State};
                 {error, Reason} ->
@@ -314,8 +314,8 @@ run(alwaysget_pb, _KeyGen, _ValueGen, State) ->
         
     end;
 
-run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
-    Pid = State#state.pb_pid,
+run(alwaysget_updatewith2i_http, _KeyGen, ValueGen, State) ->
+    RHC = State#state.http_client,
     Bucket = State#state.recordBucket,
     AGKC = State#state.alwaysget_key_count,
     Value = ValueGen(),
@@ -328,27 +328,33 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
             true ->
                 % Expand the key count
                 ExpansionKey = 
-                    generate_uniquekey(AGKC + 1, State#state.keyid,
-                                        State#state.alwaysget_keyorder),
+                    generate_uniquekey(
+                        AGKC + 1,
+                        State#state.keyid,
+                        State#state.alwaysget_keyorder),
                 case {AGKC rem 1000, State#state.nominated_id} of
                     {0, true} ->
-                        lager:info("Always grow key count passing ~w "
-                                    ++ "for nominated worker", 
-                                [AGKC]);
+                        lager:info(
+                            "Always grow key count passing ~w "
+                            "for nominated worker",
+                            [AGKC]);
                     _ ->
                         ok
                 end,
-                {riakc_obj:new(Bucket, ExpansionKey),
-                    AGKC + 1};
+                {riakc_obj:new(Bucket, ExpansionKey), AGKC + 1};
             false ->
                 % update an existing key
                 ExistingKey = 
-                    generate_uniquekey(KeyInt, State#state.keyid,
-                                        State#state.alwaysget_keyorder),
+                    generate_uniquekey(
+                        KeyInt,
+                        State#state.keyid,
+                        State#state.alwaysget_keyorder),
                 {ok, Robj} =
-                    riakc_pb_socket:get(Pid, 
-                                        Bucket, ExistingKey, 
-                                        State#state.pb_timeout),
+                    rhc:get(
+                        RHC,
+                        Bucket,
+                        ExistingKey,
+                        [{timeout, State#state.http_timeout}]),
                 {Robj, AGKC}
         end,
     
@@ -362,7 +368,7 @@ run(alwaysget_updatewith2i, _KeyGen, ValueGen, State) ->
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
 
     %% Write the object...
-    case riakc_pb_socket:put(Pid, Robj2, State#state.pb_timeout) of
+    case rhc:put(RHC, Robj2, [{timeout, State#state.http_timeout}]) of
         ok ->
             {ok, State#state{alwaysget_key_count = NewAGKC}};
         {error, Reason} ->
@@ -531,6 +537,58 @@ run(delete_unique, _KeyGen, _ValueGen, State) ->
                                         State#state.keyid,
                                         State#state.unique_keyorder),
             R = riakc_pb_socket:delete(Pid, B, Key, State#state.pb_timeout),
+            case R of
+                ok ->
+                    {ok, State#state{unique_key_lowcount = LKC + 1}};
+                {error, Reason} ->
+                    {error, Reason, State#state{unique_key_lowcount = LKC + 1}}
+            end;
+        false ->
+            {ok, State}
+    end;
+
+run(put_unique_http, _KeyGen, _ValueGen, State) ->
+    RHC = State#state.http_client,
+    {_Pid, _Bucket, _Key, Robj, UKC} = prepare_unique_put(State),
+    %% Write the object...
+    case rhc:put(RHC, Robj, [{timeout, State#state.http_timeout}]) of
+        ok ->
+            {ok, State#state{unique_key_count = UKC + 1}};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(get_unique_http, _KeyGen, _ValueGen, State) ->    
+    % Get one of the objects with unique keys
+    RHC = State#state.http_client,
+    Bucket = State#state.documentBucket,
+    UKC = State#state.unique_key_count,
+    LKC = State#state.unique_key_lowcount,
+    Key = 
+        generate_uniquekey(
+            LKC + rand:uniform(max(1, UKC - LKC)),
+            State#state.keyid,
+            State#state.unique_keyorder),
+    case rhc:get(RHC, Bucket, Key, [{timeout, State#state.http_timeout}]) of
+        {ok, _Obj} ->
+            {ok, State};
+        {error, notfound} ->
+            {ok, State};
+        {error, Reason} ->
+            {error, Reason, State}
+    end;
+run(delete_unique_http, _KeyGen, _ValueGen, State) ->
+    %% Delete one of the unique keys, assuming that the deletions have not
+    %% caught up with the PUTs
+    RHC = State#state.http_client,
+    B = State#state.documentBucket,
+    UKC = State#state.unique_key_count,
+    LKC = State#state.unique_key_lowcount,
+    case LKC < UKC of
+        true ->
+            Key = 
+                generate_uniquekey(
+                    LKC, State#state.keyid, State#state.unique_keyorder),
+            R = rhc:delete(RHC, B, Key, [{timeout, State#state.http_timeout}]),
             case R of
                 ok ->
                     {ok, State#state{unique_key_lowcount = LKC + 1}};

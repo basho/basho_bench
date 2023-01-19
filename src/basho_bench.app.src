@@ -6,7 +6,8 @@
   {applications, [kernel,
                   stdlib,
                   sasl,
-                  lager]},
+                  lager,
+                  rhc]},
   {mod, {basho_bench_app, []}},
   {env, [
 	 %% Run mode: How should basho_bench started as a separate node, or part of an 
