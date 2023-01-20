@@ -223,7 +223,7 @@ new(Id) ->
                 no_repl_check
         end,
     HTTPClient = rhc:create(Host, HTTPTargetPort, "riak", []),
-
+    
     {ok, #state {
         pb_pid = PBCPid,
         http_client = HTTPClient,
