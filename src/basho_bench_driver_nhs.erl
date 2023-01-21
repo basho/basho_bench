@@ -62,6 +62,7 @@
                 unique_key_lowcount = 1 :: non_neg_integer(),
                 alwaysget_key_count = 1 :: non_neg_integer(),
                 keyid :: binary(),
+                id :: pos_integer(),
                 last_forceaae = os:timestamp() :: erlang:timestamp()
          }).
 
@@ -210,7 +211,10 @@ new(Id) ->
     end,
 
     KeyIDint = erlang:phash2(Id) bxor erlang:phash2(NodeID),
-    ?INFO("Using Node ID ~w to generate ID ~w\n", [node(), KeyIDint]),
+    KeyID = <<KeyIDint:32/integer>>,
+    ?INFO(
+        "Using Node ID ~w and Id ~w to generate ID ~w ~w ~s\n",
+        [node(), Id, KeyID, KeyIDint, convert_tolist(KeyID)]),
     NominatedID = Id == 7,
 
     {ok, PBCPid} = riakc_pb_socket:start_link(PBTargetIp, PBTargetPort),
@@ -244,7 +248,8 @@ new(Id) ->
         alwaysget_keyorder = AGKeyOrder,
         unique_size = DocSize,
         unique_keyorder = DocKeyOrder,
-        keyid = <<KeyIDint:32/integer>>,
+        keyid = KeyID,
+        id = Id,
         postcode_indexcount = PostCodeIndexCount
     }}.
 
@@ -604,14 +609,22 @@ run(get_unique, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
     LKC = State#state.unique_key_lowcount,
-    Key = generate_uniquekey(LKC + rand:uniform(max(1, UKC - LKC)),
-                                State#state.keyid,
-                                State#state.unique_keyorder),
+    KeyNumber = LKC + rand:uniform(max(1, UKC - LKC)),
+    Key =
+        generate_uniquekey(
+            KeyNumber, State#state.keyid, State#state.unique_keyorder),
     case riakc_pb_socket:get(Pid, Bucket, Key, State#state.pb_timeout) of
         {ok, _Obj} ->
             {ok, State};
         {error, notfound} ->
-            {ok, State};
+            case KeyNumber of
+                KN when KeyNumber >= UKC; KeyNumber =< LKC ->
+                    lager:info("Key Number ~p out of range", [KN]),
+                    {ok, State};
+                _ ->
+                    lager:warning("Unexpected unique key not found ~p", [Key]),
+                    {error, notfound, State}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -640,7 +653,11 @@ run(delete_unique, _KeyGen, _ValueGen, State) ->
 
 run(put_unique_http, _KeyGen, _ValueGen, State) ->
     RHC = State#state.http_client,
-    {_Pid, _Bucket, _Key, Robj, UKC} = prepare_unique_put(State),
+    {_Pid, _Bucket, Key, Robj, UKC} = prepare_unique_put(State),
+    log_if(
+        State#state.id,
+        "put_unique Key ~p ~w ~w",
+        [Key, State#state.unique_key_lowcount, UKC]),
     %% Write the object...
     case rhc:put(RHC, Robj, [{timeout, State#state.http_timeout}]) of
         ok ->
@@ -654,17 +671,27 @@ run(get_unique_http, _KeyGen, _ValueGen, State) ->
     Bucket = State#state.documentBucket,
     UKC = State#state.unique_key_count,
     LKC = State#state.unique_key_lowcount,
+    KeyNumber = LKC + rand:uniform(max(1, UKC - LKC)),
     Key = 
         generate_uniquekey(
-            LKC + rand:uniform(max(1, UKC - LKC)),
-            State#state.keyid,
-            State#state.unique_keyorder),
+            KeyNumber, State#state.keyid, State#state.unique_keyorder),
     case rhc:get(RHC, Bucket, Key, [{timeout, State#state.http_timeout}]) of
         {ok, _Obj} ->
             {ok, State};
         {error, notfound} ->
-            lager:warning("Unexpected unique key not found ~p", [Key]),
-            {error, notfound, State};
+            case KeyNumber of
+                KN when KeyNumber >= UKC; KeyNumber =< LKC ->
+                    log_if(
+                        State#state.id,
+                        "get_unique key out of range ~p ~w ~w ~w",
+                        [Key, KN, LKC, UKC]),
+                    {ok, State};
+                KN ->
+                    lager:warning(
+                        "id ~w get_unique key notfound ~p ~w ~w ~w",
+                        [State#state.id, Key, KN, LKC, UKC]),
+                    {error, notfound, State}
+            end;
         {error, Reason} ->
             {error, Reason, State}
     end;
@@ -686,8 +713,8 @@ run(delete_unique_http, _KeyGen, _ValueGen, State) ->
                     {ok, State#state{unique_key_lowcount = LKC + 1}};
                 {error, Reason} ->
                     lager:warning(
-                        "Unexpected unique key not found on delete ~p",
-                        [Key]),
+                        "id ~w delete_unique key notfound ~p ~w ~w",
+                        [State#state.id, Key, LKC, UKC]),
                     {error, Reason, State#state{unique_key_lowcount = LKC + 1}}
             end;
         false ->
@@ -939,6 +966,10 @@ check_repl(ReplPid, Bucket, Key, Timeout) ->
 %% Spawned Runners
 %% ====================================================================
 
+log_if(999, Text, Subs) ->
+    lager:info(Text, Subs);
+log_if(_, _Text, _Subs) ->
+    ok.
 
 run_aaequery(State) ->
     SW = os:timestamp(),
@@ -1104,7 +1135,7 @@ eightytwenty_keycount(UKC) ->
 
 
 convert_tolist(I) when is_integer(I) ->
-    list_to_binary(lists:flatten(io_lib:format("~9..0B", [I])));
+    list_to_binary(lists:flatten(io_lib:format("~12..0B", [I])));
 convert_tolist(Bin) ->
-    <<I:26/integer, _Tail:6/bitstring>> = Bin,
+    <<I:32/integer>> = Bin,
     convert_tolist(I).
