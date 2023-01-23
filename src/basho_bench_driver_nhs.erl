@@ -737,7 +737,7 @@ run(postcodequery_http, _KeyGen, _ValueGen, State) ->
     URL = io_lib:format("http://~s:~p/buckets/~s/index/postcode_bin/~s/~s",
                     [Host, Port, Bucket, StartKey, EndKey]),
 
-    case jsonb_pool_get(URL, State#state.http_timeout) of
+    case http_direct_get(URL, State#state.http_timeout) of
         {ok, JsonB} ->
             C0 = State#state.postcodeq_count,
             case C0 rem State#state.query_logfreq of 
@@ -774,7 +774,7 @@ run(dobquery_http, _KeyGen, _ValueGen, State) ->
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket, DoBStart, DoBEnd, RE]),
 
-    case jsonb_pool_get(URL, State#state.http_timeout) of
+    case http_direct_get(URL, State#state.http_timeout) of
         {ok, JsonB} ->
             C0 = State#state.dobq_count,
             case C0 rem State#state.query_logfreq of 
@@ -905,23 +905,14 @@ prepare_unique_put(State) ->
     Robj2 = riakc_obj:update_metadata(Robj1, MD2),
     {Pid, Bucket, Key, Robj2, UKC}.
 
-jsonb_pool_get(Url, Timeout) ->
-    Target = lists:flatten(Url),
-    Response = ibrowse:send_req(Target, [], get, [], [], Timeout),
-    case Response of
-        {ok, "200", _, Body} ->
-            {ok, Body};
-        Other ->
-            {error, Other}
-    end.
-
-json_direct_get(Url, Timeout) ->
+http_direct_get(Url, Timeout) ->
     Target = lists:flatten(Url),
     {ok, C} = ibrowse:spawn_worker_process(Target),
     Response = ibrowse:send_req_direct(C, Target, [], get, [], [], Timeout),
+    ibrowse:stop_worker_process(C),
     case Response of
         {ok, "200", _, Body} ->
-            {ok, mochijson2:decode(Body)};
+            {ok, Body};
         Other ->
             {error, Other}
     end.
@@ -989,8 +980,9 @@ run_aaequery(State) ->
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket, KeyStart, KeyEnd, MapFoldMod]),
     
-    case json_direct_get(URL, State#state.fold_timeout) of
-        {ok, {struct, TreeL}} ->
+    case http_direct_get(URL, State#state.fold_timeout) of
+        {ok, Body} ->
+            {struct, TreeL} = mochijson2:decode(Body),
             {<<"count">>, Count} = lists:keyfind(<<"count">>, 1, TreeL),
             lager:info("AAE query returned in ~w seconds covering ~s keys",
                       [timer:now_diff(os:timestamp(), SW)/1000000, Count]),
@@ -1015,8 +1007,9 @@ run_listkeys(State) ->
     URL = io_lib:format(URLSrc, 
                         [Host, Port, Bucket]),
     
-    case json_direct_get(URL, State#state.fold_timeout) of
-        {ok, {struct, [{<<"keys">>, KeyList}]}} ->
+    case http_direct_get(URL, State#state.fold_timeout) of
+        {ok, Body} ->
+            {struct, [{<<"keys">>, KeyList}]} = mochijson2:decode(Body),
             lager:info("List keys returned ~w keys in ~w seconds",
                       [length(KeyList), 
                         timer:now_diff(os:timestamp(), SW)/1000000]),
@@ -1056,8 +1049,9 @@ run_segmentfold(State) ->
                         [Host, Port, Bucket, KeyStart, KeyEnd, 
                             MapFoldMod, MapFoldOpts]),
     
-    case json_direct_get(URL, State#state.fold_timeout) of
-        {ok, {struct, [{<<"deltas">>, SegL}]}} ->
+    case http_direct_get(URL, State#state.fold_timeout) of
+        {ok, Body} ->
+            {struct, [{<<"deltas">>, SegL}]} = mochijson2:decode(Body),
             lager:info("Segment fold returned in ~w seconds finding ~w keys",
                       [timer:now_diff(os:timestamp(), SW)/1000000, length(SegL)]),
             {ok, State};
