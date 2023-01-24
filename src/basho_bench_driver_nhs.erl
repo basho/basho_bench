@@ -268,8 +268,7 @@ run(get_pb, KeyGen, _ValueGen, State) ->
     end;
 
 run(alwaysget_http, _KeyGen, _ValueGen, State) ->
-    Host = inet_parse:ntoa(State#state.http_host),
-    Port = State#state.http_port,
+    RHC = State#state.http_client,
     Bucket = State#state.recordBucket,
     AGKC = State#state.alwaysget_key_count,
     case AGKC > State#state.alwaysget_perworker_minkeycount of 
@@ -278,12 +277,11 @@ run(alwaysget_http, _KeyGen, _ValueGen, State) ->
             Key =
                 generate_uniquekey(
                     KeyInt, State#state.keyid, State#state.alwaysget_keyorder),
-            URL = 
-                io_lib:format("http://~s:~p/buckets/~s/keys/~s", 
-                                [Host, Port, Bucket, Key]),
-
-            case get_existing(URL, State#state.http_timeout) of
-                ok ->
+            
+            case rhc:get(
+                    RHC, Bucket, Key,
+                    [{timeout, State#state.http_timeout}]) of
+                {ok, _RObj} ->
                     {ok, State};
                 {error, Reason} ->
                     % not_found is not OK
@@ -916,15 +914,6 @@ http_direct_get(Url, Timeout) ->
         Other ->
             {error, Other}
     end.
-
-get_existing(Url, Timeout) ->
-    case ibrowse:send_req(lists:flatten(Url), [], get, [], [], Timeout) of
-        {ok, "200", _, _Body} ->
-            ok;
-        Other ->
-            {error, Other}
-    end.
-
 
 to_binary(B) when is_binary(B) ->
     B;
