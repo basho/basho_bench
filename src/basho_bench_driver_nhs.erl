@@ -699,7 +699,7 @@ run(delete_unique_http, _KeyGen, _ValueGen, State) ->
     RHC = State#state.http_client,
     B = State#state.documentBucket,
     UKC = State#state.unique_key_count,
-    LKC = State#state.unique_key_lowcount + 1,
+    LKC = State#state.unique_key_lowcount,
     case LKC < UKC of
         true ->
             Key = 
@@ -708,12 +708,14 @@ run(delete_unique_http, _KeyGen, _ValueGen, State) ->
             R = rhc:delete(RHC, B, Key, [{timeout, State#state.http_timeout}]),
             case R of
                 ok ->
-                    {ok, State#state{unique_key_lowcount = LKC}};
+                    {ok, State#state{unique_key_lowcount = LKC + 1}};
+                {error, notfound} ->
+                    {ok, State#state{unique_key_lowcount = LKC + 1}};
                 {error, Reason} ->
                     lager:warning(
                         "id ~w delete_unique key notfound ~p ~w ~w",
                         [State#state.id, Key, LKC, UKC]),
-                    {error, Reason, State#state{unique_key_lowcount = LKC}}
+                    {error, Reason, State#state{unique_key_lowcount = LKC + 1}}
             end;
         false ->
             {ok, State}
