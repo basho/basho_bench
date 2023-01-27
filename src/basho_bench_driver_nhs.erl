@@ -632,7 +632,7 @@ run(delete_unique, _KeyGen, _ValueGen, State) ->
     Pid = State#state.pb_pid,
     B = State#state.documentBucket,
     UKC = State#state.unique_key_count,
-    LKC = State#state.unique_key_lowcount,
+    LKC = State#state.unique_key_lowcount + 1,
     case LKC < UKC of
         true ->
             Key =
@@ -641,9 +641,9 @@ run(delete_unique, _KeyGen, _ValueGen, State) ->
             R = riakc_pb_socket:delete(Pid, B, Key, State#state.pb_timeout),
             case R of
                 ok ->
-                    {ok, State#state{unique_key_lowcount = LKC + 1}};
+                    {ok, State#state{unique_key_lowcount = LKC}};
                 {error, Reason} ->
-                    {error, Reason, State#state{unique_key_lowcount = LKC + 1}}
+                    {error, Reason, State#state{unique_key_lowcount = LKC}}
             end;
         false ->
             {ok, State}
@@ -699,7 +699,7 @@ run(delete_unique_http, _KeyGen, _ValueGen, State) ->
     RHC = State#state.http_client,
     B = State#state.documentBucket,
     UKC = State#state.unique_key_count,
-    LKC = State#state.unique_key_lowcount,
+    LKC = State#state.unique_key_lowcount + 1,
     case LKC < UKC of
         true ->
             Key = 
@@ -708,12 +708,12 @@ run(delete_unique_http, _KeyGen, _ValueGen, State) ->
             R = rhc:delete(RHC, B, Key, [{timeout, State#state.http_timeout}]),
             case R of
                 ok ->
-                    {ok, State#state{unique_key_lowcount = LKC + 1}};
+                    {ok, State#state{unique_key_lowcount = LKC}};
                 {error, Reason} ->
                     lager:warning(
                         "id ~w delete_unique key notfound ~p ~w ~w",
                         [State#state.id, Key, LKC, UKC]),
-                    {error, Reason, State#state{unique_key_lowcount = LKC + 1}}
+                    {error, Reason, State#state{unique_key_lowcount = LKC}}
             end;
         false ->
             {ok, State}
