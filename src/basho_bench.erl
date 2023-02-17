@@ -63,7 +63,7 @@ main(Args) ->
     CrashLog = filename:join([TestDir, "crash.log"]),
     application:set_env(lager,
                         handlers,
-                        [{lager_console_backend, ConsoleLagerLevel},
+                        [{lager_console_backend, [{level, ConsoleLagerLevel}]},
                          {lager_file_backend, [{file, ErrorLog},   {level, error}, {size, 10485760}, {date, "$D0"}, {count, 5}]},
                          {lager_file_backend, [{file, ConsoleLog}, {level, debug}, {size, 10485760}, {date, "$D0"}, {count, 5}]}
                         ]),

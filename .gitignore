@@ -6,6 +6,7 @@ tests/
 /rel/basho_bench
 package
 .rebar
+rebar.lock
 *~
 #*#
 .DS_Store
