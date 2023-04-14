@@ -6,12 +6,12 @@ PKG_ID           = basho-bench-$(PKG_VERSION)
 PKG_BUILD        = 1
 BASE_DIR         = $(shell pwd)
 ERLANG_BIN       = $(shell dirname $(shell which erl))
-REBAR           ?= $(BASE_DIR)/rebar
+REBAR           ?= $(BASE_DIR)/rebar3
 OVERLAY_VARS    ?=
 
 
 all: deps compile
-	$(REBAR) skip_deps=true escriptize
+	$(REBAR) escriptize
 
 .PHONY: deps compile rel lock locked-all locked-deps
 

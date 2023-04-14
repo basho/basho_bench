@@ -128,7 +128,13 @@ new(Id) ->
     Targets = basho_bench_config:normalize_ips(Ips, Port),
     {TargetIp, TargetPort} = lists:nth((Id rem length(Targets)+1), Targets),
     ?INFO("Using target ~p:~p for worker ~p\n", [TargetIp, TargetPort, Id]),
-    case riakc_pb_socket:start_link(TargetIp, TargetPort, get_connect_options()) of
+
+    Options = get_connect_options(),
+    case proplists:is_defined(cacertfile, Options) of
+      true -> ssl:start();
+      _ -> ok
+    end,
+    case riakc_pb_socket:start_link(TargetIp, TargetPort, Options) of
         {ok, Pid} ->
             NominatedID = Id == 1,
             {ok, #state { pid = Pid,
