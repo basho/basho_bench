@@ -309,6 +309,7 @@ test_semicompress_algos() ->
     test_src(Src1, v1).
 
 test_src(Src, Version) ->
+    TestCount = 8192,
     Slices =
         lists:map(
             fun(_X) ->
@@ -317,7 +318,7 @@ test_src(Src, Version) ->
                     byte_size(Src),
                     random_size(10000, 2000, 10, 0.1))
             end,
-        lists:seq(1, 128)),
+        lists:seq(1, TestCount)),
     Sizes = 
         lists:map(
             fun(S) ->
@@ -333,6 +334,8 @@ test_src(Src, Version) ->
             Sizes),
     io:format(
         user, 
-        "~w library "
+        "~w library across objects ~w averages - "
         "pre_compress ~p post_compress ~p compress_perc ~p compress_time ~p~n",
-        [Version, PreC, PostC, 1 - (PostC / PreC), CT]).
+        [Version, TestCount,
+            PreC div TestCount, PostC div TestCount, 1 - (PostC / PreC),
+            CT div TestCount]).
