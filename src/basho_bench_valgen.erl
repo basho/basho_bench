@@ -21,8 +21,10 @@
 %% -------------------------------------------------------------------
 -module(basho_bench_valgen).
 
--export([new/2,
-         dimension/2]).
+-export([new/2, dimension/2]).
+
+%% Exported for some adhoc testing
+-export([test_semicompress_algos/0]).
 
 -include("basho_bench.hrl").
 
@@ -68,16 +70,8 @@ new({semi_compressible, MinSize, Mean, XLMult, XLProb}, Id)
     when is_integer(MinSize), MinSize >= 0, is_number(Mean), Mean > 0 ->
     Source = init_altsource(Id),
     fun() ->
-        R = rand:uniform(),
-        {ModMin, ModMean} = 
-            case R < XLProb of
-                true ->
-                    {XLMult * MinSize, XLMult * Mean};
-                false ->
-                    {MinSize, Mean}
-            end,
-        data_block(Source,
-                    ModMin + trunc(basho_bench_stats:exponential(1 / ModMean)))
+        RandomSize = random_size(MinSize, Mean, XLMult, XLProb),
+        data_block(Source, RandomSize)
     end;
 new(Other, _Id) ->
     ?FAIL_MSG("Invalid value generator requested: ~p\n", [Other]).
@@ -92,6 +86,22 @@ dimension(_Other, _) ->
 %% ====================================================================
 %% Internal Functions
 %% ====================================================================
+
+random_size(MinSize, Mean, XLMult, XLProb) ->
+    R = rand:uniform(),
+    {ModMin, ModMean} = 
+        case R < XLProb of
+            true ->
+                {XLMult * MinSize, XLMult * Mean};
+            false ->
+                {MinSize, Mean}
+        end,
+        ModMin + trunc(basho_bench_stats:exponential(1 / ModMean)).
+
+random_slice(Source, SourceSz, BlockSize) ->
+    Offset = rand:uniform(SourceSz - BlockSize),
+    <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
+    Slice.
 
 -define(TAB, valgen_bin_tab).
 
@@ -123,34 +133,7 @@ init_altsource(Id) ->
     init_altsource(Id, basho_bench_config:get(?VAL_GEN_BLOB_CFG, undefined)).
 
 init_altsource(1, undefined) ->
-    GenRandStrFun = fun(_X) -> rand:uniform(95) + 31 end,
-    GenRandLCFun = fun(_X) -> rand:uniform(26) + 96 end,
-    RandomStrGen =
-        fun(GenFun) ->
-            lists:map(fun(X) ->
-                            SL = lists:map(GenFun, lists:seq(1, 128)),
-                            {X, list_to_binary(SL)}
-                        end,
-                        lists:seq(1, 16))
-        end,
-    RandomAscii = RandomStrGen(GenRandStrFun),
-    RandomLC = RandomStrGen(GenRandLCFun),
-
-    ComboBlockFun =
-        fun(X, Acc) ->
-            Bin1 = crypto:strong_rand_bytes(1024),
-            Bin2 = create_random_textblock(8, RandomAscii),
-            LI = lorem_ipsum(),
-            LIN = (X rem length(LI)) + 1,
-            Bin3 = lists:nth(LIN, LI),
-            Bin4 = create_random_textblock(8, RandomLC),
-
-            % Both the compressible and uncompressible parts will be 
-            % 4096 bytes in size.  zlib will compress the compressible
-            % part down 3:1
-            <<Acc/binary, Bin1/binary, Bin2/binary, Bin3/binary, Bin4/binary>>
-        end,
-    Bytes = lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 16384)),
+    Bytes = create_semi_compressible_binary_v1(),
     SourceSz = byte_size(Bytes),
     try
         ?TAB = ets:new(?TAB, [public, named_table]),
@@ -169,6 +152,71 @@ init_altsource(Id, Path) ->
     end,
     {?VAL_GEN_BLOB_CFG, size(Bin), Bin}.
 
+
+create_semi_compressible_binary_v1() ->
+    GenRandAsciiFun = fun(_X) -> rand:uniform(95) + 31 end,
+    GenRandLCFun =
+        fun(_X) -> rand:uniform(rand:uniform(rand:uniform(26))) + 96 end,
+    RandomStrGen =
+        fun(GenFun) ->
+            lists:map(fun(X) ->
+                            SL = lists:map(GenFun, lists:seq(1, 128)),
+                            {X, list_to_binary(SL)}
+                        end,
+                        lists:seq(1, 16))
+        end,
+    RandomAscii = RandomStrGen(GenRandAsciiFun),
+    RandomLC = RandomStrGen(GenRandLCFun),
+
+    ComboBlockFun =
+        fun(X, Acc) ->
+            Bin0 = crypto:strong_rand_bytes(256),
+            Bin1 = create_random_textblock(6, RandomAscii),
+            LI = lorem_ipsum(),
+            LIN1 = (X rem length(LI)) + 1,
+            LIN2 = ((X + 1) rem length(LI)) + 1,
+            Bin2 = lists:nth(LIN1, LI),
+            Bin3 = lists:nth(LIN2, LI),
+            Bin4 = create_random_textblock(8, RandomLC),
+            
+
+            % Both the compressible and uncompressible parts will be 
+            % 4096 bytes in size.  zlib will compress the compressible
+            % part down 3:1
+            <<Acc/binary,
+                Bin0/binary, Bin1/binary,
+                Bin2/binary, Bin3/binary,
+                Bin4/binary>>
+        end,
+    
+    lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 16384)).
+
+
+create_semi_compressible_binary_v0() ->
+    GenRandStrFun = fun(_X) -> rand:uniform(95) + 31 end,
+    RandomStrGen =
+        fun(GenFun) ->
+            lists:map(fun(X) ->
+                            SL = lists:map(GenFun, lists:seq(1, 128)),
+                            {X, list_to_binary(SL)}
+                        end,
+                        lists:seq(1, 16))
+        end,
+    RandomAscii = RandomStrGen(GenRandStrFun),
+    
+    ComboBlockFun =
+        fun(_X, Acc) ->
+            Bin1 = crypto:strong_rand_bytes(4096),
+            Bin2 = create_random_textblock(32, RandomAscii),
+
+            % Both the compressible and uncompressible parts will be 
+            % 4096 bytes in size.  zlib will compress the compressible
+            % part down 3:1
+            <<Acc/binary, Bin1/binary, Bin2/binary>>
+        end,
+    
+    lists:foldl(ComboBlockFun, <<>>, lists:seq(1, 8192)).    
+
 create_random_textblock(BlockLength, RandomStrs) ->
     GetRandomBlockFun =
         fun(X, Acc) ->
@@ -181,9 +229,7 @@ create_random_textblock(BlockLength, RandomStrs) ->
 data_block({SourceCfg, SourceSz, Source}, BlockSize) ->
     case SourceSz - BlockSize > 0 of
         true ->
-            Offset = rand:uniform(SourceSz - BlockSize),
-            <<_:Offset/bytes, Slice:BlockSize/bytes, _Rest/binary>> = Source,
-            Slice;
+            random_slice(Source, SourceSz, BlockSize);
         false ->
             ?WARN("~p is too small ~p < ~p\n",
                   [SourceCfg, SourceSz, BlockSize]),
@@ -256,3 +302,37 @@ lorem_ipsum() ->
             Gravida cum sociis natoque penatibus et magnis dis. Nec tincidunt praesent semper feugiat. Vel orci porta non pulvinar neque laoreet. 
             Sed viverra tellus in hac habitasse platea dictumst vestibulum.">>].
 
+test_semicompress_algos() ->
+    Src0 = create_semi_compressible_binary_v0(),
+    test_src(Src0, v0),
+    Src1 = create_semi_compressible_binary_v1(),
+    test_src(Src1, v1).
+
+test_src(Src, Version) ->
+    Slices =
+        lists:map(
+            fun(_X) ->
+                random_slice(
+                    Src,
+                    byte_size(Src),
+                    random_size(10000, 2000, 10, 0.1))
+            end,
+        lists:seq(1, 128)),
+    Sizes = 
+        lists:map(
+            fun(S) ->
+                {T, SL} = timer:tc(fun() -> zlib:compress(S) end),
+                {byte_size(S), byte_size(SL), T}
+            end,
+            Slices),
+    
+    {PreC, PostC, CT} = 
+        lists:foldl(
+            fun({A,B,C}, {SA, SB, SC}) -> {A + SA, B + SB, C + SC} end,
+            {0, 0, 0},
+            Sizes),
+    io:format(
+        user, 
+        "~w library "
+        "pre_compress ~p post_compress ~p compress_perc ~p compress_time ~p~n",
+        [Version, PreC, PostC, 1 - (PostC / PreC), CT]).
